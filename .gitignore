@@ -1,0 +1,8 @@
+terraform-provider-pangolin
+dist/
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.plan
+.idea/
+.vscode/
