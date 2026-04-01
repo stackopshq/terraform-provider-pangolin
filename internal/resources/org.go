@@ -104,6 +104,7 @@ func (r *OrgResource) Create(ctx context.Context, req resource.CreateRequest, re
 	plan.OrgID = types.StringValue(org.OrgID)
 	plan.Name = types.StringValue(org.Name)
 	plan.Subnet = types.StringValue(org.Subnet)
+	plan.UtilitySubnet = types.StringValue(org.UtilitySubnet)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -123,6 +124,7 @@ func (r *OrgResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 
 	state.Name = types.StringValue(org.Name)
 	state.Subnet = types.StringValue(org.Subnet)
+	state.UtilitySubnet = types.StringValue(org.UtilitySubnet)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -144,6 +146,7 @@ func (r *OrgResource) Update(ctx context.Context, req resource.UpdateRequest, re
 
 	plan.Name = types.StringValue(org.Name)
 	plan.Subnet = types.StringValue(org.Subnet)
+	plan.UtilitySubnet = types.StringValue(org.UtilitySubnet)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -170,8 +173,9 @@ func (r *OrgResource) ImportState(ctx context.Context, req resource.ImportStateR
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &OrgResourceModel{
-		OrgID:  types.StringValue(org.OrgID),
-		Name:   types.StringValue(org.Name),
-		Subnet: types.StringValue(org.Subnet),
+		OrgID:         types.StringValue(org.OrgID),
+		Name:          types.StringValue(org.Name),
+		Subnet:        types.StringValue(org.Subnet),
+		UtilitySubnet: types.StringValue(org.UtilitySubnet),
 	})...)
 }

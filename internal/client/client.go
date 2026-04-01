@@ -876,9 +876,10 @@ func (c *Client) ListSiteResources() ([]SiteResource, error) {
 
 // Org represents a Pangolin organization.
 type Org struct {
-	OrgID  string `json:"orgId"`
-	Name   string `json:"name"`
-	Subnet string `json:"subnet"`
+	OrgID         string `json:"orgId"`
+	Name          string `json:"name"`
+	Subnet        string `json:"subnet"`
+	UtilitySubnet string `json:"utilitySubnet"`
 }
 
 // CreateOrgRequest is the payload for creating an organization.
@@ -908,11 +909,14 @@ func (c *Client) GetOrg(orgID string) (*Org, error) {
 	if err != nil {
 		return nil, err
 	}
-	var org Org
-	if err := json.Unmarshal(resp.Data, &org); err != nil {
+	// Response is wrapped: {"org": {...}}
+	var wrapper struct {
+		Org Org `json:"org"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse org: %w", err)
 	}
-	return &org, nil
+	return &wrapper.Org, nil
 }
 
 // UpdateOrgRequest is the payload for updating an organization.
