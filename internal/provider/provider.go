@@ -96,16 +96,33 @@ func (p *PangolinProvider) Configure(ctx context.Context, req provider.Configure
 
 func (p *PangolinProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		resources.NewOrgResource,
+		resources.NewUserResource,
 		resources.NewSiteResource,
 		resources.NewHTTPResource,
 		resources.NewTargetResource,
 		resources.NewSitePrivateResource,
+		resources.NewRoleResource,
+		resources.NewAPIKeyResource,
+		resources.NewOLMClientResource,
+		resources.NewResourceRoleResource,
+		resources.NewResourceUserResource,
+		resources.NewResourceWhitelistResource,
+		resources.NewSiteResourceRoleResource,
+		resources.NewSiteResourceUserResource,
+		resources.NewSiteResourceClientResource,
 	}
 }
 
 func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		datasources.NewDomainsDataSource,
+		datasources.NewRolesDataSource,
+		datasources.NewUsersDataSource,
+		datasources.NewSitesDataSource,
+		datasources.NewHTTPResourcesDataSource,
+		datasources.NewSiteResourcesDataSource,
+		datasources.NewAPIKeysDataSource,
 	}
 }
 

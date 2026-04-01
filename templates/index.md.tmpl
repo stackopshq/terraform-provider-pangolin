@@ -1,0 +1,23 @@
+# Pangolin Provider
+
+The **Pangolin** provider allows you to manage resources in [Pangolin](https://github.com/fosrl/pangolin), an open-source self-hosted tunneling and reverse proxy solution.
+
+Use this provider to automate the lifecycle of organizations, sites, resources, roles, users, API keys, and OLM client devices via Infrastructure as Code.
+
+## Example Usage
+
+{{ tffile "examples/provider/provider.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Authentication
+
+The provider requires an API key with appropriate permissions. You can create one via the Pangolin web UI or the `pangolin_api_key` resource.
+
+All configuration can also be provided via environment variables:
+
+```sh
+export PANGOLIN_URL="https://pangolin.example.com"
+export PANGOLIN_API_KEY="your-api-key"
+export PANGOLIN_ORG_ID="your-org-id"
+```

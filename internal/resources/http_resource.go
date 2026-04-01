@@ -163,7 +163,37 @@ func (r *HTTPResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 }
 
 func (r *HTTPResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Update not supported", "HTTP resources cannot be updated in-place. Please recreate the resource.")
+	var plan HTTPResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	updateReq := &client.UpdateResourceRequest{
+		Name: plan.Name.ValueString(),
+	}
+	if !plan.Subdomain.IsNull() && !plan.Subdomain.IsUnknown() {
+		subdomain := plan.Subdomain.ValueString()
+		updateReq.Subdomain = &subdomain
+	}
+
+	res, err := r.client.UpdateResource(int(plan.ID.ValueInt64()), updateReq)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update resource", err.Error())
+		return
+	}
+
+	plan.NiceID = types.StringValue(res.NiceID)
+	plan.Name = types.StringValue(res.Name)
+	plan.FullDomain = types.StringValue(res.FullDomain)
+	plan.DomainID = types.StringValue(res.DomainID)
+	if res.Subdomain != "" {
+		plan.Subdomain = types.StringValue(res.Subdomain)
+	} else {
+		plan.Subdomain = types.StringNull()
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *HTTPResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

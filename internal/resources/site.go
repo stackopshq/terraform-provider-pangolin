@@ -114,12 +114,10 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	site, err := r.client.CreateSite(&client.CreateSiteRequest{
-		Name:          plan.Name.ValueString(),
-		Type:          "newt",
-		NewtID:        defaults.NewtID,
-		Secret:        defaults.NewtSecret,
-		Address:       defaults.ClientAddress + "/24",
-		ClientAddress: defaults.ClientAddress,
+		Name:   plan.Name.ValueString(),
+		Type:   "newt",
+		NewtID: defaults.NewtID,
+		Secret: defaults.NewtSecret,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create site", err.Error())
@@ -158,8 +156,27 @@ func (r *SiteResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 }
 
 func (r *SiteResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	// Pangolin API does not support site updates — recreate required
-	resp.Diagnostics.AddError("Update not supported", "Sites cannot be updated in-place. Please recreate the resource.")
+	var plan SiteResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	site, err := r.client.UpdateSite(int(plan.ID.ValueInt64()), &client.UpdateSiteRequest{
+		Name: plan.Name.ValueString(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update site", err.Error())
+		return
+	}
+
+	plan.NiceID = types.StringValue(site.NiceID)
+	plan.Name = types.StringValue(site.Name)
+	plan.Type = types.StringValue(site.Type)
+	plan.Online = types.BoolValue(site.Online)
+	plan.Address = types.StringValue(site.Address)
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *SiteResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

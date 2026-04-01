@@ -92,10 +92,8 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Required:    true,
 			},
 			"alias": schema.StringAttribute{
-				Description: "The internal DNS alias (e.g. 'myservice.internal').",
-				Optional:    true,
-				Computed:    true,
-				Default:     stringdefault.StaticString(""),
+				Description: "The internal DNS alias (e.g. 'myservice.internal'). Required by the Pangolin API.",
+				Required:    true,
 			},
 			"tcp_port_range": schema.StringAttribute{
 				Description: "TCP port range string. '*' for all, '' for none, or specific ports/ranges (e.g. '80,443,8080-8090').",
@@ -107,7 +105,9 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Description: "UDP port range string. '*' for all, '' for none, or specific ports/ranges.",
 				Optional:    true,
 				Computed:    true,
-				Default:     stringdefault.StaticString(""),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"disable_icmp": schema.BoolAttribute{
 				Description: "Whether to disable ICMP. Defaults to false.",
@@ -124,6 +124,9 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"auth_daemon_port": schema.Int64Attribute{
 				Description: "The auth daemon port (computed by the API).",
 				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -160,6 +163,7 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 		AuthDaemonMode: plan.AuthDaemonMode.ValueString(),
 		RoleIDs:        []int{},
 		UserIDs:        []string{},
+		ClientIDs:      []int{},
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create site resource", err.Error())
@@ -202,7 +206,41 @@ func (r *SitePrivateResource) Read(ctx context.Context, req resource.ReadRequest
 }
 
 func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Update not supported", "Site resources cannot be updated in-place. Please recreate the resource.")
+	var plan SitePrivateResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	siteRes, err := r.client.UpdateSiteResource(int(plan.ID.ValueInt64()), &client.UpdateSiteResourceRequest{
+		Name:           plan.Name.ValueString(),
+		SiteID:         int(plan.SiteID.ValueInt64()),
+		Destination:    plan.Destination.ValueString(),
+		Alias:          plan.Alias.ValueString(),
+		TCPPortRange:   plan.TCPPortRange.ValueString(),
+		UDPPortRange:   plan.UDPPortRange.ValueString(),
+		DisableICMP:    plan.DisableICMP.ValueBool(),
+		AuthDaemonMode: plan.AuthDaemonMode.ValueString(),
+		RoleIDs:        []int{},
+		UserIDs:        []string{},
+		ClientIDs:      []int{},
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update site resource", err.Error())
+		return
+	}
+
+	plan.NiceID = types.StringValue(siteRes.NiceID)
+	plan.Name = types.StringValue(siteRes.Name)
+	plan.Destination = types.StringValue(siteRes.Destination)
+	plan.Alias = types.StringValue(siteRes.Alias)
+	plan.TCPPortRange = types.StringValue(siteRes.TCPPortRange)
+	plan.UDPPortRange = types.StringValue(siteRes.UDPPortRange)
+	plan.DisableICMP = types.BoolValue(siteRes.DisableICMP)
+	plan.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
+	plan.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *SitePrivateResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

@@ -88,9 +88,8 @@ func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse,
 
 // SiteDefaults represents the response from pick-site-defaults.
 type SiteDefaults struct {
-	NewtID        string `json:"newtId"`
-	NewtSecret    string `json:"newtSecret"`
-	ClientAddress string `json:"clientAddress"`
+	NewtID     string `json:"newtId"`
+	NewtSecret string `json:"newtSecret"`
 }
 
 // GetSiteDefaults picks site defaults for creating a new site.
@@ -121,17 +120,15 @@ type Site struct {
 
 // CreateSiteRequest is the payload for creating a site.
 type CreateSiteRequest struct {
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	NewtID        string `json:"newtId"`
-	Secret        string `json:"secret"`
-	Address       string `json:"address"`
-	ClientAddress string `json:"clientAddress"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	NewtID string `json:"newtId,omitempty"`
+	Secret string `json:"secret,omitempty"`
 }
 
 // CreateSite creates a new site in the organization.
 func (c *Client) CreateSite(req *CreateSiteRequest) (*Site, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s/site", c.OrgID), req)
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +212,7 @@ type CreateResourceRequest struct {
 
 // CreateResource creates a new HTTP resource.
 func (c *Client) CreateResource(req *CreateResourceRequest) (*Resource, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +266,7 @@ type CreateTargetRequest struct {
 
 // CreateTarget creates a new target for a resource.
 func (c *Client) CreateTarget(resourceID int, req *CreateTargetRequest) (*Target, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/target", resourceID), req)
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -321,22 +318,23 @@ type SiteResource struct {
 
 // CreateSiteResourceRequest is the payload for creating a private site resource.
 type CreateSiteResourceRequest struct {
-	Name           string `json:"name"`
-	SiteID         int    `json:"siteId"`
-	Mode           string `json:"mode"`
-	Destination    string `json:"destination"`
-	Alias          string `json:"alias"`
-	TCPPortRange   string `json:"tcpPortRangeString"`
-	UDPPortRange   string `json:"udpPortRangeString"`
-	DisableICMP    bool   `json:"disableIcmp"`
-	AuthDaemonMode string `json:"authDaemonMode"`
-	RoleIDs        []int  `json:"roleIds"`
+	Name           string   `json:"name"`
+	SiteID         int      `json:"siteId"`
+	Mode           string   `json:"mode"`
+	Destination    string   `json:"destination"`
+	Alias          string   `json:"alias,omitempty"`
+	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
+	DisableICMP    bool     `json:"disableIcmp,omitempty"`
+	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
+	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
+	ClientIDs      []int    `json:"clientIds"`
 }
 
 // CreateSiteResource creates a new private site resource.
 func (c *Client) CreateSiteResource(req *CreateSiteResourceRequest) (*SiteResource, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -348,18 +346,21 @@ func (c *Client) CreateSiteResource(req *CreateSiteResourceRequest) (*SiteResour
 	return &siteResource, nil
 }
 
-// GetSiteResource retrieves a site resource by ID.
+// GetSiteResource retrieves a site resource by ID (via list + filter).
+// Note: GET /site-resource/{id} has a bug in the Pangolin API requiring siteId/orgId,
+// so we use list + filter instead.
 func (c *Client) GetSiteResource(siteResourceID int) (*SiteResource, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/site-resource/%d", siteResourceID), nil)
+	siteResources, err := c.ListSiteResources()
 	if err != nil {
 		return nil, err
 	}
-
-	var siteResource SiteResource
-	if err := json.Unmarshal(resp.Data, &siteResource); err != nil {
-		return nil, fmt.Errorf("failed to parse site resource: %w", err)
+	for _, sr := range siteResources {
+		if sr.SiteResourceID == siteResourceID {
+			s := sr
+			return &s, nil
+		}
 	}
-	return &siteResource, nil
+	return nil, fmt.Errorf("site resource %d not found", siteResourceID)
 }
 
 // DeleteSiteResource deletes a site resource by ID.
@@ -478,3 +479,561 @@ func (c *Client) ListUsers() ([]User, error) {
 	}
 	return usersResp.Users, nil
 }
+
+// --- Update operations ---
+
+// UpdateSiteRequest is the payload for updating a site.
+type UpdateSiteRequest struct {
+	Name string `json:"name"`
+}
+
+// UpdateSite updates a site by ID.
+func (c *Client) UpdateSite(siteID int, req *UpdateSiteRequest) (*Site, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/site/%d", siteID), req)
+	if err != nil {
+		return nil, err
+	}
+	var site Site
+	if err := json.Unmarshal(resp.Data, &site); err != nil {
+		return nil, fmt.Errorf("failed to parse site: %w", err)
+	}
+	return &site, nil
+}
+
+// UpdateResourceRequest is the payload for updating an HTTP resource.
+type UpdateResourceRequest struct {
+	Name      string  `json:"name"`
+	Subdomain *string `json:"subdomain,omitempty"`
+}
+
+// UpdateResource updates an HTTP resource by ID.
+func (c *Client) UpdateResource(resourceID int, req *UpdateResourceRequest) (*Resource, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/resource/%d", resourceID), req)
+	if err != nil {
+		return nil, err
+	}
+	var resource Resource
+	if err := json.Unmarshal(resp.Data, &resource); err != nil {
+		return nil, fmt.Errorf("failed to parse resource: %w", err)
+	}
+	return &resource, nil
+}
+
+// UpdateSiteResourceRequest is the payload for updating a private site resource.
+type UpdateSiteResourceRequest struct {
+	Name           string   `json:"name"`
+	SiteID         int      `json:"siteId"`
+	Destination    string   `json:"destination"`
+	Alias          string   `json:"alias,omitempty"`
+	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
+	DisableICMP    bool     `json:"disableIcmp,omitempty"`
+	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
+	RoleIDs        []int    `json:"roleIds"`
+	UserIDs        []string `json:"userIds"`
+	ClientIDs      []int    `json:"clientIds"`
+}
+
+// UpdateSiteResource updates a private site resource by ID.
+func (c *Client) UpdateSiteResource(siteResourceID int, req *UpdateSiteResourceRequest) (*SiteResource, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d", siteResourceID), req)
+	if err != nil {
+		return nil, err
+	}
+	var siteResource SiteResource
+	if err := json.Unmarshal(resp.Data, &siteResource); err != nil {
+		return nil, fmt.Errorf("failed to parse site resource: %w", err)
+	}
+	return &siteResource, nil
+}
+
+// --- Roles CRUD ---
+
+// CreateRoleRequest is the payload for creating a role.
+type CreateRoleRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// CreateRole creates a new role in the organization.
+func (c *Client) CreateRole(req *CreateRoleRequest) (*Role, error) {
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var role Role
+	if err := json.Unmarshal(resp.Data, &role); err != nil {
+		return nil, fmt.Errorf("failed to parse role: %w", err)
+	}
+	return &role, nil
+}
+
+// GetRoleByID retrieves a role by ID (via list + filter, no individual Get endpoint).
+func (c *Client) GetRoleByID(roleID int) (*Role, error) {
+	roles, err := c.ListRoles()
+	if err != nil {
+		return nil, err
+	}
+	for _, role := range roles {
+		if role.RoleID == roleID {
+			r := role
+			return &r, nil
+		}
+	}
+	return nil, fmt.Errorf("role %d not found", roleID)
+}
+
+// UpdateRoleRequest is the payload for updating a role.
+type UpdateRoleRequest struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// UpdateRole updates a role by ID.
+func (c *Client) UpdateRole(roleID int, req *UpdateRoleRequest) (*Role, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/role/%d", roleID), req)
+	if err != nil {
+		return nil, err
+	}
+	var role Role
+	if err := json.Unmarshal(resp.Data, &role); err != nil {
+		return nil, fmt.Errorf("failed to parse role: %w", err)
+	}
+	return &role, nil
+}
+
+// DeleteRole deletes a role by ID. The replacementRoleID is assigned to any users
+// currently holding the deleted role (required by the Pangolin API).
+func (c *Client) DeleteRole(roleID int, replacementRoleID int) error {
+	body := map[string]string{"roleId": fmt.Sprintf("%d", replacementRoleID)}
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/role/%d", roleID), body)
+	return err
+}
+
+// --- API Keys ---
+
+// APIKey represents a Pangolin API key.
+type APIKey struct {
+	APIKeyID string `json:"apiKeyId"`
+	Name     string `json:"name"`
+	APIKey   string `json:"apiKey"` // Only returned on creation.
+}
+
+// APIKeysResponse wraps the API keys list response.
+type APIKeysResponse struct {
+	APIKeys []APIKey `json:"apiKeys"`
+}
+
+// CreateAPIKeyRequest is the payload for creating an API key.
+type CreateAPIKeyRequest struct {
+	Name string `json:"name"`
+}
+
+// CreateAPIKey creates a new API key for the organization.
+func (c *Client) CreateAPIKey(req *CreateAPIKeyRequest) (*APIKey, error) {
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var apiKey APIKey
+	if err := json.Unmarshal(resp.Data, &apiKey); err != nil {
+		return nil, fmt.Errorf("failed to parse API key: %w", err)
+	}
+	return &apiKey, nil
+}
+
+// ListAPIKeys retrieves all API keys for the organization.
+func (c *Client) ListAPIKeys() ([]APIKey, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/api-keys", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var keysResp APIKeysResponse
+	if err := json.Unmarshal(resp.Data, &keysResp); err != nil {
+		return nil, fmt.Errorf("failed to parse API keys: %w", err)
+	}
+	return keysResp.APIKeys, nil
+}
+
+// GetAPIKeyByID retrieves an API key by ID (via list + filter).
+func (c *Client) GetAPIKeyByID(apiKeyID string) (*APIKey, error) {
+	keys, err := c.ListAPIKeys()
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keys {
+		if key.APIKeyID == apiKeyID {
+			k := key
+			return &k, nil
+		}
+	}
+	return nil, fmt.Errorf("API key %s not found", apiKeyID)
+}
+
+// DeleteAPIKey deletes an API key by ID.
+func (c *Client) DeleteAPIKey(apiKeyID string) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/org/%s/api-key/%s", c.OrgID, apiKeyID), nil)
+	return err
+}
+
+// --- OLM Clients ---
+
+// ClientDefaults represents the response from pick-client-defaults.
+type ClientDefaults struct {
+	OlmID     string `json:"olmId"`
+	OlmSecret string `json:"olmSecret"`
+	Subnet    string `json:"subnet"`
+}
+
+// GetClientDefaults picks client defaults for creating a new OLM client.
+func (c *Client) GetClientDefaults() (*ClientDefaults, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/pick-client-defaults", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var defaults ClientDefaults
+	if err := json.Unmarshal(resp.Data, &defaults); err != nil {
+		return nil, fmt.Errorf("failed to parse client defaults: %w", err)
+	}
+	return &defaults, nil
+}
+
+// OLMClient represents a Pangolin OLM (Overlay LAN Manager) client device.
+type OLMClient struct {
+	ClientID int    `json:"clientId"`
+	NiceID   string `json:"niceId"`
+	Name     string `json:"name"`
+	Online   bool   `json:"online"`
+	Secret   string `json:"secret"` // Only returned on creation.
+}
+
+// OLMClientsResponse wraps the clients list response.
+type OLMClientsResponse struct {
+	Clients []OLMClient `json:"clients"`
+}
+
+// CreateOLMClientRequest is the payload for creating an OLM client.
+type CreateOLMClientRequest struct {
+	Name   string `json:"name"`
+	OlmID  string `json:"olmId"`
+	Secret string `json:"secret"`
+	Subnet string `json:"subnet"`
+	Type   string `json:"type"`
+}
+
+// UpdateOLMClientRequest is the payload for updating an OLM client.
+type UpdateOLMClientRequest struct {
+	Name string `json:"name"`
+}
+
+// CreateOLMClient creates a new OLM client device.
+func (c *Client) CreateOLMClient(req *CreateOLMClientRequest) (*OLMClient, error) {
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var client OLMClient
+	if err := json.Unmarshal(resp.Data, &client); err != nil {
+		return nil, fmt.Errorf("failed to parse OLM client: %w", err)
+	}
+	return &client, nil
+}
+
+// ListOLMClients retrieves all OLM clients for the organization.
+func (c *Client) ListOLMClients() ([]OLMClient, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/clients", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var clientsResp OLMClientsResponse
+	if err := json.Unmarshal(resp.Data, &clientsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse OLM clients: %w", err)
+	}
+	return clientsResp.Clients, nil
+}
+
+// GetOLMClient retrieves an OLM client by ID.
+func (c *Client) GetOLMClient(clientID int) (*OLMClient, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/client/%d", clientID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var client OLMClient
+	if err := json.Unmarshal(resp.Data, &client); err != nil {
+		return nil, fmt.Errorf("failed to parse OLM client: %w", err)
+	}
+	return &client, nil
+}
+
+// UpdateOLMClient updates an OLM client by ID.
+func (c *Client) UpdateOLMClient(clientID int, req *UpdateOLMClientRequest) (*OLMClient, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/client/%d", clientID), req)
+	if err != nil {
+		return nil, err
+	}
+	var client OLMClient
+	if err := json.Unmarshal(resp.Data, &client); err != nil {
+		return nil, fmt.Errorf("failed to parse OLM client: %w", err)
+	}
+	return &client, nil
+}
+
+// DeleteOLMClient deletes an OLM client by ID.
+func (c *Client) DeleteOLMClient(clientID int) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/client/%d", clientID), nil)
+	return err
+}
+
+// --- Whitelist ---
+
+// AddWhitelistToResource adds an email to the whitelist of an HTTP resource.
+func (c *Client) AddWhitelistToResource(resourceID int, email string) error {
+	body := map[string]string{"email": email}
+	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/whitelist/add", resourceID), body)
+	return err
+}
+
+// RemoveWhitelistFromResource removes an email from the whitelist of an HTTP resource.
+func (c *Client) RemoveWhitelistFromResource(resourceID int, email string) error {
+	body := map[string]string{"email": email}
+	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/whitelist/remove", resourceID), body)
+	return err
+}
+
+// --- Client assignments for site resources ---
+
+// AddClientToSiteResource assigns an OLM client to a private site resource.
+func (c *Client) AddClientToSiteResource(siteResourceID, clientID int) error {
+	body := map[string]int{"clientId": clientID}
+	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/clients/add", siteResourceID), body)
+	return err
+}
+
+// RemoveClientFromSiteResource removes an OLM client from a private site resource.
+func (c *Client) RemoveClientFromSiteResource(siteResourceID, clientID int) error {
+	body := map[string]int{"clientId": clientID}
+	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/clients/remove", siteResourceID), body)
+	return err
+}
+
+// --- List operations ---
+
+// SitesResponse wraps the sites list response.
+type SitesResponse struct {
+	Sites []Site `json:"sites"`
+}
+
+// ListSites retrieves all sites for the organization.
+func (c *Client) ListSites() ([]Site, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/sites", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var sitesResp SitesResponse
+	if err := json.Unmarshal(resp.Data, &sitesResp); err != nil {
+		return nil, fmt.Errorf("failed to parse sites: %w", err)
+	}
+	return sitesResp.Sites, nil
+}
+
+// ResourcesResponse wraps the resources list response.
+type ResourcesResponse struct {
+	Resources []Resource `json:"resources"`
+}
+
+// ListResources retrieves all HTTP resources for the organization.
+func (c *Client) ListResources() ([]Resource, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var resourcesResp ResourcesResponse
+	if err := json.Unmarshal(resp.Data, &resourcesResp); err != nil {
+		return nil, fmt.Errorf("failed to parse resources: %w", err)
+	}
+	return resourcesResp.Resources, nil
+}
+
+// SiteResourcesListResponse wraps the site resources list response.
+type SiteResourcesListResponse struct {
+	SiteResources []SiteResource `json:"siteResources"`
+}
+
+// ListSiteResources retrieves all private site resources for the organization.
+func (c *Client) ListSiteResources() ([]SiteResource, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/site-resources", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var siteResourcesResp SiteResourcesListResponse
+	if err := json.Unmarshal(resp.Data, &siteResourcesResp); err != nil {
+		return nil, fmt.Errorf("failed to parse site resources: %w", err)
+	}
+	return siteResourcesResp.SiteResources, nil
+}
+
+// --- Organizations ---
+
+// Org represents a Pangolin organization.
+type Org struct {
+	OrgID  string `json:"orgId"`
+	Name   string `json:"name"`
+	Subnet string `json:"subnet"`
+}
+
+// CreateOrgRequest is the payload for creating an organization.
+type CreateOrgRequest struct {
+	OrgID         string `json:"orgId"`
+	Name          string `json:"name"`
+	Subnet        string `json:"subnet"`
+	UtilitySubnet string `json:"utilitySubnet"`
+}
+
+// CreateOrg creates a new organization.
+func (c *Client) CreateOrg(req *CreateOrgRequest) (*Org, error) {
+	resp, err := c.doRequest("PUT", "/org", req)
+	if err != nil {
+		return nil, err
+	}
+	var org Org
+	if err := json.Unmarshal(resp.Data, &org); err != nil {
+		return nil, fmt.Errorf("failed to parse org: %w", err)
+	}
+	return &org, nil
+}
+
+// GetOrg retrieves an organization by ID.
+func (c *Client) GetOrg(orgID string) (*Org, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s", orgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var org Org
+	if err := json.Unmarshal(resp.Data, &org); err != nil {
+		return nil, fmt.Errorf("failed to parse org: %w", err)
+	}
+	return &org, nil
+}
+
+// UpdateOrgRequest is the payload for updating an organization.
+type UpdateOrgRequest struct {
+	Name string `json:"name"`
+}
+
+// UpdateOrg updates an organization by ID.
+func (c *Client) UpdateOrg(orgID string, req *UpdateOrgRequest) (*Org, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s", orgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var org Org
+	if err := json.Unmarshal(resp.Data, &org); err != nil {
+		return nil, fmt.Errorf("failed to parse org: %w", err)
+	}
+	return &org, nil
+}
+
+// DeleteOrg deletes an organization by ID.
+func (c *Client) DeleteOrg(orgID string) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/org/%s", orgID), nil)
+	return err
+}
+
+// --- User CRUD ---
+
+// CreateUserRequest is the payload for creating a user in an organization.
+type CreateUserRequest struct {
+	Username string `json:"username"`
+	RoleID   int    `json:"roleId"`
+	Email    string `json:"email,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Type     string `json:"type,omitempty"`
+	IdpID    int    `json:"idpId,omitempty"`
+}
+
+// UpdateUserRequest is the payload for updating a user.
+type UpdateUserRequest struct {
+	AutoProvisioned bool `json:"autoProvisioned"`
+}
+
+// CreateUser creates a new user in the organization.
+func (c *Client) CreateUser(req *CreateUserRequest) (*User, error) {
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		User User `json:"user"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		// Try direct unmarshal
+		var user User
+		if err2 := json.Unmarshal(resp.Data, &user); err2 != nil {
+			return nil, fmt.Errorf("failed to parse user: %w", err)
+		}
+		return &user, nil
+	}
+	return &result.User, nil
+}
+
+// GetUser retrieves a user by ID.
+func (c *Client) GetUser(userID string) (*User, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		User User `json:"user"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		var user User
+		if err2 := json.Unmarshal(resp.Data, &user); err2 != nil {
+			return nil, fmt.Errorf("failed to parse user: %w", err)
+		}
+		return &user, nil
+	}
+	return &result.User, nil
+}
+
+// UpdateUser updates a user's auto-provisioned status.
+func (c *Client) UpdateUser(userID string, req *UpdateUserRequest) (*User, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), req)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		User User `json:"user"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		var user User
+		if err2 := json.Unmarshal(resp.Data, &user); err2 != nil {
+			return nil, fmt.Errorf("failed to parse user: %w", err)
+		}
+		return &user, nil
+	}
+	return &result.User, nil
+}
+
+// DeleteUser removes a user from the organization.
+func (c *Client) DeleteUser(userID string) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), nil)
+	return err
+}
+
+// --- Domain ---
+
+// GetDomainByID retrieves a domain by ID (via list + filter).
+func (c *Client) GetDomainByID(domainID string) (*Domain, error) {
+	domains, err := c.ListDomains()
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range domains {
+		if d.DomainID == domainID {
+			domain := d
+			return &domain, nil
+		}
+	}
+	return nil, fmt.Errorf("domain %s not found", domainID)
+}
+
