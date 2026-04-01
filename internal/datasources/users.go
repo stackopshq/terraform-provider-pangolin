@@ -79,7 +79,7 @@ func (d *UsersDataSource) Read(ctx context.Context, _ datasource.ReadRequest, re
 		return
 	}
 
-	var state UsersDataSourceModel
+	state := UsersDataSourceModel{Users: []UserModel{}}
 	for _, user := range users {
 		state.Users = append(state.Users, UserModel{
 			ID:    types.StringValue(user.ID),

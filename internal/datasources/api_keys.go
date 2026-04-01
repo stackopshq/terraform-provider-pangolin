@@ -79,7 +79,7 @@ func (d *APIKeysDataSource) Read(ctx context.Context, _ datasource.ReadRequest, 
 		return
 	}
 
-	var state APIKeysDataSourceModel
+	state := APIKeysDataSourceModel{APIKeys: []APIKeyItemModel{}}
 	for _, key := range apiKeys {
 		state.APIKeys = append(state.APIKeys, APIKeyItemModel{
 			ID:   types.StringValue(key.APIKeyID),

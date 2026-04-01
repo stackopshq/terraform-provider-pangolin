@@ -89,7 +89,7 @@ func (d *DomainsDataSource) Read(ctx context.Context, _ datasource.ReadRequest, 
 		return
 	}
 
-	var state DomainsDataSourceModel
+	state := DomainsDataSourceModel{Domains: []DomainModel{}}
 	for _, domain := range domains {
 		state.Domains = append(state.Domains, DomainModel{
 			DomainID:   types.StringValue(domain.DomainID),

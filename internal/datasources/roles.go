@@ -84,7 +84,7 @@ func (d *RolesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, re
 		return
 	}
 
-	var state RolesDataSourceModel
+	state := RolesDataSourceModel{Roles: []RoleModel{}}
 	for _, role := range roles {
 		state.Roles = append(state.Roles, RoleModel{
 			RoleID:      types.Int64Value(int64(role.RoleID)),

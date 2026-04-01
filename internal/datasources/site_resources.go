@@ -93,7 +93,7 @@ func (d *SiteResourcesDataSource) Read(ctx context.Context, _ datasource.ReadReq
 		return
 	}
 
-	var state SiteResourcesDataSourceModel
+	state := SiteResourcesDataSourceModel{SiteResources: []SiteResourceItemModel{}}
 	for _, sr := range siteResources {
 		state.SiteResources = append(state.SiteResources, SiteResourceItemModel{
 			ID:             types.Int64Value(int64(sr.SiteResourceID)),

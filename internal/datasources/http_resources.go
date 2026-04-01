@@ -99,7 +99,7 @@ func (d *HTTPResourcesDataSource) Read(ctx context.Context, _ datasource.ReadReq
 		return
 	}
 
-	var state HTTPResourcesDataSourceModel
+	state := HTTPResourcesDataSourceModel{Resources: []HTTPResourceItemModel{}}
 	for _, res := range resources {
 		item := HTTPResourceItemModel{
 			ID:         types.Int64Value(int64(res.ResourceID)),
