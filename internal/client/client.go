@@ -430,6 +430,39 @@ func (c *Client) ListRoles() ([]Role, error) {
 	return rolesResp.Roles, nil
 }
 
+// AddUserToRole assigns a user to a role at organization level.
+func (c *Client) AddUserToRole(roleID int, userID string) error {
+	_, err := c.doRequest("POST", fmt.Sprintf("/role/%d/add/%s", roleID, userID), nil)
+	return err
+}
+
+// RemoveUserFromRole removes a user from a role at organization level.
+func (c *Client) RemoveUserFromRole(roleID int, userID string) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/role/%d/remove/%s", roleID, userID), nil)
+	return err
+}
+
+// ListRoleUsers retrieves all users assigned to a role.
+func (c *Client) ListRoleUsers(roleID int) ([]string, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/role/%d/users", roleID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Users []struct {
+			UserID string `json:"userId"`
+		} `json:"users"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse role users: %w", err)
+	}
+	users := make([]string, len(result.Users))
+	for i, u := range result.Users {
+		users[i] = u.UserID
+	}
+	return users, nil
+}
+
 // AddRoleToResource assigns a role to an HTTP resource.
 func (c *Client) AddRoleToResource(resourceID, roleID int) error {
 	body := map[string]int{"roleId": roleID}
