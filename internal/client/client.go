@@ -110,20 +110,22 @@ func (c *Client) GetSiteDefaults() (*SiteDefaults, error) {
 
 // Site represents a Pangolin site (tunnel connector).
 type Site struct {
-	SiteID  int    `json:"siteId"`
-	NiceID  string `json:"niceId"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Online  bool   `json:"online"`
-	Address string `json:"address"`
+	SiteID              int    `json:"siteId"`
+	NiceID              string `json:"niceId"`
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	Online              bool   `json:"online"`
+	Address             string `json:"address"`
+	DockerSocketEnabled bool   `json:"dockerSocketEnabled"`
 }
 
 // CreateSiteRequest is the payload for creating a site.
 type CreateSiteRequest struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	NewtID string `json:"newtId,omitempty"`
-	Secret string `json:"secret,omitempty"`
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	NewtID              string `json:"newtId,omitempty"`
+	Secret              string `json:"secret,omitempty"`
+	DockerSocketEnabled bool   `json:"dockerSocketEnabled"`
 }
 
 // CreateSite creates a new site in the organization.
@@ -515,7 +517,8 @@ func (c *Client) ListUsers() ([]User, error) {
 
 // UpdateSiteRequest is the payload for updating a site.
 type UpdateSiteRequest struct {
-	Name string `json:"name"`
+	Name                string `json:"name"`
+	DockerSocketEnabled bool   `json:"dockerSocketEnabled"`
 }
 
 // UpdateSite updates a site by ID.

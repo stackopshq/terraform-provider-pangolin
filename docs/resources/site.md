@@ -34,6 +34,10 @@ output "example_newt_secret" {
 
 - `name` (String) The name of the site.
 
+### Optional
+
+- `docker_socket_enabled` (Boolean) Enable Docker socket access on this site. Defaults to `false`.
+
 ### Read-Only
 
 - `address` (String) The WireGuard address of the site.

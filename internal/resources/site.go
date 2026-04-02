@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -32,8 +33,9 @@ type SiteResourceModel struct {
 	Type       types.String `tfsdk:"type"`
 	Online     types.Bool   `tfsdk:"online"`
 	Address    types.String `tfsdk:"address"`
-	NewtID     types.String `tfsdk:"newt_id"`
-	NewtSecret types.String `tfsdk:"newt_secret"`
+	NewtID              types.String `tfsdk:"newt_id"`
+	NewtSecret          types.String `tfsdk:"newt_secret"`
+	DockerSocketEnabled types.Bool   `tfsdk:"docker_socket_enabled"`
 }
 
 // NewSiteResource returns a new resource factory.
@@ -100,6 +102,12 @@ func (r *SiteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"docker_socket_enabled": schema.BoolAttribute{
+				Description: "Enable Docker socket access on this site.",
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
+			},
 		},
 	}
 }
@@ -131,10 +139,11 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	site, err := r.client.CreateSite(&client.CreateSiteRequest{
-		Name:   plan.Name.ValueString(),
-		Type:   "newt",
-		NewtID: defaults.NewtID,
-		Secret: defaults.NewtSecret,
+		Name:                plan.Name.ValueString(),
+		Type:                "newt",
+		NewtID:              defaults.NewtID,
+		Secret:              defaults.NewtSecret,
+		DockerSocketEnabled: plan.DockerSocketEnabled.ValueBool(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create site", err.Error())
@@ -148,6 +157,7 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	plan.Address = types.StringValue(site.Address)
 	plan.NewtID = types.StringValue(defaults.NewtID)
 	plan.NewtSecret = types.StringValue(defaults.NewtSecret)
+	plan.DockerSocketEnabled = types.BoolValue(site.DockerSocketEnabled)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -170,6 +180,7 @@ func (r *SiteResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	state.Type = types.StringValue(site.Type)
 	state.Online = types.BoolValue(site.Online)
 	state.Address = types.StringValue(site.Address)
+	state.DockerSocketEnabled = types.BoolValue(site.DockerSocketEnabled)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -182,7 +193,8 @@ func (r *SiteResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	site, err := r.client.UpdateSite(int(plan.ID.ValueInt64()), &client.UpdateSiteRequest{
-		Name: plan.Name.ValueString(),
+		Name:                plan.Name.ValueString(),
+		DockerSocketEnabled: plan.DockerSocketEnabled.ValueBool(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update site", err.Error())
@@ -194,6 +206,7 @@ func (r *SiteResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	plan.Type = types.StringValue(site.Type)
 	plan.Online = types.BoolValue(site.Online)
 	plan.Address = types.StringValue(site.Address)
+	plan.DockerSocketEnabled = types.BoolValue(site.DockerSocketEnabled)
 	// newt_id and newt_secret are write-once; UseStateForUnknown preserves them in plan.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -227,14 +240,15 @@ func (r *SiteResource) ImportState(ctx context.Context, req resource.ImportState
 	}
 
 	state := SiteResourceModel{
-		ID:         types.Int64Value(int64(site.SiteID)),
-		NiceID:     types.StringValue(site.NiceID),
-		Name:       types.StringValue(site.Name),
-		Type:       types.StringValue(site.Type),
-		Online:     types.BoolValue(site.Online),
-		Address:    types.StringValue(site.Address),
-		NewtID:     types.StringNull(),
-		NewtSecret: types.StringNull(),
+		ID:                  types.Int64Value(int64(site.SiteID)),
+		NiceID:              types.StringValue(site.NiceID),
+		Name:                types.StringValue(site.Name),
+		Type:                types.StringValue(site.Type),
+		Online:              types.BoolValue(site.Online),
+		Address:             types.StringValue(site.Address),
+		NewtID:              types.StringNull(),
+		NewtSecret:          types.StringNull(),
+		DockerSocketEnabled: types.BoolValue(site.DockerSocketEnabled),
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
