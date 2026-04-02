@@ -29,11 +29,12 @@ resource "pangolin_target" "example" {
 
 - `ip` (String) The IP address or hostname of the target (e.g. 'localhost', '10.0.0.1').
 - `port` (Number) The port of the target.
-- `resource_id` (Number) The ID of the HTTP resource this target belongs to.
+- `resource_id` (Number) The ID of the HTTP resource this target belongs to. Forces replacement if changed.
 - `site_id` (Number) The ID of the site that serves this target.
 
 ### Optional
 
+- `enabled` (Boolean) Enable or disable this target.
 - `method` (String) The method (http or https). Defaults to http.
 
 ### Read-Only

@@ -32,6 +32,7 @@ type TargetResourceModel struct {
 	IP         types.String `tfsdk:"ip"`
 	Port       types.Int64  `tfsdk:"port"`
 	Method     types.String `tfsdk:"method"`
+	Enabled    types.Bool   `tfsdk:"enabled"`
 }
 
 // NewTargetResource returns a new resource factory.
@@ -64,9 +65,6 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"site_id": schema.Int64Attribute{
 				Description: "The ID of the site that serves this target.",
 				Required:    true,
-				PlanModifiers: []planmodifier.Int64{
-					int64planmodifier.RequiresReplace(),
-				},
 			},
 			"ip": schema.StringAttribute{
 				Description: "The IP address or hostname of the target (e.g. 'localhost', '10.0.0.1').",
@@ -81,6 +79,11 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("http"),
+			},
+			"enabled": schema.BoolAttribute{
+				Description: "Enable or disable this target.",
+				Optional:    true,
+				Computed:    true,
 			},
 		},
 	}
@@ -117,6 +120,7 @@ func (r *TargetResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	plan.ID = types.Int64Value(int64(target.TargetID))
+	plan.Enabled = types.BoolValue(target.Enabled)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -139,12 +143,37 @@ func (r *TargetResource) Read(ctx context.Context, req resource.ReadRequest, res
 	state.IP = types.StringValue(target.IP)
 	state.Port = types.Int64Value(int64(target.Port))
 	state.Method = types.StringValue(target.Method)
+	state.Enabled = types.BoolValue(target.Enabled)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Update not supported", "Targets cannot be updated in-place. Please recreate the resource.")
+	var plan TargetResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	target, err := r.client.UpdateTarget(int(plan.ID.ValueInt64()), &client.UpdateTargetRequest{
+		IP:      plan.IP.ValueString(),
+		Port:    int(plan.Port.ValueInt64()),
+		Method:  plan.Method.ValueString(),
+		Enabled: plan.Enabled.ValueBool(),
+		SiteID:  int(plan.SiteID.ValueInt64()),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update target", err.Error())
+		return
+	}
+
+	plan.SiteID = types.Int64Value(int64(target.SiteID))
+	plan.IP = types.StringValue(target.IP)
+	plan.Port = types.Int64Value(int64(target.Port))
+	plan.Method = types.StringValue(target.Method)
+	plan.Enabled = types.BoolValue(target.Enabled)
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *TargetResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -181,6 +210,7 @@ func (r *TargetResource) ImportState(ctx context.Context, req resource.ImportSta
 		IP:         types.StringValue(target.IP),
 		Port:       types.Int64Value(int64(target.Port)),
 		Method:     types.StringValue(target.Method),
+		Enabled:    types.BoolValue(target.Enabled),
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

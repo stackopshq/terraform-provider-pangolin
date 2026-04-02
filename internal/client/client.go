@@ -262,6 +262,7 @@ type Target struct {
 	IP         string `json:"ip"`
 	Method     string `json:"method"`
 	Port       int    `json:"port"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // CreateTargetRequest is the payload for creating a target.
@@ -293,6 +294,28 @@ func (c *Client) GetTarget(targetID int) (*Target, error) {
 		return nil, err
 	}
 
+	var target Target
+	if err := json.Unmarshal(resp.Data, &target); err != nil {
+		return nil, fmt.Errorf("failed to parse target: %w", err)
+	}
+	return &target, nil
+}
+
+// UpdateTargetRequest is the payload for updating a target.
+type UpdateTargetRequest struct {
+	IP      string `json:"ip"`
+	Port    int    `json:"port"`
+	Method  string `json:"method"`
+	Enabled bool   `json:"enabled"`
+	SiteID  int    `json:"siteId"`
+}
+
+// UpdateTarget updates an existing target by ID.
+func (c *Client) UpdateTarget(targetID int, req *UpdateTargetRequest) (*Target, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/target/%d", targetID), req)
+	if err != nil {
+		return nil, err
+	}
 	var target Target
 	if err := json.Unmarshal(resp.Data, &target); err != nil {
 		return nil, fmt.Errorf("failed to parse target: %w", err)
