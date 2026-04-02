@@ -1211,3 +1211,148 @@ func (c *Client) GetDomainByID(domainID string) (*Domain, error) {
 	return nil, fmt.Errorf("domain %s not found", domainID)
 }
 
+// --- Resource Rules ---
+
+// ResourceRule represents an access control rule for a resource.
+type ResourceRule struct {
+	RuleID     int    `json:"ruleId"`
+	ResourceID int    `json:"resourceId"`
+	Action     string `json:"action"`
+	Match      string `json:"match"`
+	Value      string `json:"value"`
+	Priority   int    `json:"priority"`
+	Enabled    bool   `json:"enabled"`
+}
+
+// SetResourceRuleRequest is the payload for creating or updating a resource rule.
+type SetResourceRuleRequest struct {
+	Action   string `json:"action"`
+	Match    string `json:"match"`
+	Value    string `json:"value"`
+	Priority int    `json:"priority"`
+	Enabled  bool   `json:"enabled"`
+}
+
+// CreateResourceRule creates a new rule for a resource.
+func (c *Client) CreateResourceRule(resourceID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
+	resp, err := c.doRequest("PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
+	if err != nil {
+		return nil, err
+	}
+	var rule ResourceRule
+	if err := json.Unmarshal(resp.Data, &rule); err != nil {
+		return nil, fmt.Errorf("failed to parse resource rule: %w", err)
+	}
+	return &rule, nil
+}
+
+// GetResourceRule retrieves a resource rule by ID (via list + filter).
+func (c *Client) GetResourceRule(resourceID, ruleID int) (*ResourceRule, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/resource/%d/rules", resourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Rules []ResourceRule `json:"rules"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse resource rules: %w", err)
+	}
+	for _, r := range result.Rules {
+		if r.RuleID == ruleID {
+			rule := r
+			return &rule, nil
+		}
+	}
+	return nil, fmt.Errorf("resource rule %d not found", ruleID)
+}
+
+// UpdateResourceRule updates an existing resource rule.
+func (c *Client) UpdateResourceRule(resourceID, ruleID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
+	resp, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/rule/%d", resourceID, ruleID), req)
+	if err != nil {
+		return nil, err
+	}
+	var rule ResourceRule
+	if err := json.Unmarshal(resp.Data, &rule); err != nil {
+		return nil, fmt.Errorf("failed to parse resource rule: %w", err)
+	}
+	return &rule, nil
+}
+
+// DeleteResourceRule deletes a resource rule.
+func (c *Client) DeleteResourceRule(resourceID, ruleID int) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/resource/%d/rule/%d", resourceID, ruleID), nil)
+	return err
+}
+
+// --- Resource Auth ---
+
+// ResourceAuthState holds the auth IDs for a resource (from list endpoint).
+type ResourceAuthState struct {
+	PasswordID   *int `json:"passwordId"`
+	PincodeID    *int `json:"pincodeId"`
+	HeaderAuthID *int `json:"headerAuthId"`
+}
+
+// ResourceListItem is the minimal shape returned by the resources list endpoint.
+type ResourceListItem struct {
+	ResourceID   int  `json:"resourceId"`
+	PasswordID   *int `json:"passwordId"`
+	PincodeID    *int `json:"pincodeId"`
+	HeaderAuthID *int `json:"headerAuthId"`
+}
+
+// GetResourceAuthState returns the auth IDs for a resource via list + filter.
+func (c *Client) GetResourceAuthState(resourceID int) (*ResourceAuthState, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Resources []ResourceListItem `json:"resources"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse resources: %w", err)
+	}
+	for _, r := range result.Resources {
+		if r.ResourceID == resourceID {
+			return &ResourceAuthState{
+				PasswordID:   r.PasswordID,
+				PincodeID:    r.PincodeID,
+				HeaderAuthID: r.HeaderAuthID,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("resource %d not found", resourceID)
+}
+
+// SetResourcePassword sets or clears the password for a resource.
+// Pass nil to remove the password.
+func (c *Client) SetResourcePassword(resourceID int, password *string) error {
+	body := map[string]interface{}{"password": password}
+	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/password", resourceID), body)
+	return err
+}
+
+// SetResourcePincode sets or clears the pincode for a resource.
+// Pass nil to remove the pincode.
+func (c *Client) SetResourcePincode(resourceID int, pincode *string) error {
+	body := map[string]interface{}{"pincode": pincode}
+	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/pincode", resourceID), body)
+	return err
+}
+
+// SetResourceHeaderAuthRequest is the payload for setting header auth.
+type SetResourceHeaderAuthRequest struct {
+	Password              *string `json:"password"`
+	User                  *string `json:"user"`
+	ExtendedCompatibility bool    `json:"extendedCompatibility"`
+}
+
+// SetResourceHeaderAuth sets or clears the header authentication for a resource.
+func (c *Client) SetResourceHeaderAuth(resourceID int, req *SetResourceHeaderAuthRequest) error {
+	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/header-auth", resourceID), req)
+	return err
+}
+
