@@ -26,12 +26,14 @@ type SiteResource struct {
 
 // SiteResourceModel describes the resource data model.
 type SiteResourceModel struct {
-	ID      types.Int64  `tfsdk:"id"`
-	NiceID  types.String `tfsdk:"nice_id"`
-	Name    types.String `tfsdk:"name"`
-	Type    types.String `tfsdk:"type"`
-	Online  types.Bool   `tfsdk:"online"`
-	Address types.String `tfsdk:"address"`
+	ID         types.Int64  `tfsdk:"id"`
+	NiceID     types.String `tfsdk:"nice_id"`
+	Name       types.String `tfsdk:"name"`
+	Type       types.String `tfsdk:"type"`
+	Online     types.Bool   `tfsdk:"online"`
+	Address    types.String `tfsdk:"address"`
+	NewtID     types.String `tfsdk:"newt_id"`
+	NewtSecret types.String `tfsdk:"newt_secret"`
 }
 
 // NewSiteResource returns a new resource factory.
@@ -83,6 +85,21 @@ func (r *SiteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"newt_id": schema.StringAttribute{
+				Description: "The Newt client ID assigned to this site.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"newt_secret": schema.StringAttribute{
+				Description: "The Newt client secret assigned to this site. Sensitive — not returned by the API after creation.",
+				Computed:    true,
+				Sensitive:   true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 		},
 	}
 }
@@ -129,6 +146,8 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	plan.Type = types.StringValue(site.Type)
 	plan.Online = types.BoolValue(site.Online)
 	plan.Address = types.StringValue(site.Address)
+	plan.NewtID = types.StringValue(defaults.NewtID)
+	plan.NewtSecret = types.StringValue(defaults.NewtSecret)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -175,6 +194,7 @@ func (r *SiteResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	plan.Type = types.StringValue(site.Type)
 	plan.Online = types.BoolValue(site.Online)
 	plan.Address = types.StringValue(site.Address)
+	// newt_id and newt_secret are write-once; UseStateForUnknown preserves them in plan.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -207,12 +227,14 @@ func (r *SiteResource) ImportState(ctx context.Context, req resource.ImportState
 	}
 
 	state := SiteResourceModel{
-		ID:      types.Int64Value(int64(site.SiteID)),
-		NiceID:  types.StringValue(site.NiceID),
-		Name:    types.StringValue(site.Name),
-		Type:    types.StringValue(site.Type),
-		Online:  types.BoolValue(site.Online),
-		Address: types.StringValue(site.Address),
+		ID:         types.Int64Value(int64(site.SiteID)),
+		NiceID:     types.StringValue(site.NiceID),
+		Name:       types.StringValue(site.Name),
+		Type:       types.StringValue(site.Type),
+		Online:     types.BoolValue(site.Online),
+		Address:    types.StringValue(site.Address),
+		NewtID:     types.StringNull(),
+		NewtSecret: types.StringNull(),
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

@@ -6,3 +6,4 @@ dist/
 *.plan
 .idea/
 .vscode/
+.claude
