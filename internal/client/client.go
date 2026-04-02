@@ -1024,6 +1024,176 @@ func (c *Client) DeleteUser(userID string) error {
 	return err
 }
 
+// --- IDP ---
+
+// IDP represents a Pangolin Identity Provider.
+type IDP struct {
+	IDPId               int    `json:"idpId"`
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	AutoProvision       bool   `json:"autoProvision"`
+	Tags                string `json:"tags"`
+	DefaultRoleMapping  string `json:"defaultRoleMapping"`
+	DefaultOrgMapping   string `json:"defaultOrgMapping"`
+}
+
+// IDPOidcConfig represents the OIDC configuration of an IDP.
+type IDPOidcConfig struct {
+	ClientID       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	AuthURL        string `json:"authUrl"`
+	TokenURL       string `json:"tokenUrl"`
+	IdentifierPath string `json:"identifierPath"`
+	EmailPath      string `json:"emailPath"`
+	NamePath       string `json:"namePath"`
+	Scopes         string `json:"scopes"`
+}
+
+// CreateIDPRequest is the payload for creating an OIDC IDP.
+type CreateIDPRequest struct {
+	Name           string `json:"name"`
+	ClientID       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	AuthURL        string `json:"authUrl"`
+	TokenURL       string `json:"tokenUrl"`
+	IdentifierPath string `json:"identifierPath"`
+	EmailPath      string `json:"emailPath,omitempty"`
+	NamePath       string `json:"namePath,omitempty"`
+	Scopes         string `json:"scopes"`
+	AutoProvision  bool   `json:"autoProvision,omitempty"`
+	Tags           string `json:"tags,omitempty"`
+}
+
+// UpdateIDPRequest is the payload for updating an OIDC IDP.
+type UpdateIDPRequest struct {
+	Name           string `json:"name,omitempty"`
+	ClientID       string `json:"clientId,omitempty"`
+	ClientSecret   string `json:"clientSecret,omitempty"`
+	AuthURL        string `json:"authUrl,omitempty"`
+	TokenURL       string `json:"tokenUrl,omitempty"`
+	IdentifierPath string `json:"identifierPath,omitempty"`
+	EmailPath      string `json:"emailPath,omitempty"`
+	NamePath       string `json:"namePath,omitempty"`
+	Scopes         string `json:"scopes,omitempty"`
+	AutoProvision  bool   `json:"autoProvision,omitempty"`
+	Tags           string `json:"tags,omitempty"`
+}
+
+// CreateIDPResponse is the response from creating an IDP.
+type CreateIDPResponse struct {
+	IDPId       int    `json:"idpId"`
+	RedirectURL string `json:"redirectUrl"`
+}
+
+// CreateIDP creates a new OIDC IDP.
+func (c *Client) CreateIDP(req *CreateIDPRequest) (*CreateIDPResponse, error) {
+	resp, err := c.doRequest("PUT", "/idp/oidc", req)
+	if err != nil {
+		return nil, err
+	}
+	var result CreateIDPResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse IDP response: %w", err)
+	}
+	return &result, nil
+}
+
+// GetIDP retrieves an IDP by ID.
+func (c *Client) GetIDP(idpID int) (*IDP, *IDPOidcConfig, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/idp/%d", idpID), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	var result struct {
+		IDP          IDP          `json:"idp"`
+		IDPOidcConfig IDPOidcConfig `json:"idpOidcConfig"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse IDP: %w", err)
+	}
+	return &result.IDP, &result.IDPOidcConfig, nil
+}
+
+// UpdateIDP updates an OIDC IDP.
+func (c *Client) UpdateIDP(idpID int, req *UpdateIDPRequest) error {
+	_, err := c.doRequest("POST", fmt.Sprintf("/idp/%d/oidc", idpID), req)
+	return err
+}
+
+// DeleteIDP deletes an IDP.
+func (c *Client) DeleteIDP(idpID int) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/idp/%d", idpID), nil)
+	return err
+}
+
+// ListIDPs retrieves all IDPs in the system.
+func (c *Client) ListIDPs() ([]IDP, error) {
+	resp, err := c.doRequest("GET", "/idp", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		IDPs []IDP `json:"idps"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse IDPs: %w", err)
+	}
+	return result.IDPs, nil
+}
+
+// IDPOrgPolicy represents an IDP org mapping policy.
+type IDPOrgPolicy struct {
+	IDPId       int    `json:"idpId"`
+	OrgID       string `json:"orgId"`
+	RoleMapping string `json:"roleMapping"`
+	OrgMapping  string `json:"orgMapping"`
+}
+
+// SetIDPOrgPolicyRequest is the payload for creating/updating an IDP org policy.
+type SetIDPOrgPolicyRequest struct {
+	RoleMapping string `json:"roleMapping,omitempty"`
+	OrgMapping  string `json:"orgMapping,omitempty"`
+}
+
+// CreateIDPOrgPolicy creates an IDP policy for an org.
+func (c *Client) CreateIDPOrgPolicy(idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
+	_, err := c.doRequest("PUT", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
+	return err
+}
+
+// UpdateIDPOrgPolicy updates an IDP policy for an org.
+func (c *Client) UpdateIDPOrgPolicy(idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
+	_, err := c.doRequest("POST", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
+	return err
+}
+
+// DeleteIDPOrgPolicy removes an IDP policy for an org.
+func (c *Client) DeleteIDPOrgPolicy(idpID int, orgID string) error {
+	_, err := c.doRequest("DELETE", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), nil)
+	return err
+}
+
+// GetIDPOrgPolicy retrieves the IDP policy for a specific org (via list + filter).
+func (c *Client) GetIDPOrgPolicy(idpID int, orgID string) (*IDPOrgPolicy, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("/idp/%d/org", idpID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Policies []IDPOrgPolicy `json:"policies"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse IDP org policies: %w", err)
+	}
+	for _, p := range result.Policies {
+		if p.OrgID == orgID {
+			policy := p
+			return &policy, nil
+		}
+	}
+	return nil, fmt.Errorf("IDP org policy for org %s not found", orgID)
+}
+
 // --- Domain ---
 
 // GetDomainByID retrieves a domain by ID (via list + filter).
