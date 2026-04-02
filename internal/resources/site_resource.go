@@ -172,6 +172,10 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 
 	plan.ID = types.Int64Value(int64(siteRes.SiteResourceID))
 	plan.NiceID = types.StringValue(siteRes.NiceID)
+	plan.TCPPortRange = types.StringValue(siteRes.TCPPortRange)
+	plan.UDPPortRange = types.StringValue(siteRes.UDPPortRange)
+	plan.DisableICMP = types.BoolValue(siteRes.DisableICMP)
+	plan.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
 	plan.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
