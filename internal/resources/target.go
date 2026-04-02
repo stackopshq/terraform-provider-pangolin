@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
@@ -81,9 +82,10 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Default:     stringdefault.StaticString("http"),
 			},
 			"enabled": schema.BoolAttribute{
-				Description: "Enable or disable this target.",
+				Description: "Enable or disable this target. Defaults to true.",
 				Optional:    true,
 				Computed:    true,
+				Default:     booldefault.StaticBool(true),
 			},
 		},
 	}
