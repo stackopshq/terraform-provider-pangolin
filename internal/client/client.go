@@ -193,12 +193,20 @@ func (c *Client) ListDomains() ([]Domain, error) {
 
 // Resource represents a Pangolin HTTP resource.
 type Resource struct {
-	ResourceID int    `json:"resourceId"`
-	NiceID     string `json:"niceId"`
-	Name       string `json:"name"`
-	Subdomain  string `json:"subdomain"`
-	FullDomain string `json:"fullDomain"`
-	DomainID   string `json:"domainId"`
+	ResourceID           int     `json:"resourceId"`
+	NiceID               string  `json:"niceId"`
+	Name                 string  `json:"name"`
+	Subdomain            string  `json:"subdomain"`
+	FullDomain           string  `json:"fullDomain"`
+	DomainID             string  `json:"domainId"`
+	SSO                  bool    `json:"sso"`
+	SSL                  bool    `json:"ssl"`
+	Enabled              bool    `json:"enabled"`
+	BlockAccess          bool    `json:"blockAccess"`
+	EmailWhitelistEnabled bool   `json:"emailWhitelistEnabled"`
+	ApplyRules           bool    `json:"applyRules"`
+	StickySession        bool    `json:"stickySession"`
+	TLSServerName        *string `json:"tlsServerName"`
 }
 
 // CreateResourceRequest is the payload for creating an HTTP resource.
@@ -502,8 +510,16 @@ func (c *Client) UpdateSite(siteID int, req *UpdateSiteRequest) (*Site, error) {
 
 // UpdateResourceRequest is the payload for updating an HTTP resource.
 type UpdateResourceRequest struct {
-	Name      string  `json:"name"`
-	Subdomain *string `json:"subdomain,omitempty"`
+	Name                  string  `json:"name"`
+	Subdomain             *string `json:"subdomain,omitempty"`
+	SSO                   *bool   `json:"sso,omitempty"`
+	SSL                   *bool   `json:"ssl,omitempty"`
+	Enabled               *bool   `json:"enabled,omitempty"`
+	BlockAccess           *bool   `json:"blockAccess,omitempty"`
+	EmailWhitelistEnabled *bool   `json:"emailWhitelistEnabled,omitempty"`
+	ApplyRules            *bool   `json:"applyRules,omitempty"`
+	StickySession         *bool   `json:"stickySession,omitempty"`
+	TLSServerName         *string `json:"tlsServerName,omitempty"`
 }
 
 // UpdateResource updates an HTTP resource by ID.

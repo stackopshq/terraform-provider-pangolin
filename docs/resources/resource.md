@@ -20,6 +20,7 @@ resource "pangolin_resource" "example" {
   subdomain = "app"
   domain_id = data.pangolin_domains.all.domains[0].domain_id
   protocol  = "tcp"
+  sso       = false  # public access, no Pangolin authentication
 }
 ```
 
@@ -33,8 +34,16 @@ resource "pangolin_resource" "example" {
 
 ### Optional
 
+- `apply_rules` (Boolean) Enable evaluation of access rules on this resource.
+- `block_access` (Boolean) Block all access to the resource.
+- `email_whitelist_enabled` (Boolean) Enable the email whitelist on this resource.
+- `enabled` (Boolean) Enable or disable the resource.
 - `protocol` (String) The protocol (tcp or udp). Defaults to tcp.
+- `sso` (Boolean) Enable Pangolin SSO authentication on this resource. Set to false to make the resource publicly accessible.
+- `ssl` (Boolean) Enable SSL towards the backend.
+- `sticky_session` (Boolean) Enable sticky sessions (persistent sessions) on this resource.
 - `subdomain` (String) The subdomain for the resource. Set to null to use the base domain.
+- `tls_server_name` (String) TLS server name for the backend. Set to null to clear.
 
 ### Read-Only
 

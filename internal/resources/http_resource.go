@@ -27,13 +27,21 @@ type HTTPResource struct {
 
 // HTTPResourceModel describes the resource data model.
 type HTTPResourceModel struct {
-	ID         types.Int64  `tfsdk:"id"`
-	NiceID     types.String `tfsdk:"nice_id"`
-	Name       types.String `tfsdk:"name"`
-	Subdomain  types.String `tfsdk:"subdomain"`
-	FullDomain types.String `tfsdk:"full_domain"`
-	DomainID   types.String `tfsdk:"domain_id"`
-	Protocol   types.String `tfsdk:"protocol"`
+	ID                    types.Int64  `tfsdk:"id"`
+	NiceID                types.String `tfsdk:"nice_id"`
+	Name                  types.String `tfsdk:"name"`
+	Subdomain             types.String `tfsdk:"subdomain"`
+	FullDomain            types.String `tfsdk:"full_domain"`
+	DomainID              types.String `tfsdk:"domain_id"`
+	Protocol              types.String `tfsdk:"protocol"`
+	SSO                   types.Bool   `tfsdk:"sso"`
+	SSL                   types.Bool   `tfsdk:"ssl"`
+	Enabled               types.Bool   `tfsdk:"enabled"`
+	BlockAccess           types.Bool   `tfsdk:"block_access"`
+	EmailWhitelistEnabled types.Bool   `tfsdk:"email_whitelist_enabled"`
+	ApplyRules            types.Bool   `tfsdk:"apply_rules"`
+	StickySession         types.Bool   `tfsdk:"sticky_session"`
+	TLSServerName         types.String `tfsdk:"tls_server_name"`
 }
 
 // NewHTTPResource returns a new resource factory.
@@ -88,6 +96,46 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Computed:    true,
 				Default:     stringdefault.StaticString("tcp"),
 			},
+			"sso": schema.BoolAttribute{
+				Description: "Enable Pangolin SSO authentication on this resource. Set to false to make the resource publicly accessible.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"ssl": schema.BoolAttribute{
+				Description: "Enable SSL towards the backend.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"enabled": schema.BoolAttribute{
+				Description: "Enable or disable the resource.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"block_access": schema.BoolAttribute{
+				Description: "Block all access to the resource.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"email_whitelist_enabled": schema.BoolAttribute{
+				Description: "Enable the email whitelist on this resource.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"apply_rules": schema.BoolAttribute{
+				Description: "Enable evaluation of access rules on this resource.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"sticky_session": schema.BoolAttribute{
+				Description: "Enable sticky sessions (persistent sessions) on this resource.",
+				Optional:    true,
+				Computed:    true,
+			},
+			"tls_server_name": schema.StringAttribute{
+				Description: "TLS server name for the backend. Set to null to clear.",
+				Optional:    true,
+				Computed:    true,
+			},
 		},
 	}
 }
@@ -117,7 +165,6 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 		DomainID: plan.DomainID.ValueString(),
 		Protocol: plan.Protocol.ValueString(),
 	}
-
 	if !plan.Subdomain.IsNull() && !plan.Subdomain.IsUnknown() {
 		subdomain := plan.Subdomain.ValueString()
 		createReq.Subdomain = &subdomain
@@ -131,8 +178,16 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	plan.ID = types.Int64Value(int64(resource.ResourceID))
 	plan.NiceID = types.StringValue(resource.NiceID)
-	plan.FullDomain = types.StringValue(resource.FullDomain)
 
+	// Apply user-specified settings (sso, ssl, etc.) via update.
+	// buildUpdateRequest reads from plan which still holds the user's intended values.
+	updated, err := r.client.UpdateResource(int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to apply resource settings after creation", err.Error())
+		return
+	}
+
+	plan = applyHTTPResourceResponse(plan, updated)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -149,16 +204,7 @@ func (r *HTTPResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	state.NiceID = types.StringValue(resource.NiceID)
-	state.Name = types.StringValue(resource.Name)
-	state.FullDomain = types.StringValue(resource.FullDomain)
-	state.DomainID = types.StringValue(resource.DomainID)
-	if resource.Subdomain != "" {
-		state.Subdomain = types.StringValue(resource.Subdomain)
-	} else {
-		state.Subdomain = types.StringNull()
-	}
-
+	state = applyHTTPResourceResponse(state, resource)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -169,30 +215,13 @@ func (r *HTTPResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	updateReq := &client.UpdateResourceRequest{
-		Name: plan.Name.ValueString(),
-	}
-	if !plan.Subdomain.IsNull() && !plan.Subdomain.IsUnknown() {
-		subdomain := plan.Subdomain.ValueString()
-		updateReq.Subdomain = &subdomain
-	}
-
-	res, err := r.client.UpdateResource(int(plan.ID.ValueInt64()), updateReq)
+	res, err := r.client.UpdateResource(int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update resource", err.Error())
 		return
 	}
 
-	plan.NiceID = types.StringValue(res.NiceID)
-	plan.Name = types.StringValue(res.Name)
-	plan.FullDomain = types.StringValue(res.FullDomain)
-	plan.DomainID = types.StringValue(res.DomainID)
-	if res.Subdomain != "" {
-		plan.Subdomain = types.StringValue(res.Subdomain)
-	} else {
-		plan.Subdomain = types.StringNull()
-	}
-
+	plan = applyHTTPResourceResponse(plan, res)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -223,18 +252,82 @@ func (r *HTTPResource) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 
-	state := HTTPResourceModel{
-		ID:         types.Int64Value(int64(res.ResourceID)),
-		NiceID:     types.StringValue(res.NiceID),
-		Name:       types.StringValue(res.Name),
-		FullDomain: types.StringValue(res.FullDomain),
-		DomainID:   types.StringValue(res.DomainID),
-	}
-	if res.Subdomain != "" {
-		state.Subdomain = types.StringValue(res.Subdomain)
-	} else {
-		state.Subdomain = types.StringNull()
-	}
-
+	state := HTTPResourceModel{ID: types.Int64Value(int64(res.ResourceID))}
+	state = applyHTTPResourceResponse(state, res)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// buildHTTPResourceUpdateRequest builds an UpdateResourceRequest from the model,
+// sending only fields that the user explicitly set (non-unknown).
+func buildHTTPResourceUpdateRequest(plan HTTPResourceModel) *client.UpdateResourceRequest {
+	req := &client.UpdateResourceRequest{
+		Name: plan.Name.ValueString(),
+	}
+	if !plan.Subdomain.IsNull() && !plan.Subdomain.IsUnknown() {
+		s := plan.Subdomain.ValueString()
+		req.Subdomain = &s
+	}
+	if !plan.SSO.IsUnknown() {
+		v := plan.SSO.ValueBool()
+		req.SSO = &v
+	}
+	if !plan.SSL.IsUnknown() {
+		v := plan.SSL.ValueBool()
+		req.SSL = &v
+	}
+	if !plan.Enabled.IsUnknown() {
+		v := plan.Enabled.ValueBool()
+		req.Enabled = &v
+	}
+	if !plan.BlockAccess.IsUnknown() {
+		v := plan.BlockAccess.ValueBool()
+		req.BlockAccess = &v
+	}
+	if !plan.EmailWhitelistEnabled.IsUnknown() {
+		v := plan.EmailWhitelistEnabled.ValueBool()
+		req.EmailWhitelistEnabled = &v
+	}
+	if !plan.ApplyRules.IsUnknown() {
+		v := plan.ApplyRules.ValueBool()
+		req.ApplyRules = &v
+	}
+	if !plan.StickySession.IsUnknown() {
+		v := plan.StickySession.ValueBool()
+		req.StickySession = &v
+	}
+	if !plan.TLSServerName.IsUnknown() {
+		if plan.TLSServerName.IsNull() {
+			req.TLSServerName = nil
+		} else {
+			s := plan.TLSServerName.ValueString()
+			req.TLSServerName = &s
+		}
+	}
+	return req
+}
+
+// applyHTTPResourceResponse copies API response fields into the model.
+func applyHTTPResourceResponse(m HTTPResourceModel, res *client.Resource) HTTPResourceModel {
+	m.NiceID = types.StringValue(res.NiceID)
+	m.Name = types.StringValue(res.Name)
+	m.FullDomain = types.StringValue(res.FullDomain)
+	m.DomainID = types.StringValue(res.DomainID)
+	if res.Subdomain != "" {
+		m.Subdomain = types.StringValue(res.Subdomain)
+	} else {
+		m.Subdomain = types.StringNull()
+	}
+	m.SSO = types.BoolValue(res.SSO)
+	m.SSL = types.BoolValue(res.SSL)
+	m.Enabled = types.BoolValue(res.Enabled)
+	m.BlockAccess = types.BoolValue(res.BlockAccess)
+	m.EmailWhitelistEnabled = types.BoolValue(res.EmailWhitelistEnabled)
+	m.ApplyRules = types.BoolValue(res.ApplyRules)
+	m.StickySession = types.BoolValue(res.StickySession)
+	if res.TLSServerName != nil {
+		m.TLSServerName = types.StringValue(*res.TLSServerName)
+	} else {
+		m.TLSServerName = types.StringNull()
+	}
+	return m
 }
