@@ -18,8 +18,9 @@ type UsersDataSource struct {
 
 // UserModel describes a single user in the data source.
 type UserModel struct {
-	ID    types.String `tfsdk:"id"`
-	Email types.String `tfsdk:"email"`
+	ID       types.String `tfsdk:"id"`
+	Email    types.String `tfsdk:"email"`
+	Username types.String `tfsdk:"username"`
 }
 
 // UsersDataSourceModel describes the data source data model.
@@ -53,6 +54,10 @@ func (d *UsersDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 							Description: "The user email address.",
 							Computed:    true,
 						},
+						"username": schema.StringAttribute{
+							Description: "The username.",
+							Computed:    true,
+						},
 					},
 				},
 			},
@@ -82,8 +87,9 @@ func (d *UsersDataSource) Read(ctx context.Context, _ datasource.ReadRequest, re
 	state := UsersDataSourceModel{Users: []UserModel{}}
 	for _, user := range users {
 		state.Users = append(state.Users, UserModel{
-			ID:    types.StringValue(user.ID),
-			Email: types.StringValue(user.Email),
+			ID:       types.StringValue(user.ID),
+			Email:    types.StringValue(user.Email),
+			Username: types.StringValue(user.Username),
 		})
 	}
 
