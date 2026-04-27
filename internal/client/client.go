@@ -3,12 +3,19 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ErrNotFound is returned by client methods when the requested resource does
+// not exist on the Pangolin API (HTTP 404 or list-and-filter miss). Callers
+// should test with errors.Is(err, client.ErrNotFound) to drive Terraform state
+// removal in Read methods.
+var ErrNotFound = errors.New("pangolin: resource not found")
 
 // Client is the Pangolin API client.
 type Client struct {
@@ -65,7 +72,7 @@ func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse,
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -77,6 +84,9 @@ func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse,
 		return nil, fmt.Errorf("failed to parse response (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		return &apiResp, fmt.Errorf("API error (status 404): %s: %w", apiResp.Message, ErrNotFound)
+	}
 	if apiResp.Error || resp.StatusCode >= 400 {
 		return &apiResp, fmt.Errorf("API error (status %d): %s", resp.StatusCode, apiResp.Message)
 	}
@@ -195,20 +205,20 @@ func (c *Client) ListDomains() ([]Domain, error) {
 
 // Resource represents a Pangolin HTTP resource.
 type Resource struct {
-	ResourceID           int     `json:"resourceId"`
-	NiceID               string  `json:"niceId"`
-	Name                 string  `json:"name"`
-	Subdomain            string  `json:"subdomain"`
-	FullDomain           string  `json:"fullDomain"`
-	DomainID             string  `json:"domainId"`
-	SSO                  bool    `json:"sso"`
-	SSL                  bool    `json:"ssl"`
-	Enabled              bool    `json:"enabled"`
-	BlockAccess          bool    `json:"blockAccess"`
-	EmailWhitelistEnabled bool   `json:"emailWhitelistEnabled"`
-	ApplyRules           bool    `json:"applyRules"`
-	StickySession        bool    `json:"stickySession"`
-	TLSServerName        *string `json:"tlsServerName"`
+	ResourceID            int     `json:"resourceId"`
+	NiceID                string  `json:"niceId"`
+	Name                  string  `json:"name"`
+	Subdomain             string  `json:"subdomain"`
+	FullDomain            string  `json:"fullDomain"`
+	DomainID              string  `json:"domainId"`
+	SSO                   bool    `json:"sso"`
+	SSL                   bool    `json:"ssl"`
+	Enabled               bool    `json:"enabled"`
+	BlockAccess           bool    `json:"blockAccess"`
+	EmailWhitelistEnabled bool    `json:"emailWhitelistEnabled"`
+	ApplyRules            bool    `json:"applyRules"`
+	StickySession         bool    `json:"stickySession"`
+	TLSServerName         *string `json:"tlsServerName"`
 }
 
 // CreateResourceRequest is the payload for creating an HTTP resource.
@@ -393,7 +403,7 @@ func (c *Client) GetSiteResource(siteResourceID int) (*SiteResource, error) {
 			return &s, nil
 		}
 	}
-	return nil, fmt.Errorf("site resource %d not found", siteResourceID)
+	return nil, fmt.Errorf("site resource %d: %w", siteResourceID, ErrNotFound)
 }
 
 // DeleteSiteResource deletes a site resource by ID.
@@ -656,7 +666,7 @@ func (c *Client) GetRoleByID(roleID int) (*Role, error) {
 			return &r, nil
 		}
 	}
-	return nil, fmt.Errorf("role %d not found", roleID)
+	return nil, fmt.Errorf("role %d: %w", roleID, ErrNotFound)
 }
 
 // UpdateRoleRequest is the payload for updating a role.
@@ -743,7 +753,7 @@ func (c *Client) GetAPIKeyByID(apiKeyID string) (*APIKey, error) {
 			return &k, nil
 		}
 	}
-	return nil, fmt.Errorf("API key %s not found", apiKeyID)
+	return nil, fmt.Errorf("API key %s: %w", apiKeyID, ErrNotFound)
 }
 
 // DeleteAPIKey deletes an API key by ID.
@@ -1104,13 +1114,13 @@ func (c *Client) DeleteUser(userID string) error {
 
 // IDP represents a Pangolin Identity Provider.
 type IDP struct {
-	IDPId               int    `json:"idpId"`
-	Name                string `json:"name"`
-	Type                string `json:"type"`
-	AutoProvision       bool   `json:"autoProvision"`
-	Tags                string `json:"tags"`
-	DefaultRoleMapping  string `json:"defaultRoleMapping"`
-	DefaultOrgMapping   string `json:"defaultOrgMapping"`
+	IDPId              int    `json:"idpId"`
+	Name               string `json:"name"`
+	Type               string `json:"type"`
+	AutoProvision      bool   `json:"autoProvision"`
+	Tags               string `json:"tags"`
+	DefaultRoleMapping string `json:"defaultRoleMapping"`
+	DefaultOrgMapping  string `json:"defaultOrgMapping"`
 }
 
 // IDPOidcConfig represents the OIDC configuration of an IDP.
@@ -1181,7 +1191,7 @@ func (c *Client) GetIDP(idpID int) (*IDP, *IDPOidcConfig, error) {
 		return nil, nil, err
 	}
 	var result struct {
-		IDP          IDP          `json:"idp"`
+		IDP           IDP           `json:"idp"`
 		IDPOidcConfig IDPOidcConfig `json:"idpOidcConfig"`
 	}
 	if err := json.Unmarshal(resp.Data, &result); err != nil {
@@ -1267,7 +1277,7 @@ func (c *Client) GetIDPOrgPolicy(idpID int, orgID string) (*IDPOrgPolicy, error)
 			return &policy, nil
 		}
 	}
-	return nil, fmt.Errorf("IDP org policy for org %s not found", orgID)
+	return nil, fmt.Errorf("IDP org policy for org %s: %w", orgID, ErrNotFound)
 }
 
 // --- Domain ---
@@ -1284,7 +1294,7 @@ func (c *Client) GetDomainByID(domainID string) (*Domain, error) {
 			return &domain, nil
 		}
 	}
-	return nil, fmt.Errorf("domain %s not found", domainID)
+	return nil, fmt.Errorf("domain %s: %w", domainID, ErrNotFound)
 }
 
 // --- Resource Rules ---
@@ -1340,7 +1350,7 @@ func (c *Client) GetResourceRule(resourceID, ruleID int) (*ResourceRule, error) 
 			return &rule, nil
 		}
 	}
-	return nil, fmt.Errorf("resource rule %d not found", ruleID)
+	return nil, fmt.Errorf("resource rule %d: %w", ruleID, ErrNotFound)
 }
 
 // UpdateResourceRule updates an existing resource rule.
@@ -1400,7 +1410,7 @@ func (c *Client) GetResourceAuthState(resourceID int) (*ResourceAuthState, error
 			}, nil
 		}
 	}
-	return nil, fmt.Errorf("resource %d not found", resourceID)
+	return nil, fmt.Errorf("resource %d: %w", resourceID, ErrNotFound)
 }
 
 // SetResourcePassword sets or clears the password for a resource.
@@ -1431,4 +1441,3 @@ func (c *Client) SetResourceHeaderAuth(resourceID int, req *SetResourceHeaderAut
 	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/header-auth", resourceID), req)
 	return err
 }
-
