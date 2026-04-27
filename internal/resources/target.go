@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
@@ -71,16 +74,25 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"ip": schema.StringAttribute{
 				Description: "The IP address or hostname of the target (e.g. 'localhost', '10.0.0.1').",
 				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+				},
 			},
 			"port": schema.Int64Attribute{
 				Description: "The port of the target.",
 				Required:    true,
+				Validators: []validator.Int64{
+					int64validator.Between(1, 65535),
+				},
 			},
 			"method": schema.StringAttribute{
 				Description: "The method (http or https). Defaults to http.",
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("http"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("http", "https"),
+				},
 			},
 			"enabled": schema.BoolAttribute{
 				Description: "Enable or disable this target. Defaults to true.",
