@@ -113,9 +113,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		return nil, fmt.Errorf("failed to parse response (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
-	if resp.StatusCode == http.StatusNotFound {
-		return &apiResp, fmt.Errorf("API error (status 404): %s: %w", apiResp.Message, ErrNotFound)
-	}
 	if apiResp.Error || resp.StatusCode >= 400 {
 		return &apiResp, classifyError(resp.StatusCode, apiResp.Message)
 	}
@@ -124,10 +121,13 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 }
 
 // classifyError maps an HTTP status code to a wrapped sentinel error so
-// callers can distinguish auth, permission, and server failures with
-// errors.Is. Unknown status codes fall through to a plain error.
+// callers can distinguish missing resources, auth failures, permission
+// failures and retryable server errors with errors.Is. Unknown status
+// codes fall through to a plain error.
 func classifyError(status int, message string) error {
 	switch {
+	case status == http.StatusNotFound:
+		return fmt.Errorf("API error (status 404): %s: %w", message, ErrNotFound)
 	case status == http.StatusUnauthorized:
 		return fmt.Errorf("API error (status 401): %s: %w", message, ErrUnauthorized)
 	case status == http.StatusForbidden:
