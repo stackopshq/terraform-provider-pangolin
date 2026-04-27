@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -120,6 +121,10 @@ func (r *IDPOrgResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	policy, err := r.client.GetIDPOrgPolicy(int(state.IDPId.ValueInt64()), state.OrgID.ValueString())
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read IDP org policy", err.Error())
 		return
 	}

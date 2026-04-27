@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -140,6 +141,10 @@ func (r *OLMClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	olmClient, err := r.client.GetOLMClient(int(state.ID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read OLM client", err.Error())
 		return
 	}

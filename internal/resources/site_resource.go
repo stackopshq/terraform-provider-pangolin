@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -190,6 +191,10 @@ func (r *SitePrivateResource) Read(ctx context.Context, req resource.ReadRequest
 
 	siteRes, err := r.client.GetSiteResource(int(state.ID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read site resource", err.Error())
 		return
 	}

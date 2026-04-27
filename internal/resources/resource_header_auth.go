@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -113,6 +114,10 @@ func (r *ResourceHeaderAuthResource) Read(ctx context.Context, req resource.Read
 
 	authState, err := r.client.GetResourceAuthState(int(state.ResourceID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read resource auth state", err.Error())
 		return
 	}

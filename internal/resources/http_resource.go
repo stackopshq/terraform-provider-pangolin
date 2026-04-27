@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -200,6 +201,10 @@ func (r *HTTPResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	resource, err := r.client.GetResource(int(state.ID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read resource", err.Error())
 		return
 	}
