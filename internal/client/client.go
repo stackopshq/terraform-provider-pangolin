@@ -3,6 +3,8 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,9 +54,29 @@ type APIResponse struct {
 	Status  int             `json:"status"`
 }
 
+// Option configures optional Client behaviors at construction time.
+type Option func(*Client)
+
+// WithCAPool installs a custom certificate pool used by the HTTP transport
+// to verify the Pangolin server's TLS certificate. Use this when the
+// Pangolin instance is served by a private or self-signed CA.
+func WithCAPool(pool *x509.CertPool) Option {
+	return func(c *Client) {
+		c.tlsConfig().RootCAs = pool
+	}
+}
+
+// WithInsecureTLS disables TLS certificate verification. Intended for
+// local debugging only — never use against a production Pangolin.
+func WithInsecureTLS() Option {
+	return func(c *Client) {
+		c.tlsConfig().InsecureSkipVerify = true
+	}
+}
+
 // NewClient creates a new Pangolin API client.
-func NewClient(baseURL, apiKey, orgID string) *Client {
-	return &Client{
+func NewClient(baseURL, apiKey, orgID string, opts ...Option) *Client {
+	c := &Client{
 		BaseURL: strings.TrimRight(baseURL, "/"),
 		APIKey:  apiKey,
 		OrgID:   orgID,
@@ -62,6 +84,24 @@ func NewClient(baseURL, apiKey, orgID string) *Client {
 			Timeout: 30 * time.Second,
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// tlsConfig returns the *tls.Config of the Client's HTTP transport,
+// lazily cloning the default transport on first use so we don't share
+// mutable state with http.DefaultTransport.
+func (c *Client) tlsConfig() *tls.Config {
+	if c.HTTPClient.Transport == nil {
+		c.HTTPClient.Transport = http.DefaultTransport.(*http.Transport).Clone()
+	}
+	tr := c.HTTPClient.Transport.(*http.Transport)
+	if tr.TLSClientConfig == nil {
+		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return tr.TLSClientConfig
 }
 
 // doRequest performs an HTTP request and returns the parsed API response.

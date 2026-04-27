@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net/http"
@@ -250,6 +252,64 @@ func TestGetSiteResource_NotInListReturnsErrNotFound(t *testing.T) {
 	_, err := c.GetSiteResource(context.Background(), 999)
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// startTLSServer spins up an httptest TLS server with a self-signed cert
+// and returns it together with the cert encoded as PEM (for use with
+// WithCAPool).
+func startTLSServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, []byte) {
+	t.Helper()
+	srv := httptest.NewTLSServer(handler)
+	t.Cleanup(srv.Close)
+	cert := srv.Certificate()
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	return srv, pemBytes
+}
+
+func TestNewClient_TLSWithCAPool(t *testing.T) {
+	srv, pemBytes := startTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		t.Fatal("failed to append test cert to pool")
+	}
+	c := NewClient(srv.URL, "test-key", "test-org", WithCAPool(pool))
+
+	if _, err := c.doRequest(context.Background(), "GET", "/x", nil); err != nil {
+		t.Errorf("doRequest with CA pool: %v", err)
+	}
+}
+
+func TestNewClient_TLSWithoutCAPoolFails(t *testing.T) {
+	srv, _ := startTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+
+	c := NewClient(srv.URL, "test-key", "test-org")
+	_, err := c.doRequest(context.Background(), "GET", "/x", nil)
+	if err == nil {
+		t.Fatal("expected TLS verification failure without trusted CA")
+	}
+	// Avoid asserting on the exact error string — Go's TLS error wording
+	// differs across versions. Anything that mentions certificate or x509
+	// is good enough to confirm we tripped on verification.
+	msg := err.Error()
+	if !strings.Contains(msg, "certificate") && !strings.Contains(msg, "x509") {
+		t.Errorf("error %q does not look like a TLS verification failure", msg)
+	}
+}
+
+func TestNewClient_WithInsecureTLS(t *testing.T) {
+	srv, _ := startTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+
+	c := NewClient(srv.URL, "test-key", "test-org", WithInsecureTLS())
+	if _, err := c.doRequest(context.Background(), "GET", "/x", nil); err != nil {
+		t.Errorf("doRequest with InsecureTLS: %v", err)
 	}
 }
 

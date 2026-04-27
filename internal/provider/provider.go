@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"crypto/x509"
 	"os"
+	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -23,9 +25,11 @@ type PangolinProvider struct {
 
 // PangolinProviderModel describes the provider data model.
 type PangolinProviderModel struct {
-	URL    types.String `tfsdk:"url"`
-	APIKey types.String `tfsdk:"api_key"`
-	OrgID  types.String `tfsdk:"org_id"`
+	URL         types.String `tfsdk:"url"`
+	APIKey      types.String `tfsdk:"api_key"`
+	OrgID       types.String `tfsdk:"org_id"`
+	CACertPEM   types.String `tfsdk:"ca_cert_pem"`
+	TLSInsecure types.Bool   `tfsdk:"tls_insecure"`
 }
 
 // New returns a new provider factory function.
@@ -59,6 +63,14 @@ func (p *PangolinProvider) Schema(_ context.Context, _ provider.SchemaRequest, r
 				Description: "The organization ID. Can be set via PANGOLIN_ORG_ID env var.",
 				Optional:    true,
 			},
+			"ca_cert_pem": schema.StringAttribute{
+				Description: "PEM-encoded CA certificate(s) used to verify the Pangolin server's TLS certificate. Set this when the Pangolin instance is served by a private or self-signed CA. Multiple certificates may be concatenated. Can be set via PANGOLIN_CA_CERT_PEM env var.",
+				Optional:    true,
+			},
+			"tls_insecure": schema.BoolAttribute{
+				Description: "Skip TLS certificate verification entirely. Intended for local debugging only — never use against production. Can be set via PANGOLIN_TLS_INSECURE env var.",
+				Optional:    true,
+			},
 		},
 	}
 }
@@ -74,6 +86,8 @@ func (p *PangolinProvider) Configure(ctx context.Context, req provider.Configure
 	url := resolveString(config.URL, "PANGOLIN_URL")
 	apiKey := resolveString(config.APIKey, "PANGOLIN_API_KEY")
 	orgID := resolveString(config.OrgID, "PANGOLIN_ORG_ID")
+	caCertPEM := resolveString(config.CACertPEM, "PANGOLIN_CA_CERT_PEM")
+	tlsInsecure := resolveBool(config.TLSInsecure, "PANGOLIN_TLS_INSECURE")
 
 	if url == "" {
 		resp.Diagnostics.AddError("Missing URL", "The Pangolin API URL must be set via the 'url' attribute or PANGOLIN_URL environment variable.")
@@ -88,7 +102,27 @@ func (p *PangolinProvider) Configure(ctx context.Context, req provider.Configure
 		return
 	}
 
-	c := client.NewClient(url, apiKey, orgID)
+	var opts []client.Option
+	if caCertPEM != "" {
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM([]byte(caCertPEM)) {
+			resp.Diagnostics.AddError(
+				"Invalid CA certificate",
+				"The 'ca_cert_pem' attribute (or PANGOLIN_CA_CERT_PEM env var) does not contain any valid PEM-encoded certificate.",
+			)
+			return
+		}
+		opts = append(opts, client.WithCAPool(pool))
+	}
+	if tlsInsecure {
+		resp.Diagnostics.AddWarning(
+			"TLS verification disabled",
+			"'tls_insecure' is enabled — TLS certificate verification is being skipped for every Pangolin API call. Do not use this against a production instance.",
+		)
+		opts = append(opts, client.WithInsecureTLS())
+	}
+
+	c := client.NewClient(url, apiKey, orgID, opts...)
 
 	resp.DataSourceData = c
 	resp.ResourceData = c
@@ -140,4 +174,22 @@ func resolveString(val types.String, envKey string) string {
 		return val.ValueString()
 	}
 	return os.Getenv(envKey)
+}
+
+// resolveBool returns the config value if set, otherwise parses the named
+// environment variable. Unparseable env values are treated as false so a
+// stray "yes" or empty string never silently disables TLS verification.
+func resolveBool(val types.Bool, envKey string) bool {
+	if !val.IsNull() && !val.IsUnknown() {
+		return val.ValueBool()
+	}
+	raw := os.Getenv(envKey)
+	if raw == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false
+	}
+	return parsed
 }
