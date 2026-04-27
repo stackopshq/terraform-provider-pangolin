@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -16,7 +17,7 @@ import (
 )
 
 var (
-	_ resource.Resource              = &SiteResource{}
+	_ resource.Resource                = &SiteResource{}
 	_ resource.ResourceWithImportState = &SiteResource{}
 )
 
@@ -27,12 +28,12 @@ type SiteResource struct {
 
 // SiteResourceModel describes the resource data model.
 type SiteResourceModel struct {
-	ID         types.Int64  `tfsdk:"id"`
-	NiceID     types.String `tfsdk:"nice_id"`
-	Name       types.String `tfsdk:"name"`
-	Type       types.String `tfsdk:"type"`
-	Online     types.Bool   `tfsdk:"online"`
-	Address    types.String `tfsdk:"address"`
+	ID                  types.Int64  `tfsdk:"id"`
+	NiceID              types.String `tfsdk:"nice_id"`
+	Name                types.String `tfsdk:"name"`
+	Type                types.String `tfsdk:"type"`
+	Online              types.Bool   `tfsdk:"online"`
+	Address             types.String `tfsdk:"address"`
 	NewtID              types.String `tfsdk:"newt_id"`
 	NewtSecret          types.String `tfsdk:"newt_secret"`
 	DockerSocketEnabled types.Bool   `tfsdk:"docker_socket_enabled"`
@@ -171,6 +172,10 @@ func (r *SiteResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	site, err := r.client.GetSite(int(state.ID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read site", err.Error())
 		return
 	}

@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -118,6 +119,10 @@ func (r *OrgResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 
 	org, err := r.client.GetOrg(state.OrgID.ValueString())
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read org", err.Error())
 		return
 	}

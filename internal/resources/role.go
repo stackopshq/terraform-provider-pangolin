@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -114,6 +115,10 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	role, err := r.client.GetRoleByID(int(state.ID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}

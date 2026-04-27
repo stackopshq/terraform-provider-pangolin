@@ -1,8 +1,11 @@
 module github.com/stackopshq/terraform-provider-pangolin
 
-go 1.26.1
+go 1.25.0
 
-require github.com/hashicorp/terraform-plugin-framework v1.19.0
+require (
+	github.com/hashicorp/terraform-plugin-docs v0.24.0
+	github.com/hashicorp/terraform-plugin-framework v1.19.0
+)
 
 require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
@@ -32,7 +35,6 @@ require (
 	github.com/hashicorp/hc-install v0.9.2 // indirect
 	github.com/hashicorp/terraform-exec v0.24.0 // indirect
 	github.com/hashicorp/terraform-json v0.27.2 // indirect
-	github.com/hashicorp/terraform-plugin-docs v0.24.0 // indirect
 	github.com/hashicorp/terraform-plugin-go v0.31.0 // indirect
 	github.com/hashicorp/terraform-plugin-log v0.10.0 // indirect
 	github.com/hashicorp/terraform-registry-address v0.4.0 // indirect

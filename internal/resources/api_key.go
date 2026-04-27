@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -110,6 +111,10 @@ func (r *APIKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	apiKey, err := r.client.GetAPIKeyByID(state.ID.ValueString())
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read API key", err.Error())
 		return
 	}

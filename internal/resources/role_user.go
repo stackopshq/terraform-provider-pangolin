@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,7 +20,7 @@ var (
 	_ resource.ResourceWithImportState = &RoleUserResource{}
 )
 
-// RoleUserResource manages the assignment of a user to an organisation role.
+// RoleUserResource manages the assignment of a user to an organization role.
 type RoleUserResource struct {
 	client *client.Client
 }
@@ -41,7 +42,7 @@ func (r *RoleUserResource) Metadata(_ context.Context, req resource.MetadataRequ
 
 func (r *RoleUserResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Assigns a user to a Pangolin organisation role.",
+		Description: "Assigns a user to a Pangolin organization role.",
 		Attributes: map[string]schema.Attribute{
 			"role_id": schema.StringAttribute{
 				Description: "The ID of the role.",
@@ -109,6 +110,10 @@ func (r *RoleUserResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	users, err := r.client.ListRoleUsers(roleID)
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read role users", err.Error())
 		return
 	}

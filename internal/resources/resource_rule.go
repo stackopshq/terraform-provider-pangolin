@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -139,6 +140,10 @@ func (r *ResourceRuleResource) Read(ctx context.Context, req resource.ReadReques
 
 	rule, err := r.client.GetResourceRule(int(state.ResourceID.ValueInt64()), int(state.ID.ValueInt64()))
 	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Failed to read resource rule", err.Error())
 		return
 	}

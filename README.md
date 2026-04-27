@@ -10,7 +10,7 @@ The **Pangolin** Terraform provider lets you manage [Pangolin](https://github.co
 
 - [Terraform](https://www.terraform.io/) >= 1.0 or [OpenTofu](https://opentofu.org/) >= 1.6
 - A Pangolin self-hosted instance with the [Integration API](https://docs.pangolin.net/self-host/advanced/integration-api) enabled
-- Go >= 1.21 (only for building from source)
+- Go >= 1.25 (only for building from source — required by `terraform-plugin-framework`)
 
 ## Usage
 
