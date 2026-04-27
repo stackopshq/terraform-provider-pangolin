@@ -7,11 +7,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
@@ -67,18 +70,30 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 			"action": schema.StringAttribute{
 				Description: "The rule action: ACCEPT, DROP, or PASS.",
 				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("ACCEPT", "DROP", "PASS"),
+				},
 			},
 			"match": schema.StringAttribute{
 				Description: "The match type: CIDR, IP, PATH, COUNTRY, or ASN.",
 				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "ASN"),
+				},
 			},
 			"value": schema.StringAttribute{
 				Description: "The value to match against (e.g. CIDR range, IP, path prefix, country code, ASN).",
 				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+				},
 			},
 			"priority": schema.Int64Attribute{
 				Description: "The rule priority (lower number = higher priority).",
 				Required:    true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			"enabled": schema.BoolAttribute{
 				Description: "Whether the rule is enabled. Defaults to true.",

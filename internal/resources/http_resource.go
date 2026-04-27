@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"strconv"
 
+	"regexp"
+
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
@@ -75,10 +79,21 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"name": schema.StringAttribute{
 				Description: "The name of the resource.",
 				Required:    true,
+				Validators: []validator.String{
+					stringvalidator.LengthAtLeast(1),
+				},
 			},
 			"subdomain": schema.StringAttribute{
 				Description: "The subdomain for the resource. Set to null to use the base domain.",
 				Optional:    true,
+				Validators: []validator.String{
+					// RFC 1123 label: lowercase letters, digits, hyphens; cannot
+					// start or end with a hyphen; max 63 characters.
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+						"must be a valid DNS label (lowercase letters, digits and hyphens; cannot start or end with a hyphen)",
+					),
+				},
 			},
 			"full_domain": schema.StringAttribute{
 				Description: "The full domain of the resource (computed).",
@@ -96,6 +111,9 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("tcp"),
+				Validators: []validator.String{
+					stringvalidator.OneOf("tcp", "udp"),
+				},
 			},
 			"sso": schema.BoolAttribute{
 				Description: "Enable Pangolin SSO authentication on this resource. Set to false to make the resource publicly accessible.",
