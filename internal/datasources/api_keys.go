@@ -73,7 +73,7 @@ func (d *APIKeysDataSource) Configure(_ context.Context, req datasource.Configur
 }
 
 func (d *APIKeysDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	apiKeys, err := d.client.ListAPIKeys()
+	apiKeys, err := d.client.ListAPIKeys(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list API keys", err.Error())
 		return

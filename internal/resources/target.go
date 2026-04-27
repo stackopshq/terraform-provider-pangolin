@@ -111,7 +111,7 @@ func (r *TargetResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	target, err := r.client.CreateTarget(int(plan.ResourceID.ValueInt64()), &client.CreateTargetRequest{
+	target, err := r.client.CreateTarget(ctx, int(plan.ResourceID.ValueInt64()), &client.CreateTargetRequest{
 		IP:     plan.IP.ValueString(),
 		Port:   int(plan.Port.ValueInt64()),
 		Method: plan.Method.ValueString(),
@@ -135,7 +135,7 @@ func (r *TargetResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	target, err := r.client.GetTarget(int(state.ID.ValueInt64()))
+	target, err := r.client.GetTarget(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -162,7 +162,7 @@ func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	target, err := r.client.UpdateTarget(int(plan.ID.ValueInt64()), &client.UpdateTargetRequest{
+	target, err := r.client.UpdateTarget(ctx, int(plan.ID.ValueInt64()), &client.UpdateTargetRequest{
 		IP:      plan.IP.ValueString(),
 		Port:    int(plan.Port.ValueInt64()),
 		Method:  plan.Method.ValueString(),
@@ -190,7 +190,7 @@ func (r *TargetResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	err := r.client.DeleteTarget(int(state.ID.ValueInt64()))
+	err := r.client.DeleteTarget(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete target", err.Error())
 		return
@@ -204,7 +204,7 @@ func (r *TargetResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 
-	target, err := r.client.GetTarget(int(id))
+	target, err := r.client.GetTarget(ctx, int(id))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import target", err.Error())
 		return

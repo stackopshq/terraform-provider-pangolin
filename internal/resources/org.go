@@ -91,7 +91,7 @@ func (r *OrgResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
-	org, err := r.client.CreateOrg(&client.CreateOrgRequest{
+	org, err := r.client.CreateOrg(ctx, &client.CreateOrgRequest{
 		OrgID:         plan.OrgID.ValueString(),
 		Name:          plan.Name.ValueString(),
 		Subnet:        plan.Subnet.ValueString(),
@@ -117,7 +117,7 @@ func (r *OrgResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 		return
 	}
 
-	org, err := r.client.GetOrg(state.OrgID.ValueString())
+	org, err := r.client.GetOrg(ctx, state.OrgID.ValueString())
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -141,7 +141,7 @@ func (r *OrgResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 
-	org, err := r.client.UpdateOrg(plan.OrgID.ValueString(), &client.UpdateOrgRequest{
+	org, err := r.client.UpdateOrg(ctx, plan.OrgID.ValueString(), &client.UpdateOrgRequest{
 		Name: plan.Name.ValueString(),
 	})
 	if err != nil {
@@ -163,7 +163,7 @@ func (r *OrgResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 		return
 	}
 
-	err := r.client.DeleteOrg(state.OrgID.ValueString())
+	err := r.client.DeleteOrg(ctx, state.OrgID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete org", err.Error())
 		return
@@ -171,7 +171,7 @@ func (r *OrgResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 }
 
 func (r *OrgResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	org, err := r.client.GetOrg(req.ID)
+	org, err := r.client.GetOrg(ctx, req.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import org", err.Error())
 		return

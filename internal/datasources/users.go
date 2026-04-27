@@ -78,7 +78,7 @@ func (d *UsersDataSource) Configure(_ context.Context, req datasource.ConfigureR
 }
 
 func (d *UsersDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	users, err := d.client.ListUsers()
+	users, err := d.client.ListUsers(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list users", err.Error())
 		return

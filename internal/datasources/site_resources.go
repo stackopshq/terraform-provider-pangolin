@@ -87,7 +87,7 @@ func (d *SiteResourcesDataSource) Configure(_ context.Context, req datasource.Co
 }
 
 func (d *SiteResourcesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	siteResources, err := d.client.ListSiteResources()
+	siteResources, err := d.client.ListSiteResources(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list site resources", err.Error())
 		return

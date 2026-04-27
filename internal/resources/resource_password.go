@@ -79,7 +79,7 @@ func (r *ResourcePasswordResource) Create(ctx context.Context, req resource.Crea
 	}
 
 	pw := plan.Password.ValueString()
-	if err := r.client.SetResourcePassword(int(plan.ResourceID.ValueInt64()), &pw); err != nil {
+	if err := r.client.SetResourcePassword(ctx, int(plan.ResourceID.ValueInt64()), &pw); err != nil {
 		resp.Diagnostics.AddError("Failed to set resource password", err.Error())
 		return
 	}
@@ -94,7 +94,7 @@ func (r *ResourcePasswordResource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	authState, err := r.client.GetResourceAuthState(int(state.ResourceID.ValueInt64()))
+	authState, err := r.client.GetResourceAuthState(ctx, int(state.ResourceID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -122,7 +122,7 @@ func (r *ResourcePasswordResource) Update(ctx context.Context, req resource.Upda
 	}
 
 	pw := plan.Password.ValueString()
-	if err := r.client.SetResourcePassword(int(plan.ResourceID.ValueInt64()), &pw); err != nil {
+	if err := r.client.SetResourcePassword(ctx, int(plan.ResourceID.ValueInt64()), &pw); err != nil {
 		resp.Diagnostics.AddError("Failed to update resource password", err.Error())
 		return
 	}
@@ -137,7 +137,7 @@ func (r *ResourcePasswordResource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	if err := r.client.SetResourcePassword(int(state.ResourceID.ValueInt64()), nil); err != nil {
+	if err := r.client.SetResourcePassword(ctx, int(state.ResourceID.ValueInt64()), nil); err != nil {
 		resp.Diagnostics.AddError("Failed to remove resource password", err.Error())
 		return
 	}
@@ -150,7 +150,7 @@ func (r *ResourcePasswordResource) ImportState(ctx context.Context, req resource
 		return
 	}
 
-	authState, err := r.client.GetResourceAuthState(int(resourceID))
+	authState, err := r.client.GetResourceAuthState(ctx, int(resourceID))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import resource password", err.Error())
 		return

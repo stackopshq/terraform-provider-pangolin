@@ -87,7 +87,7 @@ func (r *RoleUserResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	if err := r.client.AddUserToRole(roleID, plan.UserID.ValueString()); err != nil {
+	if err := r.client.AddUserToRole(ctx, roleID, plan.UserID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Failed to assign user to role", err.Error())
 		return
 	}
@@ -108,7 +108,7 @@ func (r *RoleUserResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	users, err := r.client.ListRoleUsers(roleID)
+	users, err := r.client.ListRoleUsers(ctx, roleID)
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -146,7 +146,7 @@ func (r *RoleUserResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	if err := r.client.RemoveUserFromRole(roleID, state.UserID.ValueString()); err != nil {
+	if err := r.client.RemoveUserFromRole(ctx, roleID, state.UserID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Failed to remove user from role", err.Error())
 		return
 	}

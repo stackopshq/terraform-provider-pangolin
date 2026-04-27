@@ -93,7 +93,7 @@ func (d *HTTPResourcesDataSource) Configure(_ context.Context, req datasource.Co
 }
 
 func (d *HTTPResourcesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	resources, err := d.client.ListResources()
+	resources, err := d.client.ListResources(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list resources", err.Error())
 		return

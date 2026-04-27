@@ -109,7 +109,7 @@ func (r *ResourceRuleResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	rule, err := r.client.CreateResourceRule(int(plan.ResourceID.ValueInt64()), &client.SetResourceRuleRequest{
+	rule, err := r.client.CreateResourceRule(ctx, int(plan.ResourceID.ValueInt64()), &client.SetResourceRuleRequest{
 		Action:   plan.Action.ValueString(),
 		Match:    plan.Match.ValueString(),
 		Value:    plan.Value.ValueString(),
@@ -138,7 +138,7 @@ func (r *ResourceRuleResource) Read(ctx context.Context, req resource.ReadReques
 		return
 	}
 
-	rule, err := r.client.GetResourceRule(int(state.ResourceID.ValueInt64()), int(state.ID.ValueInt64()))
+	rule, err := r.client.GetResourceRule(ctx, int(state.ResourceID.ValueInt64()), int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -164,7 +164,7 @@ func (r *ResourceRuleResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	rule, err := r.client.UpdateResourceRule(int(plan.ResourceID.ValueInt64()), int(plan.ID.ValueInt64()), &client.SetResourceRuleRequest{
+	rule, err := r.client.UpdateResourceRule(ctx, int(plan.ResourceID.ValueInt64()), int(plan.ID.ValueInt64()), &client.SetResourceRuleRequest{
 		Action:   plan.Action.ValueString(),
 		Match:    plan.Match.ValueString(),
 		Value:    plan.Value.ValueString(),
@@ -192,7 +192,7 @@ func (r *ResourceRuleResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	err := r.client.DeleteResourceRule(int(state.ResourceID.ValueInt64()), int(state.ID.ValueInt64()))
+	err := r.client.DeleteResourceRule(ctx, int(state.ResourceID.ValueInt64()), int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete resource rule", err.Error())
 		return
@@ -222,7 +222,7 @@ func (r *ResourceRuleResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 
-	rule, err := r.client.GetResourceRule(int(resourceID), int(ruleID))
+	rule, err := r.client.GetResourceRule(ctx, int(resourceID), int(ruleID))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import resource rule", err.Error())
 		return

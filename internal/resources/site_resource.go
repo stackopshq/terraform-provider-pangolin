@@ -152,7 +152,7 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 
-	siteRes, err := r.client.CreateSiteResource(&client.CreateSiteResourceRequest{
+	siteRes, err := r.client.CreateSiteResource(ctx, &client.CreateSiteResourceRequest{
 		Name:           plan.Name.ValueString(),
 		SiteID:         int(plan.SiteID.ValueInt64()),
 		Mode:           plan.Mode.ValueString(),
@@ -189,7 +189,7 @@ func (r *SitePrivateResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	siteRes, err := r.client.GetSiteResource(int(state.ID.ValueInt64()))
+	siteRes, err := r.client.GetSiteResource(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -221,7 +221,7 @@ func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	siteRes, err := r.client.UpdateSiteResource(int(plan.ID.ValueInt64()), &client.UpdateSiteResourceRequest{
+	siteRes, err := r.client.UpdateSiteResource(ctx, int(plan.ID.ValueInt64()), &client.UpdateSiteResourceRequest{
 		Name:           plan.Name.ValueString(),
 		SiteID:         int(plan.SiteID.ValueInt64()),
 		Destination:    plan.Destination.ValueString(),
@@ -259,7 +259,7 @@ func (r *SitePrivateResource) Delete(ctx context.Context, req resource.DeleteReq
 		return
 	}
 
-	err := r.client.DeleteSiteResource(int(state.ID.ValueInt64()))
+	err := r.client.DeleteSiteResource(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete site resource", err.Error())
 		return
@@ -273,7 +273,7 @@ func (r *SitePrivateResource) ImportState(ctx context.Context, req resource.Impo
 		return
 	}
 
-	siteRes, err := r.client.GetSiteResource(int(id))
+	siteRes, err := r.client.GetSiteResource(ctx, int(id))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import site resource", err.Error())
 		return

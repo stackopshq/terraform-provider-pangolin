@@ -104,13 +104,13 @@ func (r *OLMClientResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	defaults, err := r.client.GetClientDefaults()
+	defaults, err := r.client.GetClientDefaults(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get client defaults", err.Error())
 		return
 	}
 
-	olmClient, err := r.client.CreateOLMClient(&client.CreateOLMClientRequest{
+	olmClient, err := r.client.CreateOLMClient(ctx, &client.CreateOLMClientRequest{
 		Name:   plan.Name.ValueString(),
 		OlmID:  defaults.OlmID,
 		Secret: defaults.OlmSecret,
@@ -139,7 +139,7 @@ func (r *OLMClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	olmClient, err := r.client.GetOLMClient(int(state.ID.ValueInt64()))
+	olmClient, err := r.client.GetOLMClient(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -164,7 +164,7 @@ func (r *OLMClientResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	olmClient, err := r.client.UpdateOLMClient(int(plan.ID.ValueInt64()), &client.UpdateOLMClientRequest{
+	olmClient, err := r.client.UpdateOLMClient(ctx, int(plan.ID.ValueInt64()), &client.UpdateOLMClientRequest{
 		Name: plan.Name.ValueString(),
 	})
 	if err != nil {
@@ -186,7 +186,7 @@ func (r *OLMClientResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 
-	err := r.client.DeleteOLMClient(int(state.ID.ValueInt64()))
+	err := r.client.DeleteOLMClient(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete OLM client", err.Error())
 		return
@@ -200,7 +200,7 @@ func (r *OLMClientResource) ImportState(ctx context.Context, req resource.Import
 		return
 	}
 
-	olmClient, err := r.client.GetOLMClient(int(id))
+	olmClient, err := r.client.GetOLMClient(ctx, int(id))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import OLM client", err.Error())
 		return

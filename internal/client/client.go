@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,23 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+)
+
+// Sentinel errors returned by the client. Callers should match with
+// errors.Is to drive control flow (e.g. retries, state removal).
+var (
+	// ErrUnauthorized is returned for HTTP 401 — usually means the API
+	// key is missing, malformed, expired, or has been revoked.
+	ErrUnauthorized = errors.New("pangolin: unauthorized")
+	// ErrForbidden is returned for HTTP 403 — usually means the API key
+	// is valid but does not have access to the requested organization
+	// or resource.
+	ErrForbidden = errors.New("pangolin: forbidden")
+	// ErrServer is returned for HTTP 5xx — the upstream is unhealthy.
+	// Callers may retry with backoff.
+	ErrServer = errors.New("pangolin: server error")
 )
 
 // ErrNotFound is returned by client methods when the requested resource does
@@ -47,7 +65,7 @@ func NewClient(baseURL, apiKey, orgID string) *Client {
 }
 
 // doRequest performs an HTTP request and returns the parsed API response.
-func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse, error) {
+func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*APIResponse, error) {
 	url := fmt.Sprintf("%s/v1%s", c.BaseURL, path)
 
 	var reqBody io.Reader
@@ -59,7 +77,7 @@ func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse,
 		reqBody = bytes.NewBuffer(jsonBody)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -67,6 +85,11 @@ func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse,
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+
+	tflog.Debug(ctx, "pangolin: HTTP request", map[string]any{
+		"method": method,
+		"path":   path,
+	})
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -79,19 +102,41 @@ func (c *Client) doRequest(method, path string, body interface{}) (*APIResponse,
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	tflog.Debug(ctx, "pangolin: HTTP response", map[string]any{
+		"method": method,
+		"path":   path,
+		"status": resp.StatusCode,
+	})
+
 	var apiResp APIResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
-	if resp.StatusCode == http.StatusNotFound {
-		return &apiResp, fmt.Errorf("API error (status 404): %s: %w", apiResp.Message, ErrNotFound)
-	}
 	if apiResp.Error || resp.StatusCode >= 400 {
-		return &apiResp, fmt.Errorf("API error (status %d): %s", resp.StatusCode, apiResp.Message)
+		return &apiResp, classifyError(resp.StatusCode, apiResp.Message)
 	}
 
 	return &apiResp, nil
+}
+
+// classifyError maps an HTTP status code to a wrapped sentinel error so
+// callers can distinguish missing resources, auth failures, permission
+// failures and retryable server errors with errors.Is. Unknown status
+// codes fall through to a plain error.
+func classifyError(status int, message string) error {
+	switch {
+	case status == http.StatusNotFound:
+		return fmt.Errorf("API error (status 404): %s: %w", message, ErrNotFound)
+	case status == http.StatusUnauthorized:
+		return fmt.Errorf("API error (status 401): %s: %w", message, ErrUnauthorized)
+	case status == http.StatusForbidden:
+		return fmt.Errorf("API error (status 403): %s: %w", message, ErrForbidden)
+	case status >= 500:
+		return fmt.Errorf("API error (status %d): %s: %w", status, message, ErrServer)
+	default:
+		return fmt.Errorf("API error (status %d): %s", status, message)
+	}
 }
 
 // --- Site Defaults ---
@@ -103,8 +148,8 @@ type SiteDefaults struct {
 }
 
 // GetSiteDefaults picks site defaults for creating a new site.
-func (c *Client) GetSiteDefaults() (*SiteDefaults, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/pick-site-defaults", c.OrgID), nil)
+func (c *Client) GetSiteDefaults(ctx context.Context) (*SiteDefaults, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/pick-site-defaults", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +184,8 @@ type CreateSiteRequest struct {
 }
 
 // CreateSite creates a new site in the organization.
-func (c *Client) CreateSite(req *CreateSiteRequest) (*Site, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
+func (c *Client) CreateSite(ctx context.Context, req *CreateSiteRequest) (*Site, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +198,8 @@ func (c *Client) CreateSite(req *CreateSiteRequest) (*Site, error) {
 }
 
 // GetSite retrieves a site by ID.
-func (c *Client) GetSite(siteID int) (*Site, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/site/%d", siteID), nil)
+func (c *Client) GetSite(ctx context.Context, siteID int) (*Site, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/site/%d", siteID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +212,8 @@ func (c *Client) GetSite(siteID int) (*Site, error) {
 }
 
 // DeleteSite deletes a site by ID.
-func (c *Client) DeleteSite(siteID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/site/%d", siteID), nil)
+func (c *Client) DeleteSite(ctx context.Context, siteID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/site/%d", siteID), nil)
 	return err
 }
 
@@ -188,8 +233,8 @@ type DomainsResponse struct {
 }
 
 // ListDomains retrieves all domains for the organization.
-func (c *Client) ListDomains() ([]Domain, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/domains", c.OrgID), nil)
+func (c *Client) ListDomains(ctx context.Context) ([]Domain, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/domains", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -231,8 +276,8 @@ type CreateResourceRequest struct {
 }
 
 // CreateResource creates a new HTTP resource.
-func (c *Client) CreateResource(req *CreateResourceRequest) (*Resource, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
+func (c *Client) CreateResource(ctx context.Context, req *CreateResourceRequest) (*Resource, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -245,8 +290,8 @@ func (c *Client) CreateResource(req *CreateResourceRequest) (*Resource, error) {
 }
 
 // GetResource retrieves a resource by ID.
-func (c *Client) GetResource(resourceID int) (*Resource, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/resource/%d", resourceID), nil)
+func (c *Client) GetResource(ctx context.Context, resourceID int) (*Resource, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d", resourceID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -259,8 +304,8 @@ func (c *Client) GetResource(resourceID int) (*Resource, error) {
 }
 
 // DeleteResource deletes a resource by ID.
-func (c *Client) DeleteResource(resourceID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/resource/%d", resourceID), nil)
+func (c *Client) DeleteResource(ctx context.Context, resourceID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/resource/%d", resourceID), nil)
 	return err
 }
 
@@ -286,8 +331,8 @@ type CreateTargetRequest struct {
 }
 
 // CreateTarget creates a new target for a resource.
-func (c *Client) CreateTarget(resourceID int, req *CreateTargetRequest) (*Target, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
+func (c *Client) CreateTarget(ctx context.Context, resourceID int, req *CreateTargetRequest) (*Target, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -300,8 +345,8 @@ func (c *Client) CreateTarget(resourceID int, req *CreateTargetRequest) (*Target
 }
 
 // GetTarget retrieves a target by ID.
-func (c *Client) GetTarget(targetID int) (*Target, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/target/%d", targetID), nil)
+func (c *Client) GetTarget(ctx context.Context, targetID int) (*Target, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/target/%d", targetID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -323,8 +368,8 @@ type UpdateTargetRequest struct {
 }
 
 // UpdateTarget updates an existing target by ID.
-func (c *Client) UpdateTarget(targetID int, req *UpdateTargetRequest) (*Target, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/target/%d", targetID), req)
+func (c *Client) UpdateTarget(ctx context.Context, targetID int, req *UpdateTargetRequest) (*Target, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/target/%d", targetID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -336,8 +381,8 @@ func (c *Client) UpdateTarget(targetID int, req *UpdateTargetRequest) (*Target, 
 }
 
 // DeleteTarget deletes a target by ID.
-func (c *Client) DeleteTarget(targetID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/target/%d", targetID), nil)
+func (c *Client) DeleteTarget(ctx context.Context, targetID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/target/%d", targetID), nil)
 	return err
 }
 
@@ -376,8 +421,8 @@ type CreateSiteResourceRequest struct {
 }
 
 // CreateSiteResource creates a new private site resource.
-func (c *Client) CreateSiteResource(req *CreateSiteResourceRequest) (*SiteResource, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
+func (c *Client) CreateSiteResource(ctx context.Context, req *CreateSiteResourceRequest) (*SiteResource, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -392,8 +437,8 @@ func (c *Client) CreateSiteResource(req *CreateSiteResourceRequest) (*SiteResour
 // GetSiteResource retrieves a site resource by ID (via list + filter).
 // Note: GET /site-resource/{id} has a bug in the Pangolin API requiring siteId/orgId,
 // so we use list + filter instead.
-func (c *Client) GetSiteResource(siteResourceID int) (*SiteResource, error) {
-	siteResources, err := c.ListSiteResources()
+func (c *Client) GetSiteResource(ctx context.Context, siteResourceID int) (*SiteResource, error) {
+	siteResources, err := c.ListSiteResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -407,8 +452,8 @@ func (c *Client) GetSiteResource(siteResourceID int) (*SiteResource, error) {
 }
 
 // DeleteSiteResource deletes a site resource by ID.
-func (c *Client) DeleteSiteResource(siteResourceID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/site-resource/%d", siteResourceID), nil)
+func (c *Client) DeleteSiteResource(ctx context.Context, siteResourceID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/site-resource/%d", siteResourceID), nil)
 	return err
 }
 
@@ -427,8 +472,8 @@ type RolesResponse struct {
 }
 
 // ListRoles retrieves all roles for the organization.
-func (c *Client) ListRoles() ([]Role, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/roles", c.OrgID), nil)
+func (c *Client) ListRoles(ctx context.Context) ([]Role, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/roles", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -441,20 +486,20 @@ func (c *Client) ListRoles() ([]Role, error) {
 }
 
 // AddUserToRole assigns a user to a role at organization level.
-func (c *Client) AddUserToRole(roleID int, userID string) error {
-	_, err := c.doRequest("POST", fmt.Sprintf("/role/%d/add/%s", roleID, userID), nil)
+func (c *Client) AddUserToRole(ctx context.Context, roleID int, userID string) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/role/%d/add/%s", roleID, userID), nil)
 	return err
 }
 
 // RemoveUserFromRole removes a user from a role at organization level.
-func (c *Client) RemoveUserFromRole(roleID int, userID string) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/role/%d/remove/%s", roleID, userID), nil)
+func (c *Client) RemoveUserFromRole(ctx context.Context, roleID int, userID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/role/%d/remove/%s", roleID, userID), nil)
 	return err
 }
 
 // ListRoleUsers retrieves all users assigned to a role.
-func (c *Client) ListRoleUsers(roleID int) ([]string, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/role/%d/users", roleID), nil)
+func (c *Client) ListRoleUsers(ctx context.Context, roleID int) ([]string, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/role/%d/users", roleID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -474,58 +519,58 @@ func (c *Client) ListRoleUsers(roleID int) ([]string, error) {
 }
 
 // AddRoleToResource assigns a role to an HTTP resource.
-func (c *Client) AddRoleToResource(resourceID, roleID int) error {
+func (c *Client) AddRoleToResource(ctx context.Context, resourceID, roleID int) error {
 	body := map[string]int{"roleId": roleID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/roles/add", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/roles/add", resourceID), body)
 	return err
 }
 
 // RemoveRoleFromResource removes a role from an HTTP resource.
-func (c *Client) RemoveRoleFromResource(resourceID, roleID int) error {
+func (c *Client) RemoveRoleFromResource(ctx context.Context, resourceID, roleID int) error {
 	body := map[string]int{"roleId": roleID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/roles/remove", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/roles/remove", resourceID), body)
 	return err
 }
 
 // AddUserToResource assigns a user to an HTTP resource.
-func (c *Client) AddUserToResource(resourceID int, userID string) error {
+func (c *Client) AddUserToResource(ctx context.Context, resourceID int, userID string) error {
 	body := map[string]string{"userId": userID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/users/add", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/users/add", resourceID), body)
 	return err
 }
 
 // RemoveUserFromResource removes a user from an HTTP resource.
-func (c *Client) RemoveUserFromResource(resourceID int, userID string) error {
+func (c *Client) RemoveUserFromResource(ctx context.Context, resourceID int, userID string) error {
 	body := map[string]string{"userId": userID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/users/remove", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/users/remove", resourceID), body)
 	return err
 }
 
 // AddRoleToSiteResource assigns a role to a private site resource.
-func (c *Client) AddRoleToSiteResource(siteResourceID, roleID int) error {
+func (c *Client) AddRoleToSiteResource(ctx context.Context, siteResourceID, roleID int) error {
 	body := map[string]int{"roleId": roleID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/roles/add", siteResourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/roles/add", siteResourceID), body)
 	return err
 }
 
 // RemoveRoleFromSiteResource removes a role from a private site resource.
-func (c *Client) RemoveRoleFromSiteResource(siteResourceID, roleID int) error {
+func (c *Client) RemoveRoleFromSiteResource(ctx context.Context, siteResourceID, roleID int) error {
 	body := map[string]int{"roleId": roleID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/roles/remove", siteResourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/roles/remove", siteResourceID), body)
 	return err
 }
 
 // AddUserToSiteResource assigns a user to a private site resource.
-func (c *Client) AddUserToSiteResource(siteResourceID int, userID string) error {
+func (c *Client) AddUserToSiteResource(ctx context.Context, siteResourceID int, userID string) error {
 	body := map[string]string{"userId": userID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/users/add", siteResourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/users/add", siteResourceID), body)
 	return err
 }
 
 // RemoveUserFromSiteResource removes a user from a private site resource.
-func (c *Client) RemoveUserFromSiteResource(siteResourceID int, userID string) error {
+func (c *Client) RemoveUserFromSiteResource(ctx context.Context, siteResourceID int, userID string) error {
 	body := map[string]string{"userId": userID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/users/remove", siteResourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/users/remove", siteResourceID), body)
 	return err
 }
 
@@ -544,8 +589,8 @@ type UsersResponse struct {
 }
 
 // ListUsers retrieves all users for the organization.
-func (c *Client) ListUsers() ([]User, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/users", c.OrgID), nil)
+func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/users", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -566,8 +611,8 @@ type UpdateSiteRequest struct {
 }
 
 // UpdateSite updates a site by ID.
-func (c *Client) UpdateSite(siteID int, req *UpdateSiteRequest) (*Site, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/site/%d", siteID), req)
+func (c *Client) UpdateSite(ctx context.Context, siteID int, req *UpdateSiteRequest) (*Site, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site/%d", siteID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -593,8 +638,8 @@ type UpdateResourceRequest struct {
 }
 
 // UpdateResource updates an HTTP resource by ID.
-func (c *Client) UpdateResource(resourceID int, req *UpdateResourceRequest) (*Resource, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/resource/%d", resourceID), req)
+func (c *Client) UpdateResource(ctx context.Context, resourceID int, req *UpdateResourceRequest) (*Resource, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -621,8 +666,8 @@ type UpdateSiteResourceRequest struct {
 }
 
 // UpdateSiteResource updates a private site resource by ID.
-func (c *Client) UpdateSiteResource(siteResourceID int, req *UpdateSiteResourceRequest) (*SiteResource, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d", siteResourceID), req)
+func (c *Client) UpdateSiteResource(ctx context.Context, siteResourceID int, req *UpdateSiteResourceRequest) (*SiteResource, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d", siteResourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -642,8 +687,8 @@ type CreateRoleRequest struct {
 }
 
 // CreateRole creates a new role in the organization.
-func (c *Client) CreateRole(req *CreateRoleRequest) (*Role, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
+func (c *Client) CreateRole(ctx context.Context, req *CreateRoleRequest) (*Role, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -655,8 +700,8 @@ func (c *Client) CreateRole(req *CreateRoleRequest) (*Role, error) {
 }
 
 // GetRoleByID retrieves a role by ID (via list + filter, no individual Get endpoint).
-func (c *Client) GetRoleByID(roleID int) (*Role, error) {
-	roles, err := c.ListRoles()
+func (c *Client) GetRoleByID(ctx context.Context, roleID int) (*Role, error) {
+	roles, err := c.ListRoles(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -676,8 +721,8 @@ type UpdateRoleRequest struct {
 }
 
 // UpdateRole updates a role by ID.
-func (c *Client) UpdateRole(roleID int, req *UpdateRoleRequest) (*Role, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/role/%d", roleID), req)
+func (c *Client) UpdateRole(ctx context.Context, roleID int, req *UpdateRoleRequest) (*Role, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/role/%d", roleID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -690,9 +735,9 @@ func (c *Client) UpdateRole(roleID int, req *UpdateRoleRequest) (*Role, error) {
 
 // DeleteRole deletes a role by ID. The replacementRoleID is assigned to any users
 // currently holding the deleted role (required by the Pangolin API).
-func (c *Client) DeleteRole(roleID int, replacementRoleID int) error {
+func (c *Client) DeleteRole(ctx context.Context, roleID int, replacementRoleID int) error {
 	body := map[string]string{"roleId": fmt.Sprintf("%d", replacementRoleID)}
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/role/%d", roleID), body)
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/role/%d", roleID), body)
 	return err
 }
 
@@ -716,8 +761,8 @@ type CreateAPIKeyRequest struct {
 }
 
 // CreateAPIKey creates a new API key for the organization.
-func (c *Client) CreateAPIKey(req *CreateAPIKeyRequest) (*APIKey, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
+func (c *Client) CreateAPIKey(ctx context.Context, req *CreateAPIKeyRequest) (*APIKey, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -729,8 +774,8 @@ func (c *Client) CreateAPIKey(req *CreateAPIKeyRequest) (*APIKey, error) {
 }
 
 // ListAPIKeys retrieves all API keys for the organization.
-func (c *Client) ListAPIKeys() ([]APIKey, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/api-keys", c.OrgID), nil)
+func (c *Client) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/api-keys", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -742,8 +787,8 @@ func (c *Client) ListAPIKeys() ([]APIKey, error) {
 }
 
 // GetAPIKeyByID retrieves an API key by ID (via list + filter).
-func (c *Client) GetAPIKeyByID(apiKeyID string) (*APIKey, error) {
-	keys, err := c.ListAPIKeys()
+func (c *Client) GetAPIKeyByID(ctx context.Context, apiKeyID string) (*APIKey, error) {
+	keys, err := c.ListAPIKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -757,8 +802,8 @@ func (c *Client) GetAPIKeyByID(apiKeyID string) (*APIKey, error) {
 }
 
 // DeleteAPIKey deletes an API key by ID.
-func (c *Client) DeleteAPIKey(apiKeyID string) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/org/%s/api-key/%s", c.OrgID, apiKeyID), nil)
+func (c *Client) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s/api-key/%s", c.OrgID, apiKeyID), nil)
 	return err
 }
 
@@ -772,8 +817,8 @@ type ClientDefaults struct {
 }
 
 // GetClientDefaults picks client defaults for creating a new OLM client.
-func (c *Client) GetClientDefaults() (*ClientDefaults, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/pick-client-defaults", c.OrgID), nil)
+func (c *Client) GetClientDefaults(ctx context.Context) (*ClientDefaults, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/pick-client-defaults", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -813,8 +858,8 @@ type UpdateOLMClientRequest struct {
 }
 
 // CreateOLMClient creates a new OLM client device.
-func (c *Client) CreateOLMClient(req *CreateOLMClientRequest) (*OLMClient, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
+func (c *Client) CreateOLMClient(ctx context.Context, req *CreateOLMClientRequest) (*OLMClient, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -826,8 +871,8 @@ func (c *Client) CreateOLMClient(req *CreateOLMClientRequest) (*OLMClient, error
 }
 
 // ListOLMClients retrieves all OLM clients for the organization.
-func (c *Client) ListOLMClients() ([]OLMClient, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/clients", c.OrgID), nil)
+func (c *Client) ListOLMClients(ctx context.Context) ([]OLMClient, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/clients", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -839,8 +884,8 @@ func (c *Client) ListOLMClients() ([]OLMClient, error) {
 }
 
 // GetOLMClient retrieves an OLM client by ID.
-func (c *Client) GetOLMClient(clientID int) (*OLMClient, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/client/%d", clientID), nil)
+func (c *Client) GetOLMClient(ctx context.Context, clientID int) (*OLMClient, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/client/%d", clientID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -852,8 +897,8 @@ func (c *Client) GetOLMClient(clientID int) (*OLMClient, error) {
 }
 
 // UpdateOLMClient updates an OLM client by ID.
-func (c *Client) UpdateOLMClient(clientID int, req *UpdateOLMClientRequest) (*OLMClient, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/client/%d", clientID), req)
+func (c *Client) UpdateOLMClient(ctx context.Context, clientID int, req *UpdateOLMClientRequest) (*OLMClient, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d", clientID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -865,40 +910,40 @@ func (c *Client) UpdateOLMClient(clientID int, req *UpdateOLMClientRequest) (*OL
 }
 
 // DeleteOLMClient deletes an OLM client by ID.
-func (c *Client) DeleteOLMClient(clientID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/client/%d", clientID), nil)
+func (c *Client) DeleteOLMClient(ctx context.Context, clientID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/client/%d", clientID), nil)
 	return err
 }
 
 // --- Whitelist ---
 
 // AddWhitelistToResource adds an email to the whitelist of an HTTP resource.
-func (c *Client) AddWhitelistToResource(resourceID int, email string) error {
+func (c *Client) AddWhitelistToResource(ctx context.Context, resourceID int, email string) error {
 	body := map[string]string{"email": email}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/whitelist/add", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/whitelist/add", resourceID), body)
 	return err
 }
 
 // RemoveWhitelistFromResource removes an email from the whitelist of an HTTP resource.
-func (c *Client) RemoveWhitelistFromResource(resourceID int, email string) error {
+func (c *Client) RemoveWhitelistFromResource(ctx context.Context, resourceID int, email string) error {
 	body := map[string]string{"email": email}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/whitelist/remove", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/whitelist/remove", resourceID), body)
 	return err
 }
 
 // --- Client assignments for site resources ---
 
 // AddClientToSiteResource assigns an OLM client to a private site resource.
-func (c *Client) AddClientToSiteResource(siteResourceID, clientID int) error {
+func (c *Client) AddClientToSiteResource(ctx context.Context, siteResourceID, clientID int) error {
 	body := map[string]int{"clientId": clientID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/clients/add", siteResourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/clients/add", siteResourceID), body)
 	return err
 }
 
 // RemoveClientFromSiteResource removes an OLM client from a private site resource.
-func (c *Client) RemoveClientFromSiteResource(siteResourceID, clientID int) error {
+func (c *Client) RemoveClientFromSiteResource(ctx context.Context, siteResourceID, clientID int) error {
 	body := map[string]int{"clientId": clientID}
-	_, err := c.doRequest("POST", fmt.Sprintf("/site-resource/%d/clients/remove", siteResourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/clients/remove", siteResourceID), body)
 	return err
 }
 
@@ -910,8 +955,8 @@ type SitesResponse struct {
 }
 
 // ListSites retrieves all sites for the organization.
-func (c *Client) ListSites() ([]Site, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/sites", c.OrgID), nil)
+func (c *Client) ListSites(ctx context.Context) ([]Site, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/sites", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -928,8 +973,8 @@ type ResourcesResponse struct {
 }
 
 // ListResources retrieves all HTTP resources for the organization.
-func (c *Client) ListResources() ([]Resource, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
+func (c *Client) ListResources(ctx context.Context) ([]Resource, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -946,8 +991,8 @@ type SiteResourcesListResponse struct {
 }
 
 // ListSiteResources retrieves all private site resources for the organization.
-func (c *Client) ListSiteResources() ([]SiteResource, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/site-resources", c.OrgID), nil)
+func (c *Client) ListSiteResources(ctx context.Context) ([]SiteResource, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/site-resources", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -977,8 +1022,8 @@ type CreateOrgRequest struct {
 }
 
 // CreateOrg creates a new organization.
-func (c *Client) CreateOrg(req *CreateOrgRequest) (*Org, error) {
-	resp, err := c.doRequest("PUT", "/org", req)
+func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*Org, error) {
+	resp, err := c.doRequest(ctx, "PUT", "/org", req)
 	if err != nil {
 		return nil, err
 	}
@@ -990,8 +1035,8 @@ func (c *Client) CreateOrg(req *CreateOrgRequest) (*Org, error) {
 }
 
 // GetOrg retrieves an organization by ID.
-func (c *Client) GetOrg(orgID string) (*Org, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s", orgID), nil)
+func (c *Client) GetOrg(ctx context.Context, orgID string) (*Org, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s", orgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1011,8 +1056,8 @@ type UpdateOrgRequest struct {
 }
 
 // UpdateOrg updates an organization by ID.
-func (c *Client) UpdateOrg(orgID string, req *UpdateOrgRequest) (*Org, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s", orgID), req)
+func (c *Client) UpdateOrg(ctx context.Context, orgID string, req *UpdateOrgRequest) (*Org, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s", orgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1024,8 +1069,8 @@ func (c *Client) UpdateOrg(orgID string, req *UpdateOrgRequest) (*Org, error) {
 }
 
 // DeleteOrg deletes an organization by ID.
-func (c *Client) DeleteOrg(orgID string) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/org/%s", orgID), nil)
+func (c *Client) DeleteOrg(ctx context.Context, orgID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s", orgID), nil)
 	return err
 }
 
@@ -1047,8 +1092,8 @@ type UpdateUserRequest struct {
 }
 
 // CreateUser creates a new user in the organization.
-func (c *Client) CreateUser(req *CreateUserRequest) (*User, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
+func (c *Client) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1067,8 +1112,8 @@ func (c *Client) CreateUser(req *CreateUserRequest) (*User, error) {
 }
 
 // GetUser retrieves a user by ID.
-func (c *Client) GetUser(userID string) (*User, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), nil)
+func (c *Client) GetUser(ctx context.Context, userID string) (*User, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1086,8 +1131,8 @@ func (c *Client) GetUser(userID string) (*User, error) {
 }
 
 // UpdateUser updates a user's auto-provisioned status.
-func (c *Client) UpdateUser(userID string, req *UpdateUserRequest) (*User, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), req)
+func (c *Client) UpdateUser(ctx context.Context, userID string, req *UpdateUserRequest) (*User, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1105,8 +1150,8 @@ func (c *Client) UpdateUser(userID string, req *UpdateUserRequest) (*User, error
 }
 
 // DeleteUser removes a user from the organization.
-func (c *Client) DeleteUser(userID string) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), nil)
+func (c *Client) DeleteUser(ctx context.Context, userID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s/user/%s", c.OrgID, userID), nil)
 	return err
 }
 
@@ -1172,8 +1217,8 @@ type CreateIDPResponse struct {
 }
 
 // CreateIDP creates a new OIDC IDP.
-func (c *Client) CreateIDP(req *CreateIDPRequest) (*CreateIDPResponse, error) {
-	resp, err := c.doRequest("PUT", "/idp/oidc", req)
+func (c *Client) CreateIDP(ctx context.Context, req *CreateIDPRequest) (*CreateIDPResponse, error) {
+	resp, err := c.doRequest(ctx, "PUT", "/idp/oidc", req)
 	if err != nil {
 		return nil, err
 	}
@@ -1185,8 +1230,8 @@ func (c *Client) CreateIDP(req *CreateIDPRequest) (*CreateIDPResponse, error) {
 }
 
 // GetIDP retrieves an IDP by ID.
-func (c *Client) GetIDP(idpID int) (*IDP, *IDPOidcConfig, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/idp/%d", idpID), nil)
+func (c *Client) GetIDP(ctx context.Context, idpID int) (*IDP, *IDPOidcConfig, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/idp/%d", idpID), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1201,20 +1246,20 @@ func (c *Client) GetIDP(idpID int) (*IDP, *IDPOidcConfig, error) {
 }
 
 // UpdateIDP updates an OIDC IDP.
-func (c *Client) UpdateIDP(idpID int, req *UpdateIDPRequest) error {
-	_, err := c.doRequest("POST", fmt.Sprintf("/idp/%d/oidc", idpID), req)
+func (c *Client) UpdateIDP(ctx context.Context, idpID int, req *UpdateIDPRequest) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/idp/%d/oidc", idpID), req)
 	return err
 }
 
 // DeleteIDP deletes an IDP.
-func (c *Client) DeleteIDP(idpID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/idp/%d", idpID), nil)
+func (c *Client) DeleteIDP(ctx context.Context, idpID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/idp/%d", idpID), nil)
 	return err
 }
 
 // ListIDPs retrieves all IDPs in the system.
-func (c *Client) ListIDPs() ([]IDP, error) {
-	resp, err := c.doRequest("GET", "/idp", nil)
+func (c *Client) ListIDPs(ctx context.Context) ([]IDP, error) {
+	resp, err := c.doRequest(ctx, "GET", "/idp", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1242,26 +1287,26 @@ type SetIDPOrgPolicyRequest struct {
 }
 
 // CreateIDPOrgPolicy creates an IDP policy for an org.
-func (c *Client) CreateIDPOrgPolicy(idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
-	_, err := c.doRequest("PUT", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
+func (c *Client) CreateIDPOrgPolicy(ctx context.Context, idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
+	_, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
 	return err
 }
 
 // UpdateIDPOrgPolicy updates an IDP policy for an org.
-func (c *Client) UpdateIDPOrgPolicy(idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
-	_, err := c.doRequest("POST", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
+func (c *Client) UpdateIDPOrgPolicy(ctx context.Context, idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
 	return err
 }
 
 // DeleteIDPOrgPolicy removes an IDP policy for an org.
-func (c *Client) DeleteIDPOrgPolicy(idpID int, orgID string) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), nil)
+func (c *Client) DeleteIDPOrgPolicy(ctx context.Context, idpID int, orgID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), nil)
 	return err
 }
 
 // GetIDPOrgPolicy retrieves the IDP policy for a specific org (via list + filter).
-func (c *Client) GetIDPOrgPolicy(idpID int, orgID string) (*IDPOrgPolicy, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/idp/%d/org", idpID), nil)
+func (c *Client) GetIDPOrgPolicy(ctx context.Context, idpID int, orgID string) (*IDPOrgPolicy, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/idp/%d/org", idpID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1283,8 +1328,8 @@ func (c *Client) GetIDPOrgPolicy(idpID int, orgID string) (*IDPOrgPolicy, error)
 // --- Domain ---
 
 // GetDomainByID retrieves a domain by ID (via list + filter).
-func (c *Client) GetDomainByID(domainID string) (*Domain, error) {
-	domains, err := c.ListDomains()
+func (c *Client) GetDomainByID(ctx context.Context, domainID string) (*Domain, error) {
+	domains, err := c.ListDomains(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1320,8 +1365,8 @@ type SetResourceRuleRequest struct {
 }
 
 // CreateResourceRule creates a new rule for a resource.
-func (c *Client) CreateResourceRule(resourceID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
-	resp, err := c.doRequest("PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
+func (c *Client) CreateResourceRule(ctx context.Context, resourceID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1333,8 +1378,8 @@ func (c *Client) CreateResourceRule(resourceID int, req *SetResourceRuleRequest)
 }
 
 // GetResourceRule retrieves a resource rule by ID (via list + filter).
-func (c *Client) GetResourceRule(resourceID, ruleID int) (*ResourceRule, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/resource/%d/rules", resourceID), nil)
+func (c *Client) GetResourceRule(ctx context.Context, resourceID, ruleID int) (*ResourceRule, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/rules", resourceID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1354,8 +1399,8 @@ func (c *Client) GetResourceRule(resourceID, ruleID int) (*ResourceRule, error) 
 }
 
 // UpdateResourceRule updates an existing resource rule.
-func (c *Client) UpdateResourceRule(resourceID, ruleID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
-	resp, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/rule/%d", resourceID, ruleID), req)
+func (c *Client) UpdateResourceRule(ctx context.Context, resourceID, ruleID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/rule/%d", resourceID, ruleID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1367,8 +1412,8 @@ func (c *Client) UpdateResourceRule(resourceID, ruleID int, req *SetResourceRule
 }
 
 // DeleteResourceRule deletes a resource rule.
-func (c *Client) DeleteResourceRule(resourceID, ruleID int) error {
-	_, err := c.doRequest("DELETE", fmt.Sprintf("/resource/%d/rule/%d", resourceID, ruleID), nil)
+func (c *Client) DeleteResourceRule(ctx context.Context, resourceID, ruleID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/resource/%d/rule/%d", resourceID, ruleID), nil)
 	return err
 }
 
@@ -1390,8 +1435,8 @@ type ResourceListItem struct {
 }
 
 // GetResourceAuthState returns the auth IDs for a resource via list + filter.
-func (c *Client) GetResourceAuthState(resourceID int) (*ResourceAuthState, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
+func (c *Client) GetResourceAuthState(ctx context.Context, resourceID int) (*ResourceAuthState, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1415,17 +1460,17 @@ func (c *Client) GetResourceAuthState(resourceID int) (*ResourceAuthState, error
 
 // SetResourcePassword sets or clears the password for a resource.
 // Pass nil to remove the password.
-func (c *Client) SetResourcePassword(resourceID int, password *string) error {
+func (c *Client) SetResourcePassword(ctx context.Context, resourceID int, password *string) error {
 	body := map[string]interface{}{"password": password}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/password", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/password", resourceID), body)
 	return err
 }
 
 // SetResourcePincode sets or clears the pincode for a resource.
 // Pass nil to remove the pincode.
-func (c *Client) SetResourcePincode(resourceID int, pincode *string) error {
+func (c *Client) SetResourcePincode(ctx context.Context, resourceID int, pincode *string) error {
 	body := map[string]interface{}{"pincode": pincode}
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/pincode", resourceID), body)
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/pincode", resourceID), body)
 	return err
 }
 
@@ -1437,7 +1482,7 @@ type SetResourceHeaderAuthRequest struct {
 }
 
 // SetResourceHeaderAuth sets or clears the header authentication for a resource.
-func (c *Client) SetResourceHeaderAuth(resourceID int, req *SetResourceHeaderAuthRequest) error {
-	_, err := c.doRequest("POST", fmt.Sprintf("/resource/%d/header-auth", resourceID), req)
+func (c *Client) SetResourceHeaderAuth(ctx context.Context, resourceID int, req *SetResourceHeaderAuthRequest) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/header-auth", resourceID), req)
 	return err
 }
