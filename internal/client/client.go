@@ -523,8 +523,9 @@ func (c *Client) RemoveUserFromSiteResource(siteResourceID int, userID string) e
 
 // User represents a Pangolin user.
 type User struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
 }
 
 // UsersResponse wraps the users list response.
