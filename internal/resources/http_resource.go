@@ -171,7 +171,7 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 		createReq.Subdomain = &subdomain
 	}
 
-	resource, err := r.client.CreateResource(createReq)
+	resource, err := r.client.CreateResource(ctx, createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create resource", err.Error())
 		return
@@ -182,7 +182,7 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	// Apply user-specified settings (sso, ssl, etc.) via update.
 	// buildUpdateRequest reads from plan which still holds the user's intended values.
-	updated, err := r.client.UpdateResource(int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
+	updated, err := r.client.UpdateResource(ctx, int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to apply resource settings after creation", err.Error())
 		return
@@ -199,7 +199,7 @@ func (r *HTTPResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	resource, err := r.client.GetResource(int(state.ID.ValueInt64()))
+	resource, err := r.client.GetResource(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -220,7 +220,7 @@ func (r *HTTPResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	res, err := r.client.UpdateResource(int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
+	res, err := r.client.UpdateResource(ctx, int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update resource", err.Error())
 		return
@@ -237,7 +237,7 @@ func (r *HTTPResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	err := r.client.DeleteResource(int(state.ID.ValueInt64()))
+	err := r.client.DeleteResource(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete resource", err.Error())
 		return
@@ -251,7 +251,7 @@ func (r *HTTPResource) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 
-	res, err := r.client.GetResource(int(id))
+	res, err := r.client.GetResource(ctx, int(id))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import resource", err.Error())
 		return

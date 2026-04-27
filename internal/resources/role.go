@@ -90,7 +90,7 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	role, err := r.client.CreateRole(&client.CreateRoleRequest{
+	role, err := r.client.CreateRole(ctx, &client.CreateRoleRequest{
 		Name:        plan.Name.ValueString(),
 		Description: plan.Description.ValueString(),
 	})
@@ -113,7 +113,7 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	role, err := r.client.GetRoleByID(int(state.ID.ValueInt64()))
+	role, err := r.client.GetRoleByID(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -136,7 +136,7 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	role, err := r.client.UpdateRole(int(plan.ID.ValueInt64()), &client.UpdateRoleRequest{
+	role, err := r.client.UpdateRole(ctx, int(plan.ID.ValueInt64()), &client.UpdateRoleRequest{
 		Name:        plan.Name.ValueString(),
 		Description: plan.Description.ValueString(),
 	})
@@ -160,7 +160,7 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 
 	// The Pangolin API requires a replacement role for any users currently assigned this role.
 	// Pick the first available role that is not the one being deleted.
-	roles, err := r.client.ListRoles()
+	roles, err := r.client.ListRoles(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list roles for deletion", err.Error())
 		return
@@ -175,7 +175,7 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		}
 	}
 
-	if err := r.client.DeleteRole(roleID, replacementID); err != nil {
+	if err := r.client.DeleteRole(ctx, roleID, replacementID); err != nil {
 		resp.Diagnostics.AddError("Failed to delete role", err.Error())
 		return
 	}
@@ -188,7 +188,7 @@ func (r *RoleResource) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 
-	role, err := r.client.GetRoleByID(int(id))
+	role, err := r.client.GetRoleByID(ctx, int(id))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import role", err.Error())
 		return

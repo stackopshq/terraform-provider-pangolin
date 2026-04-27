@@ -152,7 +152,7 @@ func (r *IDPResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
-	result, err := r.client.CreateIDP(&client.CreateIDPRequest{
+	result, err := r.client.CreateIDP(ctx, &client.CreateIDPRequest{
 		Name:           plan.Name.ValueString(),
 		ClientID:       plan.ClientID.ValueString(),
 		ClientSecret:   plan.ClientSecret.ValueString(),
@@ -174,7 +174,7 @@ func (r *IDPResource) Create(ctx context.Context, req resource.CreateRequest, re
 	plan.RedirectURL = types.StringValue(result.RedirectURL)
 
 	// Populate all computed fields from the API response.
-	idp, oidcCfg, err := r.client.GetIDP(result.IDPId)
+	idp, oidcCfg, err := r.client.GetIDP(ctx, result.IDPId)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read IDP after create", err.Error())
 		return
@@ -195,7 +195,7 @@ func (r *IDPResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 		return
 	}
 
-	idp, oidcCfg, err := r.client.GetIDP(int(state.ID.ValueInt64()))
+	idp, oidcCfg, err := r.client.GetIDP(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -227,7 +227,7 @@ func (r *IDPResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 
-	err := r.client.UpdateIDP(int(plan.ID.ValueInt64()), &client.UpdateIDPRequest{
+	err := r.client.UpdateIDP(ctx, int(plan.ID.ValueInt64()), &client.UpdateIDPRequest{
 		Name:           plan.Name.ValueString(),
 		ClientID:       plan.ClientID.ValueString(),
 		ClientSecret:   plan.ClientSecret.ValueString(),
@@ -255,7 +255,7 @@ func (r *IDPResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 		return
 	}
 
-	err := r.client.DeleteIDP(int(state.ID.ValueInt64()))
+	err := r.client.DeleteIDP(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		// DELETE /idp/{id} is not available on the Integration API — only on the internal admin API.
 		// Emit a warning and remove from state so Terraform does not block the user.
@@ -275,7 +275,7 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		return
 	}
 
-	idp, oidcCfg, err := r.client.GetIDP(int(idpID))
+	idp, oidcCfg, err := r.client.GetIDP(ctx, int(idpID))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import IDP", err.Error())
 		return

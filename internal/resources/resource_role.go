@@ -80,7 +80,7 @@ func (r *ResourceRoleResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	err := r.client.AddRoleToResource(int(plan.ResourceID.ValueInt64()), int(plan.RoleID.ValueInt64()))
+	err := r.client.AddRoleToResource(ctx, int(plan.ResourceID.ValueInt64()), int(plan.RoleID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to assign role to resource", err.Error())
 		return
@@ -108,7 +108,7 @@ func (r *ResourceRoleResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	err := r.client.RemoveRoleFromResource(int(state.ResourceID.ValueInt64()), int(state.RoleID.ValueInt64()))
+	err := r.client.RemoveRoleFromResource(ctx, int(state.ResourceID.ValueInt64()), int(state.RoleID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to remove role from resource", err.Error())
 		return

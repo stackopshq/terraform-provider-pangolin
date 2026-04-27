@@ -78,7 +78,7 @@ func (d *RolesDataSource) Configure(_ context.Context, req datasource.ConfigureR
 }
 
 func (d *RolesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	roles, err := d.client.ListRoles()
+	roles, err := d.client.ListRoles(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list roles", err.Error())
 		return

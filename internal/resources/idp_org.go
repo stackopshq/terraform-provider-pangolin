@@ -100,7 +100,7 @@ func (r *IDPOrgResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	err := r.client.CreateIDPOrgPolicy(int(plan.IDPId.ValueInt64()), plan.OrgID.ValueString(), &client.SetIDPOrgPolicyRequest{
+	err := r.client.CreateIDPOrgPolicy(ctx, int(plan.IDPId.ValueInt64()), plan.OrgID.ValueString(), &client.SetIDPOrgPolicyRequest{
 		RoleMapping: plan.RoleMapping.ValueString(),
 		OrgMapping:  plan.OrgMapping.ValueString(),
 	})
@@ -119,7 +119,7 @@ func (r *IDPOrgResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	policy, err := r.client.GetIDPOrgPolicy(int(state.IDPId.ValueInt64()), state.OrgID.ValueString())
+	policy, err := r.client.GetIDPOrgPolicy(ctx, int(state.IDPId.ValueInt64()), state.OrgID.ValueString())
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -142,7 +142,7 @@ func (r *IDPOrgResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	err := r.client.UpdateIDPOrgPolicy(int(plan.IDPId.ValueInt64()), plan.OrgID.ValueString(), &client.SetIDPOrgPolicyRequest{
+	err := r.client.UpdateIDPOrgPolicy(ctx, int(plan.IDPId.ValueInt64()), plan.OrgID.ValueString(), &client.SetIDPOrgPolicyRequest{
 		RoleMapping: plan.RoleMapping.ValueString(),
 		OrgMapping:  plan.OrgMapping.ValueString(),
 	})
@@ -161,7 +161,7 @@ func (r *IDPOrgResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	err := r.client.DeleteIDPOrgPolicy(int(state.IDPId.ValueInt64()), state.OrgID.ValueString())
+	err := r.client.DeleteIDPOrgPolicy(ctx, int(state.IDPId.ValueInt64()), state.OrgID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete IDP org policy", err.Error())
 		return
@@ -185,7 +185,7 @@ func (r *IDPOrgResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 
-	policy, err := r.client.GetIDPOrgPolicy(int(idpID), orgID)
+	policy, err := r.client.GetIDPOrgPolicy(ctx, int(idpID), orgID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import IDP org policy", err.Error())
 		return

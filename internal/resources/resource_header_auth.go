@@ -93,7 +93,7 @@ func (r *ResourceHeaderAuthResource) Create(ctx context.Context, req resource.Cr
 
 	pw := plan.Password.ValueString()
 	user := plan.User.ValueString()
-	if err := r.client.SetResourceHeaderAuth(int(plan.ResourceID.ValueInt64()), &client.SetResourceHeaderAuthRequest{
+	if err := r.client.SetResourceHeaderAuth(ctx, int(plan.ResourceID.ValueInt64()), &client.SetResourceHeaderAuthRequest{
 		Password:              &pw,
 		User:                  &user,
 		ExtendedCompatibility: plan.ExtendedCompatibility.ValueBool(),
@@ -112,7 +112,7 @@ func (r *ResourceHeaderAuthResource) Read(ctx context.Context, req resource.Read
 		return
 	}
 
-	authState, err := r.client.GetResourceAuthState(int(state.ResourceID.ValueInt64()))
+	authState, err := r.client.GetResourceAuthState(ctx, int(state.ResourceID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -141,7 +141,7 @@ func (r *ResourceHeaderAuthResource) Update(ctx context.Context, req resource.Up
 
 	pw := plan.Password.ValueString()
 	user := plan.User.ValueString()
-	if err := r.client.SetResourceHeaderAuth(int(plan.ResourceID.ValueInt64()), &client.SetResourceHeaderAuthRequest{
+	if err := r.client.SetResourceHeaderAuth(ctx, int(plan.ResourceID.ValueInt64()), &client.SetResourceHeaderAuthRequest{
 		Password:              &pw,
 		User:                  &user,
 		ExtendedCompatibility: plan.ExtendedCompatibility.ValueBool(),
@@ -160,7 +160,7 @@ func (r *ResourceHeaderAuthResource) Delete(ctx context.Context, req resource.De
 		return
 	}
 
-	if err := r.client.SetResourceHeaderAuth(int(state.ResourceID.ValueInt64()), &client.SetResourceHeaderAuthRequest{
+	if err := r.client.SetResourceHeaderAuth(ctx, int(state.ResourceID.ValueInt64()), &client.SetResourceHeaderAuthRequest{
 		Password:              nil,
 		User:                  nil,
 		ExtendedCompatibility: false,
@@ -177,7 +177,7 @@ func (r *ResourceHeaderAuthResource) ImportState(ctx context.Context, req resour
 		return
 	}
 
-	authState, err := r.client.GetResourceAuthState(int(resourceID))
+	authState, err := r.client.GetResourceAuthState(ctx, int(resourceID))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import resource header auth", err.Error())
 		return

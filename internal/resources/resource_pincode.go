@@ -79,7 +79,7 @@ func (r *ResourcePincodeResource) Create(ctx context.Context, req resource.Creat
 	}
 
 	pin := plan.Pincode.ValueString()
-	if err := r.client.SetResourcePincode(int(plan.ResourceID.ValueInt64()), &pin); err != nil {
+	if err := r.client.SetResourcePincode(ctx, int(plan.ResourceID.ValueInt64()), &pin); err != nil {
 		resp.Diagnostics.AddError("Failed to set resource PIN code", err.Error())
 		return
 	}
@@ -94,7 +94,7 @@ func (r *ResourcePincodeResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	authState, err := r.client.GetResourceAuthState(int(state.ResourceID.ValueInt64()))
+	authState, err := r.client.GetResourceAuthState(ctx, int(state.ResourceID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -122,7 +122,7 @@ func (r *ResourcePincodeResource) Update(ctx context.Context, req resource.Updat
 	}
 
 	pin := plan.Pincode.ValueString()
-	if err := r.client.SetResourcePincode(int(plan.ResourceID.ValueInt64()), &pin); err != nil {
+	if err := r.client.SetResourcePincode(ctx, int(plan.ResourceID.ValueInt64()), &pin); err != nil {
 		resp.Diagnostics.AddError("Failed to update resource PIN code", err.Error())
 		return
 	}
@@ -137,7 +137,7 @@ func (r *ResourcePincodeResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	if err := r.client.SetResourcePincode(int(state.ResourceID.ValueInt64()), nil); err != nil {
+	if err := r.client.SetResourcePincode(ctx, int(state.ResourceID.ValueInt64()), nil); err != nil {
 		resp.Diagnostics.AddError("Failed to remove resource PIN code", err.Error())
 		return
 	}
@@ -150,7 +150,7 @@ func (r *ResourcePincodeResource) ImportState(ctx context.Context, req resource.
 		return
 	}
 
-	authState, err := r.client.GetResourceAuthState(int(resourceID))
+	authState, err := r.client.GetResourceAuthState(ctx, int(resourceID))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import resource PIN code", err.Error())
 		return

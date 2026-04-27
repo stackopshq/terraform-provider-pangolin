@@ -133,13 +133,13 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	// Get site defaults (newtId, secret, address)
-	defaults, err := r.client.GetSiteDefaults()
+	defaults, err := r.client.GetSiteDefaults(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get site defaults", err.Error())
 		return
 	}
 
-	site, err := r.client.CreateSite(&client.CreateSiteRequest{
+	site, err := r.client.CreateSite(ctx, &client.CreateSiteRequest{
 		Name:                plan.Name.ValueString(),
 		Type:                "newt",
 		NewtID:              defaults.NewtID,
@@ -170,7 +170,7 @@ func (r *SiteResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	site, err := r.client.GetSite(int(state.ID.ValueInt64()))
+	site, err := r.client.GetSite(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -197,7 +197,7 @@ func (r *SiteResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	site, err := r.client.UpdateSite(int(plan.ID.ValueInt64()), &client.UpdateSiteRequest{
+	site, err := r.client.UpdateSite(ctx, int(plan.ID.ValueInt64()), &client.UpdateSiteRequest{
 		Name:                plan.Name.ValueString(),
 		DockerSocketEnabled: plan.DockerSocketEnabled.ValueBool(),
 	})
@@ -224,7 +224,7 @@ func (r *SiteResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	err := r.client.DeleteSite(int(state.ID.ValueInt64()))
+	err := r.client.DeleteSite(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete site", err.Error())
 		return
@@ -238,7 +238,7 @@ func (r *SiteResource) ImportState(ctx context.Context, req resource.ImportState
 		return
 	}
 
-	site, err := r.client.GetSite(int(id))
+	site, err := r.client.GetSite(ctx, int(id))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import site", err.Error())
 		return

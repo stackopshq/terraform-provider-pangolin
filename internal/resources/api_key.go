@@ -87,7 +87,7 @@ func (r *APIKeyResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	apiKey, err := r.client.CreateAPIKey(&client.CreateAPIKeyRequest{
+	apiKey, err := r.client.CreateAPIKey(ctx, &client.CreateAPIKeyRequest{
 		Name: plan.Name.ValueString(),
 	})
 	if err != nil {
@@ -109,7 +109,7 @@ func (r *APIKeyResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	apiKey, err := r.client.GetAPIKeyByID(state.ID.ValueString())
+	apiKey, err := r.client.GetAPIKeyByID(ctx, state.ID.ValueString())
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -136,7 +136,7 @@ func (r *APIKeyResource) Delete(ctx context.Context, req resource.DeleteRequest,
 		return
 	}
 
-	err := r.client.DeleteAPIKey(state.ID.ValueString())
+	err := r.client.DeleteAPIKey(ctx, state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete API key", err.Error())
 		return
@@ -144,7 +144,7 @@ func (r *APIKeyResource) Delete(ctx context.Context, req resource.DeleteRequest,
 }
 
 func (r *APIKeyResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	apiKey, err := r.client.GetAPIKeyByID(req.ID)
+	apiKey, err := r.client.GetAPIKeyByID(ctx, req.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import API key", err.Error())
 		return

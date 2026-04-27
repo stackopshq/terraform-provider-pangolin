@@ -130,7 +130,7 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		userType = "oidc"
 	}
 
-	user, err := r.client.CreateUser(&client.CreateUserRequest{
+	user, err := r.client.CreateUser(ctx, &client.CreateUserRequest{
 		Username: plan.Username.ValueString(),
 		RoleID:   int(plan.RoleID.ValueInt64()),
 		Email:    plan.Email.ValueString(),
@@ -156,7 +156,7 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	user, err := r.client.GetUser(state.ID.ValueString())
+	user, err := r.client.GetUser(ctx, state.ID.ValueString())
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
@@ -178,7 +178,7 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	_, err := r.client.UpdateUser(plan.ID.ValueString(), &client.UpdateUserRequest{
+	_, err := r.client.UpdateUser(ctx, plan.ID.ValueString(), &client.UpdateUserRequest{
 		AutoProvisioned: plan.AutoProvisioned.ValueBool(),
 	})
 	if err != nil {
@@ -196,7 +196,7 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	err := r.client.DeleteUser(state.ID.ValueString())
+	err := r.client.DeleteUser(ctx, state.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete user", err.Error())
 		return
@@ -204,7 +204,7 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 }
 
 func (r *UserResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	user, err := r.client.GetUser(req.ID)
+	user, err := r.client.GetUser(ctx, req.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import user", err.Error())
 		return

@@ -81,7 +81,7 @@ func (r *ResourceUserResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	err := r.client.AddUserToResource(int(plan.ResourceID.ValueInt64()), plan.UserID.ValueString())
+	err := r.client.AddUserToResource(ctx, int(plan.ResourceID.ValueInt64()), plan.UserID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to assign user to resource", err.Error())
 		return
@@ -109,7 +109,7 @@ func (r *ResourceUserResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	err := r.client.RemoveUserFromResource(int(state.ResourceID.ValueInt64()), state.UserID.ValueString())
+	err := r.client.RemoveUserFromResource(ctx, int(state.ResourceID.ValueInt64()), state.UserID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to remove user from resource", err.Error())
 		return

@@ -81,7 +81,7 @@ func (r *SiteResourceUserResource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 
-	err := r.client.AddUserToSiteResource(int(plan.SiteResourceID.ValueInt64()), plan.UserID.ValueString())
+	err := r.client.AddUserToSiteResource(ctx, int(plan.SiteResourceID.ValueInt64()), plan.UserID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to assign user to site resource", err.Error())
 		return
@@ -109,7 +109,7 @@ func (r *SiteResourceUserResource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	err := r.client.RemoveUserFromSiteResource(int(state.SiteResourceID.ValueInt64()), state.UserID.ValueString())
+	err := r.client.RemoveUserFromSiteResource(ctx, int(state.SiteResourceID.ValueInt64()), state.UserID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to remove user from site resource", err.Error())
 		return

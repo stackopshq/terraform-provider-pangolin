@@ -93,7 +93,7 @@ func (d *SitesDataSource) Configure(_ context.Context, req datasource.ConfigureR
 }
 
 func (d *SitesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	sites, err := d.client.ListSites()
+	sites, err := d.client.ListSites(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list sites", err.Error())
 		return

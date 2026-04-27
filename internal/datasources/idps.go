@@ -83,7 +83,7 @@ func (d *IDPsDataSource) Configure(_ context.Context, req datasource.ConfigureRe
 }
 
 func (d *IDPsDataSource) Read(ctx context.Context, _ datasource.ReadRequest, resp *datasource.ReadResponse) {
-	idps, err := d.client.ListIDPs()
+	idps, err := d.client.ListIDPs(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list IDPs", err.Error())
 		return
