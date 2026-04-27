@@ -64,7 +64,9 @@ resource "pangolin_resource_rule" "allow_internal" {
 ### Optional
 
 - `api_key` (String, Sensitive) The API key for authentication. Can be set via `PANGOLIN_API_KEY` env var.
+- `ca_cert_pem` (String) PEM-encoded CA certificate(s) used to verify the Pangolin server's TLS certificate. Set this when the Pangolin instance is served by a private or self-signed CA. Multiple certificates may be concatenated. Can be set via `PANGOLIN_CA_CERT_PEM` env var.
 - `org_id` (String) The organization ID. Can be set via `PANGOLIN_ORG_ID` env var.
+- `tls_insecure` (Boolean) Skip TLS certificate verification entirely. Intended for local debugging only — never use against production. Can be set via `PANGOLIN_TLS_INSECURE` env var.
 - `url` (String) The base URL of the Pangolin API (e.g. `https://pangolin.example.com`). Can be set via `PANGOLIN_URL` env var.
 
 ## Authentication
