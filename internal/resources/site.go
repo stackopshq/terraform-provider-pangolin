@@ -112,7 +112,7 @@ func (r *SiteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Description: "Enable Docker socket access on this site.",
 				Optional:    true,
 				Computed:    true,
-				Default:     booldefault.StaticBool(false),
+				Default:     booldefault.StaticBool(true),
 			},
 		},
 	}
@@ -145,11 +145,11 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	site, err := r.client.CreateSite(ctx, &client.CreateSiteRequest{
-		Name:                plan.Name.ValueString(),
-		Type:                "newt",
-		NewtID:              defaults.NewtID,
-		Secret:              defaults.NewtSecret,
-		DockerSocketEnabled: plan.DockerSocketEnabled.ValueBool(),
+		Name:    plan.Name.ValueString(),
+		Type:    "newt",
+		NewtID:  defaults.NewtID,
+		Secret:  defaults.NewtSecret,
+		Address: defaults.Address,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create site", err.Error())
