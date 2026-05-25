@@ -863,11 +863,71 @@ func (c *Client) RemoveUserFromSiteResource(ctx context.Context, siteResourceID 
 
 // --- Users ---
 
+// UserRoleBinding is the slim role pair embedded in a User's roles
+// list (returned by the org-scoped list endpoint).
+type UserRoleBinding struct {
+	RoleID   int    `json:"roleId"`
+	RoleName string `json:"roleName"`
+}
+
 // User represents a Pangolin user.
+//
+// The list endpoint returns a richer payload than the older provider
+// modeled — IDP linkage, 2FA flag, ownership marker, dateCreated,
+// plus the embedded role bindings. New fields are all omitempty so
+// older create/update responses (which return a subset) keep
+// unmarshalling cleanly.
 type User struct {
 	ID       string `json:"id"`
 	Email    string `json:"email"`
 	Username string `json:"username"`
+
+	// List-view extras (omitempty so legacy responses stay clean)
+	EmailVerified    bool              `json:"emailVerified,omitempty"`
+	DateCreated      string            `json:"dateCreated,omitempty"`
+	OrgID            string            `json:"orgId,omitempty"`
+	Name             *string           `json:"name,omitempty"`
+	Type             string            `json:"type,omitempty"`
+	IsOwner          bool              `json:"isOwner,omitempty"`
+	IdpName          string            `json:"idpName,omitempty"`
+	IdpID            int               `json:"idpId,omitempty"`
+	IdpType          string            `json:"idpType,omitempty"`
+	IdpVariant       string            `json:"idpVariant,omitempty"`
+	TwoFactorEnabled bool              `json:"twoFactorEnabled,omitempty"`
+	Roles            []UserRoleBinding `json:"roles,omitempty"`
+}
+
+// UserByUsernameResponse mirrors the user-by-username payload, which
+// uses `userId` (not `id`) as the primary key field.
+type UserByUsernameResponse struct {
+	UserID           string            `json:"userId"`
+	OrgID            string            `json:"orgId"`
+	Email            *string           `json:"email"`
+	Username         string            `json:"username"`
+	Name             *string           `json:"name"`
+	Type             string            `json:"type"`
+	IsOwner          bool              `json:"isOwner"`
+	TwoFactorEnabled bool              `json:"twoFactorEnabled"`
+	Roles            []UserRoleBinding `json:"roles,omitempty"`
+}
+
+// GetUserByUsername looks up a user by their username within an
+// organization. The Pangolin API requires the IDP ID alongside the
+// username — usernames are unique only within an IDP, not globally.
+func (c *Client) GetUserByUsername(ctx context.Context, orgID, username string, idpID int) (*UserByUsernameResponse, error) {
+	values := url.Values{}
+	values.Set("username", username)
+	values.Set("idpId", fmt.Sprintf("%d", idpID))
+	path := fmt.Sprintf("/org/%s/user-by-username?%s", orgID, values.Encode())
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out UserByUsernameResponse
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse user-by-username: %w", err)
+	}
+	return &out, nil
 }
 
 // UsersResponse wraps the users list response.
