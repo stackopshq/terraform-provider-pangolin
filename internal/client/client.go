@@ -1811,3 +1811,111 @@ func buildRequestLogQuery(q RequestLogQuery) string {
 	}
 	return values.Encode()
 }
+
+// --- Invitations ---
+
+// InviteRole is one role binding embedded inside an Invitation list item.
+type InviteRole struct {
+	RoleID   int    `json:"roleId"`
+	RoleName string `json:"roleName"`
+}
+
+// Invitation is a pending org invite as returned by
+// GET /org/{org}/invitations.
+type Invitation struct {
+	InviteID  string       `json:"inviteId"`
+	Email     string       `json:"email"`
+	ExpiresAt int64        `json:"expiresAt"`
+	Roles     []InviteRole `json:"roles"`
+}
+
+// CreateInviteRequest is the payload for POST /org/{org}/create-invite.
+//
+// Use either RoleID (single role) or RoleIDs (multiple roles). In
+// observed responses the upstream accepts both shapes; current
+// practice is to send a single RoleID.
+type CreateInviteRequest struct {
+	Email      string `json:"email"`
+	RoleID     int    `json:"roleId,omitempty"`
+	RoleIDs    []int  `json:"roleIds,omitempty"`
+	ValidHours int    `json:"validHours,omitempty"`
+	SendEmail  bool   `json:"sendEmail"`
+	Regenerate bool   `json:"regenerate,omitempty"`
+}
+
+// CreateInviteResponse is what POST create-invite returns. Note the
+// API does not echo the InviteID directly; the ID is the first segment
+// of the token in InviteLink (before the '-'). Callers needing the ID
+// should list invitations and match on email.
+type CreateInviteResponse struct {
+	InviteLink string `json:"inviteLink"`
+	ExpiresAt  int64  `json:"expiresAt"`
+}
+
+// CreateInvite invites a user to join an organization.
+func (c *Client) CreateInvite(ctx context.Context, orgID string, req *CreateInviteRequest) (*CreateInviteResponse, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/create-invite", orgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var out CreateInviteResponse
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse invite response: %w", err)
+	}
+	return &out, nil
+}
+
+// ListInvitations returns all open invitations of an organization.
+// The API returns pagination.total as a string ("0") rather than a
+// number, so the wrapper is unmarshalled into a struct that ignores
+// pagination entirely.
+func (c *Client) ListInvitations(ctx context.Context, orgID string) ([]Invitation, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/invitations", orgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Invitations []Invitation `json:"invitations"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse invitations: %w", err)
+	}
+	return wrapper.Invitations, nil
+}
+
+// GetInvitation returns a single invitation by ID. The Pangolin API
+// does not expose a per-id GET, so this lists and filters.
+func (c *Client) GetInvitation(ctx context.Context, orgID, inviteID string) (*Invitation, error) {
+	invites, err := c.ListInvitations(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range invites {
+		if invites[i].InviteID == inviteID {
+			return &invites[i], nil
+		}
+	}
+	return nil, fmt.Errorf("invitation %s: %w", inviteID, ErrNotFound)
+}
+
+// FindInvitationByEmail looks up an invitation by email address. Used
+// right after CreateInvite to discover the inviteId, which the create
+// response does not include.
+func (c *Client) FindInvitationByEmail(ctx context.Context, orgID, email string) (*Invitation, error) {
+	invites, err := c.ListInvitations(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range invites {
+		if invites[i].Email == email {
+			return &invites[i], nil
+		}
+	}
+	return nil, fmt.Errorf("invitation for %s: %w", email, ErrNotFound)
+}
+
+// DeleteInvitation cancels a pending invitation.
+func (c *Client) DeleteInvitation(ctx context.Context, orgID, inviteID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s/invitations/%s", orgID, inviteID), nil)
+	return err
+}
