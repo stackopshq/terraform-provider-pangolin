@@ -121,3 +121,5 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_idps` | List all Identity Providers |
 | `pangolin_request_logs` | Query the request audit log |
 | `pangolin_logs_analytics` | Aggregate analytics rollup (per-country, per-day, totals) |
+| `pangolin_resource_targets` | List backend targets of a resource (with health-check + routing detail) |
+| `pangolin_resource_roles` | List roles granted access to a resource |
