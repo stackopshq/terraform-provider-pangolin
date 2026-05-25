@@ -46,7 +46,7 @@ func (r *ResourceHeaderAuthResource) Metadata(_ context.Context, req resource.Me
 
 func (r *ResourceHeaderAuthResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Sets header-based authentication for a Pangolin HTTP resource. Destroying this resource removes the header auth.",
+		Description: "Sets header-based authentication for a Pangolin HTTP resource. Pangolin injects an `Authorization` header into proxied requests. Destroying this resource removes the header authentication.",
 		Attributes: map[string]schema.Attribute{
 			"resource_id": schema.Int64Attribute{
 				Description: "The ID of the resource to protect with header authentication.",
@@ -71,7 +71,7 @@ func (r *ResourceHeaderAuthResource) Schema(_ context.Context, _ resource.Schema
 				},
 			},
 			"extended_compatibility": schema.BoolAttribute{
-				Description: "Whether to enable extended compatibility mode. Defaults to false.",
+				Description: "Whether to enable extended compatibility mode. Defaults to `false`.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),

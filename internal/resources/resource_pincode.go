@@ -43,7 +43,7 @@ func (r *ResourcePincodeResource) Metadata(_ context.Context, req resource.Metad
 
 func (r *ResourcePincodeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Sets a PIN code for accessing a Pangolin HTTP resource. Destroying this resource removes the PIN code.",
+		Description: "Sets a PIN code for accessing a Pangolin HTTP resource. Destroying this resource removes the PIN code protection.",
 		Attributes: map[string]schema.Attribute{
 			"resource_id": schema.Int64Attribute{
 				Description: "The ID of the resource to protect with a PIN code.",

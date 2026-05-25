@@ -43,7 +43,7 @@ func (r *ResourcePasswordResource) Metadata(_ context.Context, req resource.Meta
 
 func (r *ResourcePasswordResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Sets a password for accessing a Pangolin HTTP resource. Destroying this resource removes the password.",
+		Description: "Sets a password for accessing a Pangolin HTTP resource. Destroying this resource removes the password protection.",
 		Attributes: map[string]schema.Attribute{
 			"resource_id": schema.Int64Attribute{
 				Description: "The ID of the resource to protect with a password.",

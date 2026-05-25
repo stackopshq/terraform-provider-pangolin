@@ -94,14 +94,14 @@ func (r *SiteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"newt_id": schema.StringAttribute{
-				Description: "The Newt client ID assigned to this site.",
+				Description: "The Newt client ID assigned to this site. Set at creation time.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"newt_secret": schema.StringAttribute{
-				Description: "The Newt client secret assigned to this site. Sensitive — not returned by the API after creation.",
+				Description: "The Newt client secret assigned to this site. Set at creation time and not retrievable from the API afterwards. Not available after `terraform import`.",
 				Computed:    true,
 				Sensitive:   true,
 				PlanModifiers: []planmodifier.String{
@@ -109,7 +109,7 @@ func (r *SiteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"docker_socket_enabled": schema.BoolAttribute{
-				Description: "Enable Docker socket access on this site.",
+				Description: "Enable Docker socket access on this site. Defaults to `false`.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),

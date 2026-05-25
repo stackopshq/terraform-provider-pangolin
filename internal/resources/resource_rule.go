@@ -51,7 +51,7 @@ func (r *ResourceRuleResource) Metadata(_ context.Context, req resource.Metadata
 
 func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages an access control rule for a Pangolin HTTP resource.",
+		Description: "Manages an access control rule for a Pangolin HTTP resource. Rules are evaluated in priority order and control which requests are accepted, dropped, or passed through.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric rule ID.",
@@ -68,21 +68,21 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"action": schema.StringAttribute{
-				Description: "The rule action: ACCEPT, DROP, or PASS.",
+				Description: "The rule action: `ACCEPT`, `DROP`, or `PASS`.",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.OneOf("ACCEPT", "DROP", "PASS"),
 				},
 			},
 			"match": schema.StringAttribute{
-				Description: "The match type: CIDR, IP, PATH, COUNTRY, or ASN.",
+				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, or `ASN`.",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "ASN"),
 				},
 			},
 			"value": schema.StringAttribute{
-				Description: "The value to match against (e.g. CIDR range, IP, path prefix, country code, ASN).",
+				Description: "The value to match against (e.g. CIDR range, IP address, path prefix, country code, ASN).",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
@@ -96,7 +96,7 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"enabled": schema.BoolAttribute{
-				Description: "Whether the rule is enabled. Defaults to true.",
+				Description: "Whether the rule is enabled. Defaults to `true`.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(true),

@@ -56,7 +56,7 @@ func (d *IDPsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 							Computed:    true,
 						},
 						"type": schema.StringAttribute{
-							Description: "The IDP type (e.g. 'oidc').",
+							Description: "The IDP type (e.g. `oidc`).",
 							Computed:    true,
 						},
 						"auto_provision": schema.BoolAttribute{
