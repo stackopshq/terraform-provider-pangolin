@@ -170,6 +170,8 @@ func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.Da
 		datasources.NewLogsAnalyticsDataSource,
 		datasources.NewResourceTargetsDataSource,
 		datasources.NewResourceRolesDataSource,
+		datasources.NewDomainDataSource,
+		datasources.NewDomainDNSRecordsDataSource,
 	}
 }
 
