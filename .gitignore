@@ -7,3 +7,10 @@ dist/
 .idea/
 .vscode/
 .claude
+
+# Credentials and secrets — never commit
+.env
+.envrc
+.api-token*
+*.token
+secrets/
