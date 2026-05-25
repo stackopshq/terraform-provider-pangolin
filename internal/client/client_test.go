@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -590,4 +591,177 @@ func mustHost(t *testing.T, rawURL string) string {
 		t.Fatalf("unexpected test URL %q", rawURL)
 	}
 	return strings.TrimPrefix(rawURL, prefix)
+}
+
+// --- Request audit log tests ---
+
+func TestListRequestLogs_EmptyResult(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/logs/request" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"log":              []any{},
+			"pagination":       map[string]any{"total": 0, "limit": 1000, "offset": 0},
+			"filterAttributes": map[string]any{"actors": []string{}, "resources": []string{}, "locations": []string{}, "hosts": []string{}, "paths": []string{}},
+		})
+	})
+
+	res, err := c.ListRequestLogs(context.Background(), "test-org", RequestLogQuery{})
+	if err != nil {
+		t.Fatalf("ListRequestLogs: %v", err)
+	}
+	if len(res.Log) != 0 {
+		t.Errorf("Log = %v, want empty", res.Log)
+	}
+	if res.Pagination.Total != 0 || res.Pagination.Limit != 1000 {
+		t.Errorf("pagination = %+v, want total=0 limit=1000", res.Pagination)
+	}
+}
+
+func TestListRequestLogs_QueryParamsEncoded(t *testing.T) {
+	var gotQuery string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"log":              []any{},
+			"pagination":       map[string]any{"total": 0, "limit": 0, "offset": 0},
+			"filterAttributes": map[string]any{},
+		})
+	})
+
+	_, err := c.ListRequestLogs(context.Background(), "test-org", RequestLogQuery{
+		TimeStart:  "2026-05-01T00:00:00Z",
+		TimeEnd:    "2026-05-25T23:59:59Z",
+		Method:     "GET",
+		ResourceID: "42",
+		Path:       "/api/secret",
+		Actor:      "alice@example.com",
+		Limit:      "50",
+	})
+	if err != nil {
+		t.Fatalf("ListRequestLogs: %v", err)
+	}
+
+	want := map[string]string{
+		"timeStart":  "2026-05-01T00:00:00Z",
+		"timeEnd":    "2026-05-25T23:59:59Z",
+		"method":     "GET",
+		"resourceId": "42",
+		"path":       "/api/secret",
+		"actor":      "alice@example.com",
+		"limit":      "50",
+	}
+	for k, v := range want {
+		// url.Values.Encode escapes special chars; decode to compare
+		got, err := url.QueryUnescape(extractParam(gotQuery, k))
+		if err != nil {
+			t.Errorf("decode %s: %v", k, err)
+			continue
+		}
+		if got != v {
+			t.Errorf("query[%q] = %q, want %q", k, got, v)
+		}
+	}
+	// Unset fields must not appear
+	for _, k := range []string{"action", "reason", "location", "host", "offset"} {
+		if extractParam(gotQuery, k) != "" {
+			t.Errorf("query[%q] should be absent, got it set", k)
+		}
+	}
+}
+
+func TestListRequestLogs_EntriesAndFilterAttributes(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"log": []map[string]any{
+				{
+					"timestamp":  "2026-05-25T10:00:00Z",
+					"actor":      "alice@example.com",
+					"method":     "GET",
+					"reason":     "accept",
+					"resourceId": "42",
+					"location":   "Paris, FR",
+					"host":       "app.example.com",
+					"path":       "/dashboard",
+					// extra field not modeled — should land in Raw
+					"statusCode": 200,
+					"userAgent":  "curl/8.4",
+				},
+				{
+					"timestamp": "2026-05-25T10:01:00Z",
+					"actor":     "anonymous",
+					"method":    "POST",
+					"reason":    "deny:no_credentials",
+					"path":      "/admin",
+				},
+			},
+			"pagination": map[string]any{"total": 2, "limit": 1000, "offset": 0},
+			"filterAttributes": map[string]any{
+				"actors":    []string{"alice@example.com", "anonymous"},
+				"resources": []string{"42"},
+				"locations": []string{"Paris, FR"},
+				"hosts":     []string{"app.example.com"},
+				"paths":     []string{"/dashboard", "/admin"},
+			},
+		})
+	})
+
+	res, err := c.ListRequestLogs(context.Background(), "test-org", RequestLogQuery{})
+	if err != nil {
+		t.Fatalf("ListRequestLogs: %v", err)
+	}
+	if len(res.Log) != 2 {
+		t.Fatalf("Log len = %d, want 2", len(res.Log))
+	}
+
+	e0 := res.Log[0]
+	if e0.Actor != "alice@example.com" || e0.Method != "GET" || e0.Reason != "accept" {
+		t.Errorf("e0 modeled fields = %+v", e0)
+	}
+	// Raw must include the unmodeled fields
+	if !strings.Contains(string(e0.Raw), `"statusCode":200`) {
+		t.Errorf("e0.Raw missing statusCode: %s", e0.Raw)
+	}
+	if !strings.Contains(string(e0.Raw), `"userAgent":"curl/8.4"`) {
+		t.Errorf("e0.Raw missing userAgent: %s", e0.Raw)
+	}
+
+	if res.Log[1].Actor != "anonymous" || res.Log[1].Reason != "deny:no_credentials" {
+		t.Errorf("e1 = %+v", res.Log[1])
+	}
+
+	if len(res.FilterAttributes.Actors) != 2 || res.FilterAttributes.Actors[0] != "alice@example.com" {
+		t.Errorf("FilterAttributes.Actors = %v", res.FilterAttributes.Actors)
+	}
+	if res.Pagination.Total != 2 {
+		t.Errorf("Pagination.Total = %d, want 2", res.Pagination.Total)
+	}
+}
+
+func TestListRequestLogs_ErrorPropagates(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusForbidden, nil)
+	})
+
+	_, err := c.ListRequestLogs(context.Background(), "test-org", RequestLogQuery{})
+	if !errors.Is(err, ErrForbidden) {
+		t.Errorf("err = %v, want ErrForbidden", err)
+	}
+}
+
+// extractParam grabs the value of a single URL query parameter from a raw
+// query string. Returns "" if absent. Does not unescape.
+func extractParam(rawQuery, key string) string {
+	for _, kv := range strings.Split(rawQuery, "&") {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		if kv[:eq] == key {
+			return kv[eq+1:]
+		}
+	}
+	return ""
 }
