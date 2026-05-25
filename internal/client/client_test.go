@@ -10,8 +10,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+// disableRetryBackoff shrinks the retry waits so tests that exercise the
+// retry loop don't pay the production 100ms/200ms delays. Restored at
+// end of test.
+func disableRetryBackoff(t *testing.T) {
+	t.Helper()
+	origMin, origMax := retryWaitMin, retryWaitMax
+	retryWaitMin = 1 * time.Millisecond
+	retryWaitMax = 1 * time.Millisecond
+	t.Cleanup(func() {
+		retryWaitMin = origMin
+		retryWaitMax = origMax
+	})
+}
 
 // newTestClient wires a *Client to an httptest.Server. The test server is
 // closed automatically when the test ends.
@@ -82,6 +98,7 @@ func TestDoRequest_SetsAuthHeaderAndPathPrefix(t *testing.T) {
 }
 
 func TestDoRequest_StatusClassification(t *testing.T) {
+	disableRetryBackoff(t)
 	tests := []struct {
 		name         string
 		status       int
@@ -90,6 +107,7 @@ func TestDoRequest_StatusClassification(t *testing.T) {
 		{"unauthorized", http.StatusUnauthorized, ErrUnauthorized},
 		{"forbidden", http.StatusForbidden, ErrForbidden},
 		{"not found", http.StatusNotFound, ErrNotFound},
+		{"rate limited", http.StatusTooManyRequests, ErrRateLimited},
 		{"internal server", http.StatusInternalServerError, ErrServer},
 		{"bad gateway", http.StatusBadGateway, ErrServer},
 		{"teapot is not classified", http.StatusTeapot, nil},
@@ -104,7 +122,7 @@ func TestDoRequest_StatusClassification(t *testing.T) {
 				t.Fatalf("expected error for status %d", tc.status)
 			}
 			if tc.wantSentinel == nil {
-				for _, sentinel := range []error{ErrNotFound, ErrUnauthorized, ErrForbidden, ErrServer} {
+				for _, sentinel := range []error{ErrNotFound, ErrUnauthorized, ErrForbidden, ErrRateLimited, ErrServer, ErrTransport} {
 					if errors.Is(err, sentinel) {
 						t.Errorf("status %d should not match %v, got %v", tc.status, sentinel, err)
 					}
@@ -151,6 +169,7 @@ func TestDoRequest_ParseErrorIncludesStatus(t *testing.T) {
 }
 
 func TestDoRequest_TransportError(t *testing.T) {
+	disableRetryBackoff(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	c := &Client{
 		BaseURL:    srv.URL,
@@ -163,8 +182,8 @@ func TestDoRequest_TransportError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected transport error after server close")
 	}
-	if !strings.Contains(err.Error(), "request failed") {
-		t.Errorf("error %q does not wrap transport failure", err)
+	if !errors.Is(err, ErrTransport) {
+		t.Errorf("err = %v, want errors.Is(ErrTransport) = true", err)
 	}
 }
 
@@ -330,4 +349,245 @@ func TestGetSiteResource_ListHit(t *testing.T) {
 	if got.SiteResourceID != 2 || got.Name != "b" {
 		t.Errorf("got %+v, want SiteResourceID=2 Name=b", got)
 	}
+}
+
+// --- Retry policy tests ---
+
+func TestDoRequest_RetriesOnServerError(t *testing.T) {
+	disableRetryBackoff(t)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n < 3 {
+			writeEnvelope(t, w, http.StatusServiceUnavailable, nil)
+			return
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]string{"ok": "yes"})
+	})
+
+	resp, err := c.doRequest(context.Background(), "GET", "/x", nil)
+	if err != nil {
+		t.Fatalf("doRequest: %v", err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("server hit %d times, want 3 (2 retries after first 503)", got)
+	}
+	var data map[string]string
+	if err := json.Unmarshal(resp.Data, &data); err != nil || data["ok"] != "yes" {
+		t.Errorf("final response = %v, want ok=yes", data)
+	}
+}
+
+func TestDoRequest_RetriesOnRateLimit(t *testing.T) {
+	disableRetryBackoff(t)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			writeEnvelope(t, w, http.StatusTooManyRequests, nil)
+			return
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+
+	if _, err := c.doRequest(context.Background(), "GET", "/x", nil); err != nil {
+		t.Fatalf("doRequest: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("server hit %d times, want 2 (1 retry after 429)", got)
+	}
+}
+
+func TestDoRequest_RetriesOnTransportError(t *testing.T) {
+	// First attempt: server is closed → transport error.
+	// Subsequent attempts: server is up → 200.
+	// Simulated by swapping the BaseURL between attempts.
+	disableRetryBackoff(t)
+
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, nil)
+	}))
+	t.Cleanup(good.Close)
+
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	dead.Close() // immediate: any request fails at the transport layer
+	deadURL := dead.URL
+
+	c := &Client{
+		BaseURL:    deadURL,
+		APIKey:     "test-key",
+		HTTPClient: good.Client(),
+	}
+	// Swap to the good URL after the first failed attempt by hooking the
+	// transport: simplest is to swap BaseURL right before retry by using
+	// a roundtripper. Here we just rotate URLs across attempts manually.
+	var calls atomic.Int32
+	c.HTTPClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		n := calls.Add(1)
+		if n == 1 {
+			// pretend the connection died
+			return nil, errors.New("connection reset by peer")
+		}
+		req.URL.Host = mustHost(t, good.URL)
+		req.URL.Scheme = "http"
+		return good.Client().Do(req)
+	})}
+
+	if _, err := c.doRequest(context.Background(), "GET", "/x", nil); err != nil {
+		t.Fatalf("doRequest: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("transport called %d times, want 2 (1 retry after transport failure)", got)
+	}
+}
+
+func TestDoRequest_NoRetryOnPOST(t *testing.T) {
+	disableRetryBackoff(t)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeEnvelope(t, w, http.StatusServiceUnavailable, nil)
+	})
+
+	_, err := c.doRequest(context.Background(), http.MethodPost, "/x", nil)
+	if !errors.Is(err, ErrServer) {
+		t.Errorf("err = %v, want ErrServer", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("POST hit server %d times, want 1 (no retry on POST)", got)
+	}
+}
+
+func TestDoRequest_NoRetryOn404(t *testing.T) {
+	disableRetryBackoff(t)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+
+	_, err := c.doRequest(context.Background(), "GET", "/x", nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("GET hit server %d times, want 1 (no retry on 404)", got)
+	}
+}
+
+func TestDoRequest_GivesUpAfterMaxAttempts(t *testing.T) {
+	disableRetryBackoff(t)
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeEnvelope(t, w, http.StatusServiceUnavailable, nil)
+	})
+
+	_, err := c.doRequest(context.Background(), "GET", "/x", nil)
+	if !errors.Is(err, ErrServer) {
+		t.Errorf("err = %v, want ErrServer after max attempts", err)
+	}
+	if got := calls.Load(); got != int32(maxAttempts) {
+		t.Errorf("server hit %d times, want %d (maxAttempts)", got, maxAttempts)
+	}
+}
+
+func TestDoRequest_RetryRespectsContextCancellation(t *testing.T) {
+	// Keep the production backoff (~100ms) so the test can race a cancel
+	// against the wait between attempts.
+	var calls atomic.Int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeEnvelope(t, w, http.StatusServiceUnavailable, nil)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel after a short delay — long enough for the first attempt to
+	// complete but well within the first backoff window (100ms).
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := c.doRequest(ctx, "GET", "/x", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if got := calls.Load(); got >= int32(maxAttempts) {
+		t.Errorf("server hit %d times, expected cancellation to short-circuit before maxAttempts (%d)", got, maxAttempts)
+	}
+}
+
+func TestShouldRetry(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		err    error
+		want   bool
+	}{
+		{"nil err", "GET", nil, false},
+		{"GET 5xx", "GET", ErrServer, true},
+		{"GET 429", "GET", ErrRateLimited, true},
+		{"GET transport", "GET", ErrTransport, true},
+		{"GET 404", "GET", ErrNotFound, false},
+		{"GET 401", "GET", ErrUnauthorized, false},
+		{"PUT 5xx", "PUT", ErrServer, true},
+		{"DELETE 5xx", "DELETE", ErrServer, true},
+		{"POST 5xx never retries", "POST", ErrServer, false},
+		{"POST 429 never retries", "POST", ErrRateLimited, false},
+		{"POST transport never retries", "POST", ErrTransport, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldRetry(tc.method, tc.err); got != tc.want {
+				t.Errorf("shouldRetry(%q, %v) = %v, want %v", tc.method, tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBackoffDelay(t *testing.T) {
+	// Use the production values explicitly so the test doesn't pick up a
+	// disableRetryBackoff leak from another test.
+	origMin, origMax := retryWaitMin, retryWaitMax
+	retryWaitMin = 100 * time.Millisecond
+	retryWaitMax = 2 * time.Second
+	t.Cleanup(func() {
+		retryWaitMin = origMin
+		retryWaitMax = origMax
+	})
+
+	cases := []struct {
+		retryNum int
+		want     time.Duration
+	}{
+		{0, 100 * time.Millisecond},  // defensive: <1 yields min
+		{1, 100 * time.Millisecond},  // 100 * 2^0
+		{2, 200 * time.Millisecond},  // 100 * 2^1
+		{3, 400 * time.Millisecond},  // 100 * 2^2
+		{4, 800 * time.Millisecond},  // 100 * 2^3
+		{5, 1600 * time.Millisecond}, // 100 * 2^4
+		{6, 2 * time.Second},         // would be 3.2s, capped
+		{100, 2 * time.Second},       // overflow defense
+	}
+	for _, tc := range cases {
+		if got := backoffDelay(tc.retryNum); got != tc.want {
+			t.Errorf("backoffDelay(%d) = %v, want %v", tc.retryNum, got, tc.want)
+		}
+	}
+}
+
+// roundTripperFunc adapts a plain function to http.RoundTripper.
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// mustHost extracts the host from an httptest server URL (e.g.
+// "http://127.0.0.1:42613" → "127.0.0.1:42613").
+func mustHost(t *testing.T, rawURL string) string {
+	t.Helper()
+	const prefix = "http://"
+	if !strings.HasPrefix(rawURL, prefix) {
+		t.Fatalf("unexpected test URL %q", rawURL)
+	}
+	return strings.TrimPrefix(rawURL, prefix)
 }

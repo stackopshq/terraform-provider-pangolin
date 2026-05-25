@@ -27,8 +27,23 @@ var (
 	// or resource.
 	ErrForbidden = errors.New("pangolin: forbidden")
 	// ErrServer is returned for HTTP 5xx — the upstream is unhealthy.
-	// Callers may retry with backoff.
+	// The client retries idempotent methods on this error.
 	ErrServer = errors.New("pangolin: server error")
+	// ErrRateLimited is returned for HTTP 429. The client retries
+	// idempotent methods on this error.
+	ErrRateLimited = errors.New("pangolin: rate limited")
+	// ErrTransport wraps network-layer failures (connection refused,
+	// reset, TLS handshake errors, etc). The client retries idempotent
+	// methods on this error.
+	ErrTransport = errors.New("pangolin: transport error")
+)
+
+// Retry policy for transient failures. Values are package-level vars
+// (not const) so tests can shrink the wait times.
+var (
+	maxAttempts  = 3
+	retryWaitMin = 100 * time.Millisecond
+	retryWaitMax = 2 * time.Second
 )
 
 // ErrNotFound is returned by client methods when the requested resource does
@@ -104,17 +119,55 @@ func (c *Client) tlsConfig() *tls.Config {
 	return tr.TLSClientConfig
 }
 
-// doRequest performs an HTTP request and returns the parsed API response.
+// doRequest performs an HTTP request with retries on transient failures
+// (5xx, 429, transport errors) for idempotent methods, and returns the
+// parsed API response. POST requests are never retried because they are
+// assumed to be resource creations.
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*APIResponse, error) {
-	url := fmt.Sprintf("%s/v1%s", c.BaseURL, path)
-
-	var reqBody io.Reader
+	var bodyBytes []byte
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
+		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
-		reqBody = bytes.NewBuffer(jsonBody)
+		bodyBytes = b
+	}
+
+	var (
+		lastResp *APIResponse
+		lastErr  error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			wait := backoffDelay(attempt - 1)
+			tflog.Debug(ctx, "pangolin: retrying HTTP request", map[string]any{
+				"method":  method,
+				"path":    path,
+				"attempt": attempt,
+				"wait_ms": wait.Milliseconds(),
+			})
+			select {
+			case <-ctx.Done():
+				return lastResp, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+
+		lastResp, lastErr = c.doRequestOnce(ctx, method, path, bodyBytes)
+		if !shouldRetry(method, lastErr) {
+			return lastResp, lastErr
+		}
+	}
+	return lastResp, lastErr
+}
+
+// doRequestOnce performs a single HTTP attempt. bodyBytes may be nil.
+func (c *Client) doRequestOnce(ctx context.Context, method, path string, bodyBytes []byte) (*APIResponse, error) {
+	url := fmt.Sprintf("%s/v1%s", c.BaseURL, path)
+
+	var reqBody io.Reader
+	if bodyBytes != nil {
+		reqBody = bytes.NewReader(bodyBytes)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
@@ -133,13 +186,13 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w: %w", err, ErrTransport)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w: %w", err, ErrTransport)
 	}
 
 	tflog.Debug(ctx, "pangolin: HTTP response", map[string]any{
@@ -160,10 +213,39 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	return &apiResp, nil
 }
 
+// shouldRetry decides whether a failed attempt is worth retrying. POST is
+// never retried because it is assumed to create a resource server-side
+// and a duplicate could leak. GET/PUT/DELETE/PATCH retry on transient
+// errors (5xx, 429, transport).
+func shouldRetry(method string, err error) bool {
+	if err == nil {
+		return false
+	}
+	if method == http.MethodPost {
+		return false
+	}
+	return errors.Is(err, ErrServer) ||
+		errors.Is(err, ErrRateLimited) ||
+		errors.Is(err, ErrTransport)
+}
+
+// backoffDelay returns the wait before retry number retryNum (1-indexed).
+// Exponential growth: 100ms, 200ms, 400ms... capped at retryWaitMax.
+func backoffDelay(retryNum int) time.Duration {
+	if retryNum < 1 {
+		return retryWaitMin
+	}
+	wait := retryWaitMin << (retryNum - 1)
+	if wait <= 0 || wait > retryWaitMax {
+		return retryWaitMax
+	}
+	return wait
+}
+
 // classifyError maps an HTTP status code to a wrapped sentinel error so
 // callers can distinguish missing resources, auth failures, permission
-// failures and retryable server errors with errors.Is. Unknown status
-// codes fall through to a plain error.
+// failures, rate limits and retryable server errors with errors.Is.
+// Unknown status codes fall through to a plain error.
 func classifyError(status int, message string) error {
 	switch {
 	case status == http.StatusNotFound:
@@ -172,6 +254,8 @@ func classifyError(status int, message string) error {
 		return fmt.Errorf("API error (status 401): %s: %w", message, ErrUnauthorized)
 	case status == http.StatusForbidden:
 		return fmt.Errorf("API error (status 403): %s: %w", message, ErrForbidden)
+	case status == http.StatusTooManyRequests:
+		return fmt.Errorf("API error (status 429): %s: %w", message, ErrRateLimited)
 	case status >= 500:
 		return fmt.Errorf("API error (status %d): %s: %w", status, message, ErrServer)
 	default:
