@@ -751,6 +751,170 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Enterprise Org fields tests ---
+
+func TestGetOrg_FullEnterpriseShape(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/stackopshq" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"org": map[string]any{
+				"orgId":                              "stackopshq",
+				"name":                               "StackOps HQ",
+				"subnet":                             "100.90.137.0/18",
+				"utilitySubnet":                      "100.96.128.0/18",
+				"createdAt":                          "2026-05-06T17:06:19.939Z",
+				"requireTwoFactor":                   true,
+				"maxSessionLengthHours":              12,
+				"passwordExpiryDays":                 90,
+				"settingsLogRetentionDaysRequest":    7,
+				"settingsLogRetentionDaysAccess":     30,
+				"settingsLogRetentionDaysAction":     30,
+				"settingsLogRetentionDaysConnection": 14,
+				"sshCaPrivateKey":                    "encrypted-blob-here",
+				"sshCaPublicKey":                     "ssh-ed25519 AAAA...",
+				"isBillingOrg":                       true,
+				"billingOrgId":                       "stackopshq",
+			},
+		})
+	})
+
+	org, err := c.GetOrg(context.Background(), "stackopshq")
+	if err != nil {
+		t.Fatalf("GetOrg: %v", err)
+	}
+	if org.OrgID != "stackopshq" || org.Name != "StackOps HQ" {
+		t.Errorf("identity wrong: %+v", org)
+	}
+	if org.Subnet != "100.90.137.0/18" || org.UtilitySubnet != "100.96.128.0/18" {
+		t.Errorf("subnets wrong: %s / %s", org.Subnet, org.UtilitySubnet)
+	}
+	if org.RequireTwoFactor == nil || *org.RequireTwoFactor != true {
+		t.Errorf("RequireTwoFactor = %v, want *true", org.RequireTwoFactor)
+	}
+	if org.MaxSessionLengthHours == nil || *org.MaxSessionLengthHours != 12 {
+		t.Errorf("MaxSessionLengthHours = %v, want *12", org.MaxSessionLengthHours)
+	}
+	if org.PasswordExpiryDays == nil || *org.PasswordExpiryDays != 90 {
+		t.Errorf("PasswordExpiryDays = %v, want *90", org.PasswordExpiryDays)
+	}
+	if org.SettingsLogRetentionDaysAccess != 30 || org.SettingsLogRetentionDaysConnection != 14 {
+		t.Errorf("retention wrong: %+v", org)
+	}
+	if org.SSHCaPublicKey == "" || org.SSHCaPrivateKey == "" {
+		t.Errorf("ssh CA missing: pub=%q priv=%q", org.SSHCaPublicKey, org.SSHCaPrivateKey)
+	}
+	if !org.IsBillingOrg || org.BillingOrgID != "stackopshq" {
+		t.Errorf("billing wrong: %+v", org)
+	}
+}
+
+func TestGetOrg_NullableFieldsStayNil(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"org": map[string]any{
+				"orgId":                              "stackopshq",
+				"name":                               "StackOps HQ",
+				"subnet":                             "100.90.137.0/18",
+				"utilitySubnet":                      "100.96.128.0/18",
+				"requireTwoFactor":                   nil,
+				"maxSessionLengthHours":              nil,
+				"passwordExpiryDays":                 nil,
+				"settingsLogRetentionDaysRequest":    7,
+				"settingsLogRetentionDaysAccess":     0,
+				"settingsLogRetentionDaysAction":     0,
+				"settingsLogRetentionDaysConnection": 0,
+			},
+		})
+	})
+
+	org, err := c.GetOrg(context.Background(), "stackopshq")
+	if err != nil {
+		t.Fatalf("GetOrg: %v", err)
+	}
+	if org.RequireTwoFactor != nil {
+		t.Errorf("RequireTwoFactor = %v, want nil", org.RequireTwoFactor)
+	}
+	if org.MaxSessionLengthHours != nil {
+		t.Errorf("MaxSessionLengthHours = %v, want nil", org.MaxSessionLengthHours)
+	}
+	if org.PasswordExpiryDays != nil {
+		t.Errorf("PasswordExpiryDays = %v, want nil", org.PasswordExpiryDays)
+	}
+}
+
+func TestUpdateOrg_PartialBodyOmitsUnsetFields(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/org/stackopshq" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"orgId": "stackopshq", "name": "updated",
+		})
+	})
+
+	two := true
+	twelve := 12
+	if _, err := c.UpdateOrg(context.Background(), "stackopshq", &UpdateOrgRequest{
+		Name:                  "updated",
+		RequireTwoFactor:      &two,
+		MaxSessionLengthHours: &twelve,
+		// Others left nil — must NOT appear in body
+	}); err != nil {
+		t.Fatalf("UpdateOrg: %v", err)
+	}
+
+	wantKeys := []string{"name", "requireTwoFactor", "maxSessionLengthHours"}
+	unwantedKeys := []string{
+		"passwordExpiryDays",
+		"settingsLogRetentionDaysRequest",
+		"settingsLogRetentionDaysAccess",
+		"settingsLogRetentionDaysAction",
+		"settingsLogRetentionDaysConnection",
+	}
+	for _, k := range wantKeys {
+		if _, ok := gotBody[k]; !ok {
+			t.Errorf("body missing %q", k)
+		}
+	}
+	for _, k := range unwantedKeys {
+		if _, ok := gotBody[k]; ok {
+			t.Errorf("body should not contain %q, got %s", k, gotBody[k])
+		}
+	}
+}
+
+func TestUpdateOrg_ZeroValueRetentionIsSent(t *testing.T) {
+	// Sending settingsLogRetentionDaysAccess = 0 must reach the wire as
+	// `"settingsLogRetentionDaysAccess":0`, not get dropped by omitempty.
+	// The client uses *int + omitempty: a nil pointer is omitted, a
+	// pointer to 0 stays.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"orgId": "stackopshq", "name": "x",
+		})
+	})
+
+	zero := 0
+	if _, err := c.UpdateOrg(context.Background(), "stackopshq", &UpdateOrgRequest{
+		SettingsLogRetentionDaysAccess: &zero,
+	}); err != nil {
+		t.Fatalf("UpdateOrg: %v", err)
+	}
+	if string(gotBody["settingsLogRetentionDaysAccess"]) != "0" {
+		t.Errorf("settingsLogRetentionDaysAccess in body = %s, want 0", gotBody["settingsLogRetentionDaysAccess"])
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
