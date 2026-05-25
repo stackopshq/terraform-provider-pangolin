@@ -438,6 +438,12 @@ func (c *Client) DeleteResource(ctx context.Context, resourceID int) error {
 // --- Targets ---
 
 // Target represents a backend target for a resource.
+//
+// The list endpoint (GET /resource/{id}/targets) returns extra fields
+// not echoed by the per-id GET — site display info, the health-check
+// configuration, and routing details. They are all optional and
+// marked with omitempty so an unmarshal on the smaller per-id payload
+// leaves them at their zero values without polluting CRUD payloads.
 type Target struct {
 	TargetID   int    `json:"targetId"`
 	ResourceID int    `json:"resourceId"`
@@ -446,6 +452,72 @@ type Target struct {
 	Method     string `json:"method"`
 	Port       int    `json:"port"`
 	Enabled    bool   `json:"enabled"`
+
+	// List-view extras (read-only; emitted only by /resource/{id}/targets)
+	SiteType            string  `json:"siteType,omitempty"`
+	SiteName            string  `json:"siteName,omitempty"`
+	HCEnabled           bool    `json:"hcEnabled,omitempty"`
+	HCPath              *string `json:"hcPath,omitempty"`
+	HCScheme            *string `json:"hcScheme,omitempty"`
+	HCMode              *string `json:"hcMode,omitempty"`
+	HCHostname          *string `json:"hcHostname,omitempty"`
+	HCPort              *int    `json:"hcPort,omitempty"`
+	HCInterval          *int    `json:"hcInterval,omitempty"`
+	HCUnhealthyInterval *int    `json:"hcUnhealthyInterval,omitempty"`
+	HCTimeout           *int    `json:"hcTimeout,omitempty"`
+	HCHeaders           *string `json:"hcHeaders,omitempty"`
+	HCFollowRedirects   *bool   `json:"hcFollowRedirects,omitempty"`
+	HCMethod            *string `json:"hcMethod,omitempty"`
+	HCStatus            *string `json:"hcStatus,omitempty"`
+	HCHealth            string  `json:"hcHealth,omitempty"`
+	HCTLSServerName     *string `json:"hcTlsServerName,omitempty"`
+	Path                *string `json:"path,omitempty"`
+	PathMatchType       *string `json:"pathMatchType,omitempty"`
+	RewritePath         *string `json:"rewritePath,omitempty"`
+	RewritePathType     *string `json:"rewritePathType,omitempty"`
+	Priority            *int    `json:"priority,omitempty"`
+}
+
+// ListResourceTargets lists all targets that back a resource, with
+// the full list-view detail (site info, health-check config, path
+// routing). The per-id GetTarget call returns only the CRUD subset.
+func (c *Client) ListResourceTargets(ctx context.Context, resourceID int) ([]Target, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/targets", resourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Targets []Target `json:"targets"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse resource targets: %w", err)
+	}
+	return wrapper.Targets, nil
+}
+
+// ResourceRoleSummary is the slim shape returned by
+// GET /resource/{id}/roles — only four fields per role, not the full
+// Role struct.
+type ResourceRoleSummary struct {
+	RoleID      int    `json:"roleId"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsAdmin     bool   `json:"isAdmin"`
+}
+
+// ListResourceRoles lists the roles assigned to a resource.
+func (c *Client) ListResourceRoles(ctx context.Context, resourceID int) ([]ResourceRoleSummary, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/roles", resourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Roles []ResourceRoleSummary `json:"roles"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse resource roles: %w", err)
+	}
+	return wrapper.Roles, nil
 }
 
 // CreateTargetRequest is the payload for creating a target.
