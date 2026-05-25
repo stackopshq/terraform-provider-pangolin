@@ -165,6 +165,7 @@ func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.Da
 		datasources.NewSiteResourcesDataSource,
 		datasources.NewAPIKeysDataSource,
 		datasources.NewIDPsDataSource,
+		datasources.NewRequestLogsDataSource,
 	}
 }
 
