@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -1609,4 +1610,123 @@ type SetResourceHeaderAuthRequest struct {
 func (c *Client) SetResourceHeaderAuth(ctx context.Context, resourceID int, req *SetResourceHeaderAuthRequest) error {
 	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/header-auth", resourceID), req)
 	return err
+}
+
+// --- Audit Logs ---
+
+// RequestLogQuery filters a request audit log query. All fields are optional;
+// zero values are not sent. Timestamps must be ISO 8601 / RFC 3339 strings.
+type RequestLogQuery struct {
+	TimeStart  string
+	TimeEnd    string
+	Action     string
+	Method     string
+	Reason     string
+	ResourceID string
+	Actor      string
+	Location   string
+	Host       string
+	Path       string
+	Limit      string
+	Offset     string
+}
+
+// RequestLogPagination is the pagination wrapper returned by the logs API.
+type RequestLogPagination struct {
+	Total  int `json:"total"`
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
+// RequestLogFilterAttributes lists the distinct values seen in the result
+// set for each filterable dimension. Useful to populate UIs with allowed
+// values for refining a query.
+type RequestLogFilterAttributes struct {
+	Actors    []string `json:"actors"`
+	Resources []string `json:"resources"`
+	Locations []string `json:"locations"`
+	Hosts     []string `json:"hosts"`
+	Paths     []string `json:"paths"`
+}
+
+// RequestLogEntry is one audit log line. The Pangolin API documents the
+// filterable dimensions (query params on GET /logs/request) but does not
+// publish a response schema for the entry itself, so we capture the fields
+// we can infer from those dimensions and also keep the full raw JSON in
+// Raw for consumers that need fields we did not model.
+type RequestLogEntry struct {
+	Timestamp  string          `json:"timestamp,omitempty"`
+	Actor      string          `json:"actor,omitempty"`
+	Method     string          `json:"method,omitempty"`
+	Reason     string          `json:"reason,omitempty"`
+	ResourceID string          `json:"resourceId,omitempty"`
+	Location   string          `json:"location,omitempty"`
+	Host       string          `json:"host,omitempty"`
+	Path       string          `json:"path,omitempty"`
+	Raw        json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON captures the full raw entry in Raw before unpacking the
+// known fields. This keeps unknown attributes available to downstream
+// consumers without forcing us to model the whole shape.
+func (e *RequestLogEntry) UnmarshalJSON(data []byte) error {
+	e.Raw = append(e.Raw[:0], data...)
+	type alias RequestLogEntry
+	return json.Unmarshal(data, (*alias)(e))
+}
+
+// RequestLogResponse is the full response body returned by GET
+// /org/{org}/logs/request.
+type RequestLogResponse struct {
+	Log              []RequestLogEntry          `json:"log"`
+	Pagination       RequestLogPagination       `json:"pagination"`
+	FilterAttributes RequestLogFilterAttributes `json:"filterAttributes"`
+}
+
+// ListRequestLogs queries the request audit log for an organization. Returns
+// the matching entries plus pagination and filter dimension metadata.
+//
+// This endpoint requires an active Pangolin Cloud subscription for the
+// access/action/connection log variants; the request log itself is
+// available on the free tier as well.
+func (c *Client) ListRequestLogs(ctx context.Context, orgID string, q RequestLogQuery) (*RequestLogResponse, error) {
+	path := fmt.Sprintf("/org/%s/logs/request", orgID)
+	if qs := buildRequestLogQuery(q); qs != "" {
+		path += "?" + qs
+	}
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out RequestLogResponse
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse request logs: %w", err)
+	}
+	return &out, nil
+}
+
+// buildRequestLogQuery encodes the non-empty fields of a RequestLogQuery
+// into a URL query string. Returned string does not include the leading
+// '?'. Order is stable (struct field order) so tests can assert.
+func buildRequestLogQuery(q RequestLogQuery) string {
+	values := url.Values{}
+	for k, v := range map[string]string{
+		"timeStart":  q.TimeStart,
+		"timeEnd":    q.TimeEnd,
+		"action":     q.Action,
+		"method":     q.Method,
+		"reason":     q.Reason,
+		"resourceId": q.ResourceID,
+		"actor":      q.Actor,
+		"location":   q.Location,
+		"host":       q.Host,
+		"path":       q.Path,
+		"limit":      q.Limit,
+		"offset":     q.Offset,
+	} {
+		if v != "" {
+			values.Set(k, v)
+		}
+	}
+	return values.Encode()
 }
