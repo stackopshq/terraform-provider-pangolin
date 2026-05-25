@@ -796,6 +796,115 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Resource sub-listings tests ---
+
+func TestListResourceTargets_FullShape(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/resource/7/targets" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"targets": []map[string]any{
+				{
+					"targetId":   8,
+					"resourceId": 7,
+					"siteId":     4,
+					"ip":         "kwatch_admin",
+					"method":     "http",
+					"port":       8001,
+					"enabled":    true,
+					"siteType":   "newt",
+					"siteName":   "Kwatch",
+					"hcEnabled":  false,
+					"hcHealth":   "unknown",
+					"hcPath":     nil,
+					"priority":   100,
+				},
+				{
+					"targetId":   9,
+					"resourceId": 7,
+					"siteId":     4,
+					"ip":         "10.0.0.5",
+					"method":     "https",
+					"port":       8443,
+					"enabled":    true,
+					"hcEnabled":  true,
+					"hcHealth":   "healthy",
+					"hcPath":     "/_health",
+					"hcInterval": 30,
+				},
+			},
+		})
+	})
+
+	targets, err := c.ListResourceTargets(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListResourceTargets: %v", err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("len = %d, want 2", len(targets))
+	}
+	t0 := targets[0]
+	if t0.TargetID != 8 || t0.IP != "kwatch_admin" || t0.SiteName != "Kwatch" {
+		t.Errorf("t0 base = %+v", t0)
+	}
+	if t0.HCPath != nil || t0.HCInterval != nil {
+		t.Errorf("t0 nullable hc fields should stay nil: hcPath=%v hcInterval=%v", t0.HCPath, t0.HCInterval)
+	}
+	if t0.Priority == nil || *t0.Priority != 100 {
+		t.Errorf("t0.Priority = %v, want *100", t0.Priority)
+	}
+	t1 := targets[1]
+	if !t1.HCEnabled || t1.HCHealth != "healthy" {
+		t.Errorf("t1 hc fields wrong: %+v", t1)
+	}
+	if t1.HCPath == nil || *t1.HCPath != "/_health" {
+		t.Errorf("t1.HCPath = %v, want *\"/_health\"", t1.HCPath)
+	}
+	if t1.HCInterval == nil || *t1.HCInterval != 30 {
+		t.Errorf("t1.HCInterval = %v, want *30", t1.HCInterval)
+	}
+}
+
+func TestListResourceRoles_FullShape(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/resource/42/roles" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roles": []map[string]any{
+				{"roleId": 1, "name": "Admin", "description": "Admin role with the most permissions", "isAdmin": true},
+				{"roleId": 2, "name": "Member", "description": "Members can only view resources", "isAdmin": false},
+			},
+		})
+	})
+
+	roles, err := c.ListResourceRoles(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("ListResourceRoles: %v", err)
+	}
+	if len(roles) != 2 {
+		t.Fatalf("len = %d, want 2", len(roles))
+	}
+	if roles[0].RoleID != 1 || !roles[0].IsAdmin || roles[0].Name != "Admin" {
+		t.Errorf("roles[0] = %+v", roles[0])
+	}
+	if roles[1].IsAdmin {
+		t.Errorf("roles[1].IsAdmin = true, want false")
+	}
+}
+
+func TestListResourceTargets_ErrorPropagates(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.ListResourceTargets(context.Background(), 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
 // --- Logs analytics tests ---
 
 func TestGetLogsAnalytics_FullShape(t *testing.T) {
