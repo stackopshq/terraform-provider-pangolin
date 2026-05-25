@@ -123,3 +123,5 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_logs_analytics` | Aggregate analytics rollup (per-country, per-day, totals) |
 | `pangolin_resource_targets` | List backend targets of a resource (with health-check + routing detail) |
 | `pangolin_resource_roles` | List roles granted access to a resource |
+| `pangolin_domain` | Single domain lookup by ID |
+| `pangolin_domain_dns_records` | DNS records expected (or verified) for a domain |
