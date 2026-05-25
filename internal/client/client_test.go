@@ -751,6 +751,147 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Invitations tests ---
+
+func TestCreateInvite_BodyAndResponse(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/create-invite" || r.Method != "POST" {
+			t.Errorf("path/method = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"inviteLink": "https://app.example.com/invite?token=abc123-deadbeef",
+			"expiresAt":  1234567890123,
+		})
+	})
+
+	out, err := c.CreateInvite(context.Background(), "test-org", &CreateInviteRequest{
+		Email:      "alice@example.com",
+		RoleID:     7,
+		ValidHours: 24,
+		SendEmail:  false,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	if out.InviteLink == "" || out.ExpiresAt != 1234567890123 {
+		t.Errorf("CreateInvite result = %+v", out)
+	}
+	if string(gotBody["email"]) != `"alice@example.com"` {
+		t.Errorf("email = %s", gotBody["email"])
+	}
+	if string(gotBody["roleId"]) != "7" {
+		t.Errorf("roleId = %s", gotBody["roleId"])
+	}
+	if string(gotBody["validHours"]) != "24" {
+		t.Errorf("validHours = %s", gotBody["validHours"])
+	}
+	// sendEmail is not omitempty: must appear, with the explicit value
+	if string(gotBody["sendEmail"]) != "false" {
+		t.Errorf("sendEmail = %s, want false", gotBody["sendEmail"])
+	}
+	// Unset fields omitted
+	for _, k := range []string{"roleIds", "regenerate"} {
+		if _, ok := gotBody[k]; ok {
+			t.Errorf("body should not contain %q", k)
+		}
+	}
+}
+
+func TestListInvitations_StringTotalQuirk(t *testing.T) {
+	// Real upstream observation: pagination.total is a *string* ("0")
+	// rather than a number. The client must not choke on this — we
+	// achieve that by ignoring the pagination block entirely.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"invitations": []map[string]any{
+				{
+					"inviteId":  "AbCdEfGhIj",
+					"email":     "alice@example.com",
+					"expiresAt": 1779694244895,
+					"roles":     []map[string]any{{"roleId": 7, "roleName": "Member"}},
+				},
+			},
+			"pagination": map[string]any{
+				"total":  "1", // <-- string, not number
+				"limit":  1000,
+				"offset": 0,
+			},
+		})
+	})
+
+	invites, err := c.ListInvitations(context.Background(), "test-org")
+	if err != nil {
+		t.Fatalf("ListInvitations: %v", err)
+	}
+	if len(invites) != 1 || invites[0].InviteID != "AbCdEfGhIj" {
+		t.Errorf("invites = %+v", invites)
+	}
+	if len(invites[0].Roles) != 1 || invites[0].Roles[0].RoleID != 7 {
+		t.Errorf("nested roles = %+v", invites[0].Roles)
+	}
+}
+
+func TestGetInvitation_HitAndMiss(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"invitations": []map[string]any{
+				{"inviteId": "id1", "email": "a@example.com", "expiresAt": 1, "roles": []any{}},
+				{"inviteId": "id2", "email": "b@example.com", "expiresAt": 2, "roles": []any{}},
+			},
+		})
+	})
+
+	got, err := c.GetInvitation(context.Background(), "test-org", "id2")
+	if err != nil || got.Email != "b@example.com" {
+		t.Errorf("hit = %+v, err = %v", got, err)
+	}
+
+	_, err = c.GetInvitation(context.Background(), "test-org", "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("miss err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestFindInvitationByEmail(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"invitations": []map[string]any{
+				{"inviteId": "id1", "email": "alice@example.com", "expiresAt": 1, "roles": []any{}},
+			},
+		})
+	})
+
+	got, err := c.FindInvitationByEmail(context.Background(), "test-org", "alice@example.com")
+	if err != nil || got.InviteID != "id1" {
+		t.Errorf("hit = %+v, err = %v", got, err)
+	}
+	_, err = c.FindInvitationByEmail(context.Background(), "test-org", "nope@example.com")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("miss err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDeleteInvitation(t *testing.T) {
+	var hits int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "DELETE" || r.URL.Path != "/v1/org/test-org/invitations/id42" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.DeleteInvitation(context.Background(), "test-org", "id42"); err != nil {
+		t.Fatalf("DeleteInvitation: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("server hits = %d, want 1", hits)
+	}
+}
+
 // --- Role SSH bastion tests ---
 
 func TestParseSSHList(t *testing.T) {
