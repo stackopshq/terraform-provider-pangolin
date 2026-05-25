@@ -1365,14 +1365,25 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 // --- IDP ---
 
 // IDP represents a Pangolin Identity Provider.
+//
+// Variant refines Type for OIDC providers — observed values are
+// "oidc" (generic), "google", "azure". The Pangolin UI uses the
+// variant to pre-fill provider-specific URLs and tweak the consent
+// flow; downstream consumers can branch on it to render different
+// help text.
+//
+// OrgCount comes from the API as a JSON-encoded string (e.g. "0")
+// in the LIST response — kept as string here to match the wire.
 type IDP struct {
 	IDPId              int    `json:"idpId"`
 	Name               string `json:"name"`
 	Type               string `json:"type"`
+	Variant            string `json:"variant,omitempty"`
 	AutoProvision      bool   `json:"autoProvision"`
 	Tags               string `json:"tags"`
-	DefaultRoleMapping string `json:"defaultRoleMapping"`
-	DefaultOrgMapping  string `json:"defaultOrgMapping"`
+	OrgCount           string `json:"orgCount,omitempty"`
+	DefaultRoleMapping string `json:"defaultRoleMapping,omitempty"`
+	DefaultOrgMapping  string `json:"defaultOrgMapping,omitempty"`
 }
 
 // IDPOidcConfig represents the OIDC configuration of an IDP.
@@ -1388,6 +1399,7 @@ type IDPOidcConfig struct {
 }
 
 // CreateIDPRequest is the payload for creating an OIDC IDP.
+// Variant is optional — defaults to "oidc" server-side when omitted.
 type CreateIDPRequest struct {
 	Name           string `json:"name"`
 	ClientID       string `json:"clientId"`
@@ -1400,6 +1412,7 @@ type CreateIDPRequest struct {
 	Scopes         string `json:"scopes"`
 	AutoProvision  bool   `json:"autoProvision,omitempty"`
 	Tags           string `json:"tags,omitempty"`
+	Variant        string `json:"variant,omitempty"`
 }
 
 // UpdateIDPRequest is the payload for updating an OIDC IDP.
@@ -1415,6 +1428,7 @@ type UpdateIDPRequest struct {
 	Scopes         string `json:"scopes,omitempty"`
 	AutoProvision  bool   `json:"autoProvision,omitempty"`
 	Tags           string `json:"tags,omitempty"`
+	Variant        string `json:"variant,omitempty"`
 }
 
 // CreateIDPResponse is the response from creating an IDP.

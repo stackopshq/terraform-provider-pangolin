@@ -42,6 +42,7 @@ type IDPResourceModel struct {
 	Scopes         types.String `tfsdk:"scopes"`
 	AutoProvision  types.Bool   `tfsdk:"auto_provision"`
 	Tags           types.String `tfsdk:"tags"`
+	Variant        types.String `tfsdk:"variant"`
 	RedirectURL    types.String `tfsdk:"redirect_url"`
 }
 
@@ -146,6 +147,17 @@ func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"variant": schema.StringAttribute{
+				Description: "OIDC variant. Refines `type = oidc` to a provider family — Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("oidc", "google", "azure"),
+				},
+			},
 			"redirect_url": schema.StringAttribute{
 				Description: "The OAuth callback URL to configure in your OIDC provider.",
 				Computed:    true,
@@ -188,6 +200,7 @@ func (r *IDPResource) Create(ctx context.Context, req resource.CreateRequest, re
 		Scopes:         plan.Scopes.ValueString(),
 		AutoProvision:  plan.AutoProvision.ValueBool(),
 		Tags:           plan.Tags.ValueString(),
+		Variant:        plan.Variant.ValueString(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create IDP", err.Error())
@@ -206,6 +219,7 @@ func (r *IDPResource) Create(ctx context.Context, req resource.CreateRequest, re
 	plan.Name = types.StringValue(idp.Name)
 	plan.AutoProvision = types.BoolValue(idp.AutoProvision)
 	plan.Tags = types.StringValue(idp.Tags)
+	plan.Variant = types.StringValue(idp.Variant)
 	plan.EmailPath = types.StringValue(oidcCfg.EmailPath)
 	plan.NamePath = types.StringValue(oidcCfg.NamePath)
 
@@ -232,6 +246,7 @@ func (r *IDPResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	state.Name = types.StringValue(idp.Name)
 	state.AutoProvision = types.BoolValue(idp.AutoProvision)
 	state.Tags = types.StringValue(idp.Tags)
+	state.Variant = types.StringValue(idp.Variant)
 	state.ClientID = types.StringValue(oidcCfg.ClientID)
 	// ClientSecret is not returned masked from API; preserve existing state value.
 	state.AuthURL = types.StringValue(oidcCfg.AuthURL)
@@ -263,6 +278,7 @@ func (r *IDPResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		Scopes:         plan.Scopes.ValueString(),
 		AutoProvision:  plan.AutoProvision.ValueBool(),
 		Tags:           plan.Tags.ValueString(),
+		Variant:        plan.Variant.ValueString(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update IDP", err.Error())
@@ -310,6 +326,7 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		Name:           types.StringValue(idp.Name),
 		AutoProvision:  types.BoolValue(idp.AutoProvision),
 		Tags:           types.StringValue(idp.Tags),
+		Variant:        types.StringValue(idp.Variant),
 		ClientID:       types.StringValue(oidcCfg.ClientID),
 		ClientSecret:   types.StringValue(""), // not recoverable after import
 		AuthURL:        types.StringValue(oidcCfg.AuthURL),

@@ -21,6 +21,7 @@ type IDPItemModel struct {
 	ID            types.Int64  `tfsdk:"id"`
 	Name          types.String `tfsdk:"name"`
 	Type          types.String `tfsdk:"type"`
+	Variant       types.String `tfsdk:"variant"`
 	AutoProvision types.Bool   `tfsdk:"auto_provision"`
 }
 
@@ -59,6 +60,10 @@ func (d *IDPsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 							Description: "The IDP type (e.g. `oidc`).",
 							Computed:    true,
 						},
+						"variant": schema.StringAttribute{
+							Description: "OIDC variant refinement — one of `oidc` (generic), `google`, `azure`. Useful to branch on provider family without parsing the name.",
+							Computed:    true,
+						},
 						"auto_provision": schema.BoolAttribute{
 							Description: "Whether users are auto-provisioned on first login.",
 							Computed:    true,
@@ -95,6 +100,7 @@ func (d *IDPsDataSource) Read(ctx context.Context, _ datasource.ReadRequest, res
 			ID:            types.Int64Value(int64(idp.IDPId)),
 			Name:          types.StringValue(idp.Name),
 			Type:          types.StringValue(idp.Type),
+			Variant:       types.StringValue(idp.Variant),
 			AutoProvision: types.BoolValue(idp.AutoProvision),
 		})
 	}

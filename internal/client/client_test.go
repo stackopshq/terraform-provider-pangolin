@@ -933,6 +933,102 @@ func TestGetLogsAnalytics_StringMalformedFails(t *testing.T) {
 	}
 }
 
+// --- IDP variant tests ---
+
+func TestListIDPs_VariantField(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/idp" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"idps": []map[string]any{
+				{"idpId": 1, "name": "Authentik", "type": "oidc", "variant": "oidc", "autoProvision": true, "orgCount": "1"},
+				{"idpId": 2, "name": "Google Workspace", "type": "oidc", "variant": "google", "autoProvision": true, "orgCount": "3"},
+				{"idpId": 3, "name": "Entra ID", "type": "oidc", "variant": "azure", "autoProvision": false, "orgCount": "1"},
+			},
+		})
+	})
+
+	idps, err := c.ListIDPs(context.Background())
+	if err != nil {
+		t.Fatalf("ListIDPs: %v", err)
+	}
+	if len(idps) != 3 {
+		t.Fatalf("len = %d, want 3", len(idps))
+	}
+	want := map[int]string{1: "oidc", 2: "google", 3: "azure"}
+	for _, idp := range idps {
+		if idp.Variant != want[idp.IDPId] {
+			t.Errorf("idp %d Variant = %q, want %q", idp.IDPId, idp.Variant, want[idp.IDPId])
+		}
+	}
+	// OrgCount is the string-encoded JSON quirk — must round-trip as-is
+	if idps[1].OrgCount != "3" {
+		t.Errorf("OrgCount = %q, want %q", idps[1].OrgCount, "3")
+	}
+}
+
+func TestCreateIDP_SendsVariant(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/idp/oidc" || r.Method != "PUT" {
+			t.Errorf("path/method = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"idpId": 42, "redirectUrl": "https://app.example.com/callback",
+		})
+	})
+
+	_, err := c.CreateIDP(context.Background(), &CreateIDPRequest{
+		Name:           "Google Workspace",
+		ClientID:       "cid",
+		ClientSecret:   "csec",
+		AuthURL:        "https://accounts.google.com/o/oauth2/auth",
+		TokenURL:       "https://oauth2.googleapis.com/token",
+		IdentifierPath: "sub",
+		Scopes:         "openid email profile",
+		Variant:        "google",
+	})
+	if err != nil {
+		t.Fatalf("CreateIDP: %v", err)
+	}
+	if string(gotBody["variant"]) != `"google"` {
+		t.Errorf("variant on the wire = %s, want \"google\"", gotBody["variant"])
+	}
+}
+
+func TestCreateIDP_OmitsVariantWhenEmpty(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"idpId": 1, "redirectUrl": "x",
+		})
+	})
+
+	_, err := c.CreateIDP(context.Background(), &CreateIDPRequest{
+		Name:           "Generic OIDC",
+		ClientID:       "cid",
+		ClientSecret:   "csec",
+		AuthURL:        "https://idp.example.com/authorize",
+		TokenURL:       "https://idp.example.com/token",
+		IdentifierPath: "sub",
+		Scopes:         "openid",
+		// Variant intentionally unset — server should pick the default
+	})
+	if err != nil {
+		t.Fatalf("CreateIDP: %v", err)
+	}
+	if _, ok := gotBody["variant"]; ok {
+		t.Errorf("variant should be omitted from body when empty, got %s", gotBody["variant"])
+	}
+}
+
 // --- Invitations tests ---
 
 func TestCreateInvite_BodyAndResponse(t *testing.T) {

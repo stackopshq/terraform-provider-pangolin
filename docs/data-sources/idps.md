@@ -36,3 +36,4 @@ Read-Only:
 - `id` (Number) The numeric IDP ID.
 - `name` (String) The IDP display name.
 - `type` (String) The IDP type (e.g. `oidc`).
+- `variant` (String) OIDC variant refinement — one of `oidc` (generic), `google`, `azure`. Useful to branch on provider family without parsing the name.
