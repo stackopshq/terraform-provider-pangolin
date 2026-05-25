@@ -1136,6 +1136,28 @@ type Org struct {
 	Name          string `json:"name"`
 	Subnet        string `json:"subnet"`
 	UtilitySubnet string `json:"utilitySubnet"`
+	CreatedAt     string `json:"createdAt,omitempty"`
+
+	// Security policies — nullable upstream (null = unset / inherit).
+	RequireTwoFactor      *bool `json:"requireTwoFactor"`
+	MaxSessionLengthHours *int  `json:"maxSessionLengthHours"`
+	PasswordExpiryDays    *int  `json:"passwordExpiryDays"`
+
+	// Audit log retention (days). 0 means disabled for that log stream.
+	SettingsLogRetentionDaysRequest    int `json:"settingsLogRetentionDaysRequest"`
+	SettingsLogRetentionDaysAccess     int `json:"settingsLogRetentionDaysAccess"`
+	SettingsLogRetentionDaysAction     int `json:"settingsLogRetentionDaysAction"`
+	SettingsLogRetentionDaysConnection int `json:"settingsLogRetentionDaysConnection"`
+
+	// SSH CA — used to sign certificates for SSH bastion access. The
+	// private key is returned in clear by the API; treat as secret.
+	SSHCaPrivateKey string `json:"sshCaPrivateKey,omitempty"`
+	SSHCaPublicKey  string `json:"sshCaPublicKey,omitempty"`
+
+	// Billing — IsBillingOrg=true means this org carries the billing
+	// account. BillingOrgID points at the billing org (often itself).
+	IsBillingOrg bool   `json:"isBillingOrg,omitempty"`
+	BillingOrgID string `json:"billingOrgId,omitempty"`
 }
 
 // CreateOrgRequest is the payload for creating an organization.
@@ -1175,9 +1197,20 @@ func (c *Client) GetOrg(ctx context.Context, orgID string) (*Org, error) {
 	return &wrapper.Org, nil
 }
 
-// UpdateOrgRequest is the payload for updating an organization.
+// UpdateOrgRequest is the payload for updating an organization. All
+// fields are optional; pointer types let callers send a zero value
+// (e.g. log retention = 0 to disable) without confusing it with "leave
+// unchanged". A nil pointer omits the field from the body via
+// omitempty.
 type UpdateOrgRequest struct {
-	Name string `json:"name"`
+	Name                               string `json:"name,omitempty"`
+	RequireTwoFactor                   *bool  `json:"requireTwoFactor,omitempty"`
+	MaxSessionLengthHours              *int   `json:"maxSessionLengthHours,omitempty"`
+	PasswordExpiryDays                 *int   `json:"passwordExpiryDays,omitempty"`
+	SettingsLogRetentionDaysRequest    *int   `json:"settingsLogRetentionDaysRequest,omitempty"`
+	SettingsLogRetentionDaysAccess     *int   `json:"settingsLogRetentionDaysAccess,omitempty"`
+	SettingsLogRetentionDaysAction     *int   `json:"settingsLogRetentionDaysAction,omitempty"`
+	SettingsLogRetentionDaysConnection *int   `json:"settingsLogRetentionDaysConnection,omitempty"`
 }
 
 // UpdateOrg updates an organization by ID.
