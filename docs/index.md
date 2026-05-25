@@ -105,6 +105,7 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_resource_header_auth` | Header-based authentication for a resource |
 | `pangolin_idp` | OIDC Identity Provider |
 | `pangolin_idp_org` | IDP-to-organization policy mapping |
+| `pangolin_invitation` | Pending organization invitation |
 
 ## Data Sources
 
