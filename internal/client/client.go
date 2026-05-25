@@ -585,10 +585,41 @@ func (c *Client) DeleteSiteResource(ctx context.Context, siteResourceID int) err
 // --- Roles ---
 
 // Role represents a Pangolin role.
+//
+// SSH bastion fields are returned by the API. SSHSudoCommandsRaw and
+// SSHUnixGroupsRaw arrive over the wire as JSON-serialized strings
+// (e.g. `"[]"` or `"[\"sudo\",\"wheel\"]"`) even though the input
+// schema accepts native arrays — kept as strings here so callers see
+// what the API actually emits. Use ParseSSHList to materialize them
+// into []string.
 type Role struct {
-	RoleID      int    `json:"roleId"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	RoleID                int    `json:"roleId"`
+	Name                  string `json:"name"`
+	Description           string `json:"description"`
+	IsAdmin               *bool  `json:"isAdmin,omitempty"`
+	OrgID                 string `json:"orgId,omitempty"`
+	OrgName               string `json:"orgName,omitempty"`
+	RequireDeviceApproval bool   `json:"requireDeviceApproval"`
+	AllowSSH              bool   `json:"allowSsh"`
+	SSHSudoMode           string `json:"sshSudoMode,omitempty"`
+	SSHSudoCommandsRaw    string `json:"sshSudoCommands,omitempty"`
+	SSHCreateHomeDir      bool   `json:"sshCreateHomeDir"`
+	SSHUnixGroupsRaw      string `json:"sshUnixGroups,omitempty"`
+}
+
+// ParseSSHList decodes one of the JSON-serialized list fields
+// (sshSudoCommands, sshUnixGroups) into a Go slice. An empty input or
+// the literal `"[]"` returns an empty slice. Any other parse error
+// is returned for the caller to handle.
+func ParseSSHList(raw string) ([]string, error) {
+	if raw == "" || raw == "[]" {
+		return []string{}, nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("parse SSH list %q: %w", raw, err)
+	}
+	return out, nil
 }
 
 // RolesResponse wraps the roles list response.
@@ -805,10 +836,18 @@ func (c *Client) UpdateSiteResource(ctx context.Context, siteResourceID int, req
 
 // --- Roles CRUD ---
 
-// CreateRoleRequest is the payload for creating a role.
+// CreateRoleRequest is the payload for creating a role. SSH bastion
+// fields are optional — pointer types so that omitempty drops them when
+// the caller does not set them (preserving the server default behavior).
 type CreateRoleRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description"`
+	RequireDeviceApproval *bool    `json:"requireDeviceApproval,omitempty"`
+	AllowSSH              *bool    `json:"allowSsh,omitempty"`
+	SSHSudoMode           *string  `json:"sshSudoMode,omitempty"`
+	SSHSudoCommands       []string `json:"sshSudoCommands,omitempty"`
+	SSHCreateHomeDir      *bool    `json:"sshCreateHomeDir,omitempty"`
+	SSHUnixGroups         []string `json:"sshUnixGroups,omitempty"`
 }
 
 // CreateRole creates a new role in the organization.
@@ -839,10 +878,19 @@ func (c *Client) GetRoleByID(ctx context.Context, roleID int) (*Role, error) {
 	return nil, fmt.Errorf("role %d: %w", roleID, ErrNotFound)
 }
 
-// UpdateRoleRequest is the payload for updating a role.
+// UpdateRoleRequest is the payload for updating a role. All SSH bastion
+// fields are optional; pointer types let callers send the zero value
+// (e.g. allow_ssh=false to revoke) without confusing it with "leave
+// unchanged". A nil pointer omits the field via omitempty.
 type UpdateRoleRequest struct {
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name                  string   `json:"name,omitempty"`
+	Description           string   `json:"description,omitempty"`
+	RequireDeviceApproval *bool    `json:"requireDeviceApproval,omitempty"`
+	AllowSSH              *bool    `json:"allowSsh,omitempty"`
+	SSHSudoMode           *string  `json:"sshSudoMode,omitempty"`
+	SSHSudoCommands       []string `json:"sshSudoCommands,omitempty"`
+	SSHCreateHomeDir      *bool    `json:"sshCreateHomeDir,omitempty"`
+	SSHUnixGroups         []string `json:"sshUnixGroups,omitempty"`
 }
 
 // UpdateRole updates a role by ID.
