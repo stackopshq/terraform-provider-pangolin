@@ -46,7 +46,8 @@ func (r *ResourceHeaderAuthResource) Metadata(_ context.Context, req resource.Me
 
 func (r *ResourceHeaderAuthResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Sets header-based authentication for a Pangolin HTTP resource. Pangolin injects an `Authorization` header into proxied requests. Destroying this resource removes the header authentication.",
+		Description: "Sets header-based authentication for a Pangolin HTTP resource. Pangolin injects an `Authorization` header into proxied requests. Destroying this resource removes the header authentication.\n\n" +
+			"> **Note:** Credentials cannot be read back from the Pangolin API. After import, you must set `password` and `user` manually to avoid drift detection issues.",
 		Attributes: map[string]schema.Attribute{
 			"resource_id": schema.Int64Attribute{
 				Description: "The ID of the resource to protect with header authentication.",

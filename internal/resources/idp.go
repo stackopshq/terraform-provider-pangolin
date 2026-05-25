@@ -56,7 +56,8 @@ func (r *IDPResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 
 func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Pangolin OIDC Identity Provider.",
+		Description: "Manages a Pangolin OIDC Identity Provider.\n\n" +
+			"> **Note:** `client_secret` cannot be recovered after import and must be set manually.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric IDP ID.",
