@@ -125,3 +125,4 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_resource_roles` | List roles granted access to a resource |
 | `pangolin_domain` | Single domain lookup by ID |
 | `pangolin_domain_dns_records` | DNS records expected (or verified) for a domain |
+| `pangolin_site` | Single site lookup by nice ID (full live payload) |

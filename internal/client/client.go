@@ -290,6 +290,12 @@ func (c *Client) GetSiteDefaults(ctx context.Context) (*SiteDefaults, error) {
 // --- Sites ---
 
 // Site represents a Pangolin site (tunnel connector).
+//
+// The per-id GET (used by GetSite / GetSiteByNiceID) returns a much
+// richer payload than the create / list responses — exit-node assoc,
+// WireGuard keys, traffic counters, public endpoint, status / newt
+// metadata. All these read-only fields are omitempty so older
+// CRUD code paths that fill only the first seven keep working.
 type Site struct {
 	SiteID              int    `json:"siteId"`
 	NiceID              string `json:"niceId"`
@@ -298,6 +304,22 @@ type Site struct {
 	Online              bool   `json:"online"`
 	Address             string `json:"address"`
 	DockerSocketEnabled bool   `json:"dockerSocketEnabled"`
+
+	// Extended fields surfaced by /org/{org}/site/{niceId}
+	OrgID               string  `json:"orgId,omitempty"`
+	ExitNodeID          *int    `json:"exitNodeId,omitempty"`
+	PubKey              string  `json:"pubKey,omitempty"`
+	Subnet              string  `json:"subnet,omitempty"`
+	MegabytesIn         float64 `json:"megabytesIn,omitempty"`
+	MegabytesOut        float64 `json:"megabytesOut,omitempty"`
+	LastBandwidthUpdate string  `json:"lastBandwidthUpdate,omitempty"`
+	LastPing            int64   `json:"lastPing,omitempty"`
+	Endpoint            string  `json:"endpoint,omitempty"`
+	PublicKey           string  `json:"publicKey,omitempty"`
+	LastHolePunch       int64   `json:"lastHolePunch,omitempty"`
+	ListenPort          int     `json:"listenPort,omitempty"`
+	Status              string  `json:"status,omitempty"`
+	NewtID              string  `json:"newtId,omitempty"`
 }
 
 // CreateSiteRequest is the payload for creating a site.
@@ -330,6 +352,21 @@ func (c *Client) GetSite(ctx context.Context, siteID int) (*Site, error) {
 		return nil, err
 	}
 
+	var site Site
+	if err := json.Unmarshal(resp.Data, &site); err != nil {
+		return nil, fmt.Errorf("failed to parse site: %w", err)
+	}
+	return &site, nil
+}
+
+// GetSiteByNiceID retrieves a site by its human-readable nice ID via
+// GET /org/{org}/site/{niceId}. Useful when callers know the nice ID
+// (the one shown in the Pangolin UI) but not the numeric site ID.
+func (c *Client) GetSiteByNiceID(ctx context.Context, orgID, niceID string) (*Site, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/site/%s", orgID, niceID), nil)
+	if err != nil {
+		return nil, err
+	}
 	var site Site
 	if err := json.Unmarshal(resp.Data, &site); err != nil {
 		return nil, fmt.Errorf("failed to parse site: %w", err)
