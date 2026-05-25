@@ -796,6 +796,143 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Logs analytics tests ---
+
+func TestGetLogsAnalytics_FullShape(t *testing.T) {
+	// Payload mirrors the real /logs/analytics response observed
+	// against the enterprise self-host. Day counts come as JSON
+	// strings, totals come as ints — the client must handle both.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/logs/analytics" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"requestsPerCountry": []map[string]any{
+				{"code": "FR", "count": 359592},
+				{"code": "CH", "count": 20462},
+			},
+			"requestsPerDay": []map[string]any{
+				{
+					"day":          "2026-05-25 00:00:00+00",
+					"allowedCount": "44908",
+					"blockedCount": "6",
+					"totalCount":   "44914",
+				},
+				{
+					"day":          "2026-05-26 00:00:00+00",
+					"allowedCount": "12345",
+					"blockedCount": "0",
+					"totalCount":   "12345",
+				},
+			},
+			"totalBlocked":  587,
+			"totalRequests": 391167,
+		})
+	})
+
+	out, err := c.GetLogsAnalytics(context.Background(), "test-org", LogsAnalyticsQuery{})
+	if err != nil {
+		t.Fatalf("GetLogsAnalytics: %v", err)
+	}
+	if out.TotalBlocked != 587 || out.TotalRequests != 391167 {
+		t.Errorf("totals = %+v", out)
+	}
+	if len(out.RequestsPerCountry) != 2 || out.RequestsPerCountry[0].Code != "FR" || out.RequestsPerCountry[0].Count != 359592 {
+		t.Errorf("per-country = %+v", out.RequestsPerCountry)
+	}
+	if len(out.RequestsPerDay) != 2 {
+		t.Fatalf("per-day len = %d, want 2", len(out.RequestsPerDay))
+	}
+	d0 := out.RequestsPerDay[0]
+	if d0.Day != "2026-05-25 00:00:00+00" {
+		t.Errorf("day = %q", d0.Day)
+	}
+	// The string-encoded counts must decode to int64s
+	if d0.AllowedCount != 44908 || d0.BlockedCount != 6 || d0.TotalCount != 44914 {
+		t.Errorf("day[0] counts = allowed=%d blocked=%d total=%d", d0.AllowedCount, d0.BlockedCount, d0.TotalCount)
+	}
+}
+
+func TestGetLogsAnalytics_AcceptsNumericCounts(t *testing.T) {
+	// Defensive: if the upstream ever tightens the contract to emit
+	// numeric counts instead of strings, the decoder still works.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"requestsPerCountry": []any{},
+			"requestsPerDay": []map[string]any{
+				{
+					"day":          "2026-05-25",
+					"allowedCount": 100,
+					"blockedCount": 0,
+					"totalCount":   100,
+				},
+			},
+			"totalBlocked":  0,
+			"totalRequests": 100,
+		})
+	})
+
+	out, err := c.GetLogsAnalytics(context.Background(), "test-org", LogsAnalyticsQuery{})
+	if err != nil {
+		t.Fatalf("GetLogsAnalytics: %v", err)
+	}
+	if out.RequestsPerDay[0].AllowedCount != 100 || out.RequestsPerDay[0].TotalCount != 100 {
+		t.Errorf("numeric counts decoded wrong: %+v", out.RequestsPerDay[0])
+	}
+}
+
+func TestGetLogsAnalytics_QueryParamsEncoded(t *testing.T) {
+	var gotQuery string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"requestsPerCountry": []any{}, "requestsPerDay": []any{},
+			"totalBlocked": 0, "totalRequests": 0,
+		})
+	})
+
+	_, err := c.GetLogsAnalytics(context.Background(), "test-org", LogsAnalyticsQuery{
+		TimeStart:  "2026-05-01T00:00:00Z",
+		TimeEnd:    "2026-05-31T23:59:59Z",
+		ResourceID: "42",
+	})
+	if err != nil {
+		t.Fatalf("GetLogsAnalytics: %v", err)
+	}
+	for k, want := range map[string]string{
+		"timeStart":  "2026-05-01T00:00:00Z",
+		"timeEnd":    "2026-05-31T23:59:59Z",
+		"resourceId": "42",
+	} {
+		got, _ := url.QueryUnescape(extractParam(gotQuery, k))
+		if got != want {
+			t.Errorf("query[%q] = %q, want %q", k, got, want)
+		}
+	}
+}
+
+func TestGetLogsAnalytics_StringMalformedFails(t *testing.T) {
+	// A count that is neither numeric nor a numeric string should
+	// surface as a parse error, not silently coerce to zero.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"requestsPerCountry": []any{},
+			"requestsPerDay": []map[string]any{
+				{"day": "2026-05-25", "allowedCount": "not-a-number", "blockedCount": "0", "totalCount": "0"},
+			},
+			"totalBlocked": 0, "totalRequests": 0,
+		})
+	})
+
+	_, err := c.GetLogsAnalytics(context.Background(), "test-org", LogsAnalyticsQuery{})
+	if err == nil {
+		t.Fatal("expected parse error on malformed count")
+	}
+	if !strings.Contains(err.Error(), "allowedCount") {
+		t.Errorf("error %q does not mention the bad field", err)
+	}
+}
+
 // --- Invitations tests ---
 
 func TestCreateInvite_BodyAndResponse(t *testing.T) {
