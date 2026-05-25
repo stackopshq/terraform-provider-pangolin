@@ -3,18 +3,44 @@
 page_title: "pangolin_org Resource - pangolin"
 subcategory: ""
 description: |-
-  Manages a Pangolin organization. Only available on self-hosted (OSS/Enterprise) deployments.
+  Manages a Pangolin organization. Available on self-hosted (OSS / Enterprise) deployments and on Pangolin Cloud. Security policies (require_two_factor, max_session_length_hours, password_expiry_days) and log retention settings are returned by the API as nullable values; leaving them unset lets the server default apply.
+  **Note:** `ssh_ca_private_key` is returned in clear by the Pangolin API and stored in Terraform state. Treat the state file as a secret accordingly.
 ---
 
 # pangolin_org (Resource)
 
-Manages a Pangolin organization. Only available on self-hosted (OSS/Enterprise) deployments.
+Manages a Pangolin organization. Available on self-hosted (OSS / Enterprise) deployments and on Pangolin Cloud. Security policies (`require_two_factor`, `max_session_length_hours`, `password_expiry_days`) and log retention settings are returned by the API as nullable values; leaving them unset lets the server default apply.
+
+> **Note:** `ssh_ca_private_key` is returned in clear by the Pangolin API and stored in Terraform state. Treat the state file as a secret accordingly.
 
 ## Example Usage
 
 ```terraform
 resource "pangolin_org" "example" {
-  name = "My Organization"
+  org_id         = "acme-corp"
+  name           = "Acme Corp"
+  subnet         = "100.90.0.0/24"
+  utility_subnet = "100.96.0.0/24"
+
+  # Enterprise security policies (optional)
+  require_two_factor       = true
+  max_session_length_hours = 12
+  password_expiry_days     = 90
+
+  # Audit log retention (days). 0 disables a stream.
+  # The access / action / connection streams require an active
+  # enterprise subscription on Pangolin Cloud.
+  log_retention_days_request    = 30
+  log_retention_days_access     = 90
+  log_retention_days_action     = 90
+  log_retention_days_connection = 30
+}
+
+# The SSH CA keypair is returned by the API and stored in state.
+# Distribute the public key to hosts that should trust certificates
+# signed by Pangolin for the SSH bastion feature.
+output "ssh_ca_public_key" {
+  value = pangolin_org.example.ssh_ca_public_key
 }
 ```
 
@@ -23,7 +49,25 @@ resource "pangolin_org" "example" {
 
 ### Required
 
-- `name` (String) The name of the organization.
+- `name` (String) The display name of the organization.
 - `org_id` (String) The organization ID.
-- `subnet` (String) The CIDR subnet allocated to the organization (e.g. '100.90.0.0/24').
-- `utility_subnet` (String) The utility CIDR subnet allocated to the organization (e.g. '100.96.0.0/24').
+- `subnet` (String) The CIDR subnet allocated to the organization (e.g. `100.90.0.0/24`). Set at creation; not modifiable afterwards.
+- `utility_subnet` (String) The utility CIDR subnet allocated to the organization (e.g. `100.96.0.0/24`). Set at creation; not modifiable afterwards.
+
+### Optional
+
+- `log_retention_days_access` (Number) Retention in days for the access audit log. `0` disables retention. Requires an active enterprise subscription on Pangolin Cloud.
+- `log_retention_days_action` (Number) Retention in days for the action audit log. `0` disables retention. Requires an active enterprise subscription on Pangolin Cloud.
+- `log_retention_days_connection` (Number) Retention in days for the connection audit log. `0` disables retention. Requires an active enterprise subscription on Pangolin Cloud.
+- `log_retention_days_request` (Number) Retention in days for the request audit log (proxy traffic). `0` disables retention.
+- `max_session_length_hours` (Number) Maximum session length in hours before users must re-authenticate. Unset means no enforced cap (server default).
+- `password_expiry_days` (Number) Force users to rotate their password after this many days. Unset means no enforced rotation.
+- `require_two_factor` (Boolean) Force two-factor authentication for all members of the organization. Unset means inherit the server default.
+
+### Read-Only
+
+- `billing_org_id` (String) ID of the organization that carries the billing account for this org. Usually the org's own ID when `is_billing_org` is true.
+- `created_at` (String) ISO 8601 / RFC 3339 timestamp when the organization was created.
+- `is_billing_org` (Boolean) Whether this organization carries its own billing account (`true`) or piggybacks on another (`false`).
+- `ssh_ca_private_key` (String, Sensitive) Private key of the SSH certificate authority. Returned in clear by the API; stored in Terraform state. Treat the state as a secret accordingly.
+- `ssh_ca_public_key` (String) Public key of the SSH certificate authority used to sign user certificates for the Pangolin SSH bastion feature. Distribute to host `TrustedUserCAKeys` config.
