@@ -751,6 +751,155 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Role SSH bastion tests ---
+
+func TestParseSSHList(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{"empty string", "", []string{}, false},
+		{"empty JSON array", "[]", []string{}, false},
+		{"single item", `["sudo"]`, []string{"sudo"}, false},
+		{"multiple items", `["sudo","wheel","docker"]`, []string{"sudo", "wheel", "docker"}, false},
+		{"invalid JSON", `not-json`, nil, true},
+		{"non-array JSON", `{"a":1}`, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseSSHList(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error for %q, got %v", tc.raw, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Errorf("len = %d, want %d (%v)", len(got), len(tc.want), got)
+			}
+			for i, v := range got {
+				if v != tc.want[i] {
+					t.Errorf("[%d] = %q, want %q", i, v, tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestGetRoleByID_SSHBastionFields(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/roles" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roles": []map[string]any{
+				{
+					"roleId":                40632,
+					"orgId":                 "test-org",
+					"orgName":               "Test Org",
+					"isAdmin":               true,
+					"name":                  "Admin",
+					"description":           "Admin role",
+					"requireDeviceApproval": true,
+					"allowSsh":              true,
+					"sshSudoMode":           "full",
+					"sshSudoCommands":       `["sudo","wheel"]`,
+					"sshCreateHomeDir":      true,
+					"sshUnixGroups":         `["docker","kvm"]`,
+				},
+				{
+					"roleId":                40633,
+					"isAdmin":               nil,
+					"name":                  "Member",
+					"description":           "View only",
+					"requireDeviceApproval": false,
+					"allowSsh":              false,
+					"sshSudoMode":           "none",
+					"sshSudoCommands":       "[]",
+					"sshCreateHomeDir":      true,
+					"sshUnixGroups":         "[]",
+				},
+			},
+		})
+	})
+
+	role, err := c.GetRoleByID(context.Background(), 40632)
+	if err != nil {
+		t.Fatalf("GetRoleByID: %v", err)
+	}
+	if role.IsAdmin == nil || !*role.IsAdmin {
+		t.Errorf("IsAdmin = %v, want *true", role.IsAdmin)
+	}
+	if !role.AllowSSH || role.SSHSudoMode != "full" {
+		t.Errorf("ssh top-level wrong: %+v", role)
+	}
+	if role.SSHSudoCommandsRaw != `["sudo","wheel"]` {
+		t.Errorf("SSHSudoCommandsRaw = %q", role.SSHSudoCommandsRaw)
+	}
+	parsed, err := ParseSSHList(role.SSHSudoCommandsRaw)
+	if err != nil || len(parsed) != 2 || parsed[0] != "sudo" {
+		t.Errorf("ParseSSHList round-trip = %v, %v", parsed, err)
+	}
+
+	// Member role: nullable IsAdmin stays nil
+	member, err := c.GetRoleByID(context.Background(), 40633)
+	if err != nil {
+		t.Fatalf("GetRoleByID member: %v", err)
+	}
+	if member.IsAdmin != nil {
+		t.Errorf("IsAdmin = %v, want nil", member.IsAdmin)
+	}
+}
+
+func TestCreateRole_SSHBodyEncoded(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PUT" {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId": 99, "name": "new-role", "description": "from test",
+		})
+	})
+
+	allow := true
+	mode := "restricted"
+	if _, err := c.CreateRole(context.Background(), &CreateRoleRequest{
+		Name:            "new-role",
+		Description:     "from test",
+		AllowSSH:        &allow,
+		SSHSudoMode:     &mode,
+		SSHSudoCommands: []string{"sudo", "wheel"},
+	}); err != nil {
+		t.Fatalf("CreateRole: %v", err)
+	}
+
+	// SSH list fields go on the wire as a native JSON array, not a string
+	if string(gotBody["sshSudoCommands"]) != `["sudo","wheel"]` {
+		t.Errorf("sshSudoCommands wire = %s, want [\"sudo\",\"wheel\"]", gotBody["sshSudoCommands"])
+	}
+	if string(gotBody["allowSsh"]) != "true" {
+		t.Errorf("allowSsh = %s", gotBody["allowSsh"])
+	}
+	if string(gotBody["sshSudoMode"]) != `"restricted"` {
+		t.Errorf("sshSudoMode = %s", gotBody["sshSudoMode"])
+	}
+	// Unset fields must be absent
+	for _, k := range []string{"requireDeviceApproval", "sshCreateHomeDir", "sshUnixGroups"} {
+		if _, present := gotBody[k]; present {
+			t.Errorf("body should not contain %q", k)
+		}
+	}
+}
+
 // --- Enterprise Org fields tests ---
 
 func TestGetOrg_FullEnterpriseShape(t *testing.T) {

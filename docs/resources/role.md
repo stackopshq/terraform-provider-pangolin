@@ -3,19 +3,40 @@
 page_title: "pangolin_role Resource - pangolin"
 subcategory: ""
 description: |-
-  Manages a Pangolin role.
+  Manages a Pangolin role. Roles carry both standard RBAC fields (name, description) and the SSH bastion configuration: whether members of this role may open SSH sessions through Pangolin, how sudo is gated, which Unix groups to grant on the target host, and whether to auto-create a home directory.
 ---
 
 # pangolin_role (Resource)
 
-Manages a Pangolin role.
+Manages a Pangolin role. Roles carry both standard RBAC fields (`name`, `description`) and the SSH bastion configuration: whether members of this role may open SSH sessions through Pangolin, how sudo is gated, which Unix groups to grant on the target host, and whether to auto-create a home directory.
 
 ## Example Usage
 
 ```terraform
-resource "pangolin_role" "example" {
+resource "pangolin_role" "developers" {
   name        = "developers"
   description = "Access for the development team"
+
+  # SSH bastion: allow members to open SSH sessions through Pangolin,
+  # with restricted sudo and explicit Unix groups on the target host.
+  allow_ssh           = true
+  ssh_create_home_dir = true
+  ssh_sudo_mode       = "restricted"
+  ssh_sudo_commands = [
+    "/usr/bin/systemctl restart nginx",
+    "/usr/bin/journalctl",
+  ]
+  ssh_unix_groups = ["docker", "kvm"]
+
+  # Require admin approval each time a new device tries to use this role.
+  require_device_approval = true
+}
+
+# Tighter role: no SSH at all, view-only.
+resource "pangolin_role" "auditors" {
+  name        = "auditors"
+  description = "Read-only access for compliance audits"
+  allow_ssh   = false
 }
 ```
 
@@ -28,8 +49,16 @@ resource "pangolin_role" "example" {
 
 ### Optional
 
+- `allow_ssh` (Boolean) Whether members of this role may open SSH sessions through the Pangolin bastion.
 - `description` (String) The description of the role.
+- `require_device_approval` (Boolean) Require an administrator to approve each new device before its user can use this role.
+- `ssh_create_home_dir` (Boolean) Whether to create the user's home directory on the host when they first log in.
+- `ssh_sudo_commands` (List of String) List of sudo command patterns allowed when `ssh_sudo_mode = "restricted"`. Ignored otherwise.
+- `ssh_sudo_mode` (String) How sudo is gated for SSH sessions opened by members of this role. `none` disables sudo, `full` allows any command, `restricted` allows only `ssh_sudo_commands`.
+- `ssh_unix_groups` (List of String) Unix groups added to the user account on the host when they log in via SSH.
 
 ### Read-Only
 
 - `id` (Number) The numeric ID of the role.
+- `is_admin` (Boolean) Whether this is the built-in admin role of the organization. Admin roles cannot be deleted.
+- `org_name` (String) Display name of the organization the role belongs to.
