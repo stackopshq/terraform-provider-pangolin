@@ -796,6 +796,108 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- User extended shape + GetUserByUsername tests ---
+
+func TestListUsers_ExtendedFields(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"users": []map[string]any{
+				{
+					"id":               "nb625aydwn9l4e3",
+					"username":         "kallioli",
+					"email":            nil,
+					"emailVerified":    true,
+					"dateCreated":      "2026-04-02T21:17:17.146Z",
+					"orgId":            "stackops",
+					"name":             nil,
+					"type":             "oidc",
+					"isOwner":          false,
+					"idpName":          "Authentik",
+					"idpId":            1,
+					"idpType":          "oidc",
+					"idpVariant":       "oidc",
+					"twoFactorEnabled": false,
+					"roles": []map[string]any{
+						{"roleId": 2, "roleName": "Member"},
+					},
+				},
+			},
+		})
+	})
+
+	users, err := c.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("len = %d, want 1", len(users))
+	}
+	u := users[0]
+	if u.IdpID != 1 || u.IdpName != "Authentik" || u.IdpVariant != "oidc" {
+		t.Errorf("idp fields = %+v", u)
+	}
+	if u.Name != nil {
+		t.Errorf("Name = %v, want nil pointer", u.Name)
+	}
+	if u.TwoFactorEnabled || u.IsOwner {
+		t.Errorf("flags should be false: 2fa=%v owner=%v", u.TwoFactorEnabled, u.IsOwner)
+	}
+	if len(u.Roles) != 1 || u.Roles[0].RoleID != 2 || u.Roles[0].RoleName != "Member" {
+		t.Errorf("Roles = %+v", u.Roles)
+	}
+}
+
+func TestGetUserByUsername_BothQueryParamsSent(t *testing.T) {
+	var gotQuery string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		if r.URL.Path != "/v1/org/stackops/user-by-username" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"userId":           "u-42",
+			"orgId":            "stackops",
+			"username":         "alice",
+			"email":            "alice@example.com",
+			"name":             "Alice Example",
+			"type":             "oidc",
+			"isOwner":          true,
+			"twoFactorEnabled": true,
+			"roles": []map[string]any{
+				{"roleId": 1, "roleName": "Admin"},
+			},
+		})
+	})
+
+	out, err := c.GetUserByUsername(context.Background(), "stackops", "alice", 7)
+	if err != nil {
+		t.Fatalf("GetUserByUsername: %v", err)
+	}
+	if out.UserID != "u-42" || out.IsOwner != true || !out.TwoFactorEnabled {
+		t.Errorf("user = %+v", out)
+	}
+	if out.Email == nil || *out.Email != "alice@example.com" {
+		t.Errorf("Email = %v", out.Email)
+	}
+	for k, want := range map[string]string{"username": "alice", "idpId": "7"} {
+		got := extractParam(gotQuery, k)
+		if got != want {
+			t.Errorf("query[%q] = %q, want %q", k, got, want)
+		}
+	}
+}
+
+func TestGetUserByUsername_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.GetUserByUsername(context.Background(), "stackops", "ghost", 1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
 // --- Site extended shape + GetSiteByNiceID tests ---
 
 func TestGetSiteByNiceID_FullShape(t *testing.T) {
