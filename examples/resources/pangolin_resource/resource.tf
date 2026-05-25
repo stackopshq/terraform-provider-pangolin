@@ -5,4 +5,5 @@ resource "pangolin_resource" "example" {
   subdomain = "app"
   domain_id = data.pangolin_domains.all.domains[0].domain_id
   protocol  = "tcp"
+  sso       = false # public access, no Pangolin authentication
 }
