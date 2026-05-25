@@ -51,24 +51,24 @@ func (p *PangolinProvider) Schema(_ context.Context, _ provider.SchemaRequest, r
 		Description: "Terraform provider for managing Pangolin resources (sites, resources, targets, roles).",
 		Attributes: map[string]schema.Attribute{
 			"url": schema.StringAttribute{
-				Description: "The base URL of the Pangolin API (e.g. https://api.example.com). Can be set via PANGOLIN_URL env var.",
+				Description: "The base URL of the Pangolin API (e.g. `https://pangolin.example.com`). Can be set via `PANGOLIN_URL` env var.",
 				Optional:    true,
 			},
 			"api_key": schema.StringAttribute{
-				Description: "The API key for authentication. Can be set via PANGOLIN_API_KEY env var.",
+				Description: "The API key for authentication. Can be set via `PANGOLIN_API_KEY` env var.",
 				Optional:    true,
 				Sensitive:   true,
 			},
 			"org_id": schema.StringAttribute{
-				Description: "The organization ID. Can be set via PANGOLIN_ORG_ID env var.",
+				Description: "The organization ID. Can be set via `PANGOLIN_ORG_ID` env var.",
 				Optional:    true,
 			},
 			"ca_cert_pem": schema.StringAttribute{
-				Description: "PEM-encoded CA certificate(s) used to verify the Pangolin server's TLS certificate. Set this when the Pangolin instance is served by a private or self-signed CA. Multiple certificates may be concatenated. Can be set via PANGOLIN_CA_CERT_PEM env var.",
+				Description: "PEM-encoded CA certificate(s) used to verify the Pangolin server's TLS certificate. Set this when the Pangolin instance is served by a private or self-signed CA. Multiple certificates may be concatenated. Can be set via `PANGOLIN_CA_CERT_PEM` env var.",
 				Optional:    true,
 			},
 			"tls_insecure": schema.BoolAttribute{
-				Description: "Skip TLS certificate verification entirely. Intended for local debugging only — never use against production. Can be set via PANGOLIN_TLS_INSECURE env var.",
+				Description: "Skip TLS certificate verification entirely. Intended for local debugging only — never use against production. Can be set via `PANGOLIN_TLS_INSECURE` env var.",
 				Optional:    true,
 			},
 		},

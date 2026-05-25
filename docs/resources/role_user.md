@@ -3,12 +3,12 @@
 page_title: "pangolin_role_user Resource - pangolin"
 subcategory: ""
 description: |-
-  Assigns a user to a Pangolin organisation role.
+  Assigns a user to a Pangolin organization role.
 ---
 
 # pangolin_role_user (Resource)
 
-Assigns a user to a Pangolin organisation role.
+Assigns a user to a Pangolin organization role.
 
 ## Example Usage
 
@@ -29,8 +29,11 @@ resource "pangolin_role_user" "example" {
 
 ## Import
 
-Import using `{role_id}/{user_id}`:
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
+# Composite ID: {role_id}/{user_id}
 terraform import pangolin_role_user.example 42/user-abc123
 ```

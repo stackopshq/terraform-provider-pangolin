@@ -56,7 +56,8 @@ func (r *IDPResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 
 func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Pangolin OIDC Identity Provider.",
+		Description: "Manages a Pangolin OIDC Identity Provider.\n\n" +
+			"> **Note:** `client_secret` cannot be recovered after import and must be set manually.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric IDP ID.",
@@ -102,14 +103,14 @@ func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 				},
 			},
 			"identifier_path": schema.StringAttribute{
-				Description: "The path in the ID token to use as the user identifier (e.g. 'sub').",
+				Description: "The path in the ID token to use as the user identifier (e.g. `sub`).",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 				},
 			},
 			"scopes": schema.StringAttribute{
-				Description: "Space-separated OIDC scopes (e.g. 'openid email profile').",
+				Description: "Space-separated OIDC scopes (e.g. `openid email profile`).",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
@@ -132,7 +133,7 @@ func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 				},
 			},
 			"auto_provision": schema.BoolAttribute{
-				Description: "Whether to auto-provision users on first login. Defaults to false.",
+				Description: "Whether to auto-provision users on first login. Defaults to `false`.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),
@@ -146,7 +147,7 @@ func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 				},
 			},
 			"redirect_url": schema.StringAttribute{
-				Description: "The OAuth callback URL to configure in your OIDC provider (computed).",
+				Description: "The OAuth callback URL to configure in your OIDC provider.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
