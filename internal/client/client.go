@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1948,4 +1949,115 @@ func (c *Client) FindInvitationByEmail(ctx context.Context, orgID, email string)
 func (c *Client) DeleteInvitation(ctx context.Context, orgID, inviteID string) error {
 	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s/invitations/%s", orgID, inviteID), nil)
 	return err
+}
+
+// --- Logs analytics ---
+
+// LogsAnalyticsQuery filters a /logs/analytics request. All fields
+// optional. TimeStart / TimeEnd are ISO 8601 / RFC 3339 strings.
+// ResourceID narrows the analytics to a single resource.
+type LogsAnalyticsQuery struct {
+	TimeStart  string
+	TimeEnd    string
+	ResourceID string
+}
+
+// LogsAnalyticsCountry is one row of the requestsPerCountry breakdown.
+type LogsAnalyticsCountry struct {
+	Code  string `json:"code"`
+	Count int64  `json:"count"`
+}
+
+// LogsAnalyticsDay is one row of the requestsPerDay breakdown.
+//
+// Quirk: the upstream emits the count fields as JSON strings (e.g.
+// "18797") rather than numbers, but the day field is a plain string.
+// Custom UnmarshalJSON below normalizes the count fields to int64 so
+// downstream callers see uniform numeric types.
+type LogsAnalyticsDay struct {
+	Day          string `json:"day"`
+	AllowedCount int64  `json:"-"`
+	BlockedCount int64  `json:"-"`
+	TotalCount   int64  `json:"-"`
+}
+
+// UnmarshalJSON decodes the count fields tolerantly: the upstream
+// emits them as strings ("18797"); accept ints too in case that
+// changes upstream.
+func (d *LogsAnalyticsDay) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Day          string          `json:"day"`
+		AllowedCount json.RawMessage `json:"allowedCount"`
+		BlockedCount json.RawMessage `json:"blockedCount"`
+		TotalCount   json.RawMessage `json:"totalCount"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	d.Day = raw.Day
+	parseCount := func(field string, src json.RawMessage) (int64, error) {
+		if len(src) == 0 || string(src) == "null" {
+			return 0, nil
+		}
+		// strip surrounding quotes if the server emitted a string
+		trimmed := string(src)
+		if len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+			trimmed = trimmed[1 : len(trimmed)-1]
+		}
+		n, err := strconv.ParseInt(trimmed, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse %s %q: %w", field, src, err)
+		}
+		return n, nil
+	}
+	var err error
+	if d.AllowedCount, err = parseCount("allowedCount", raw.AllowedCount); err != nil {
+		return err
+	}
+	if d.BlockedCount, err = parseCount("blockedCount", raw.BlockedCount); err != nil {
+		return err
+	}
+	if d.TotalCount, err = parseCount("totalCount", raw.TotalCount); err != nil {
+		return err
+	}
+	return nil
+}
+
+// LogsAnalytics is the response body of GET /org/{org}/logs/analytics.
+type LogsAnalytics struct {
+	RequestsPerCountry []LogsAnalyticsCountry `json:"requestsPerCountry"`
+	RequestsPerDay     []LogsAnalyticsDay     `json:"requestsPerDay"`
+	TotalBlocked       int64                  `json:"totalBlocked"`
+	TotalRequests      int64                  `json:"totalRequests"`
+}
+
+// GetLogsAnalytics queries the request analytics for an organization.
+// Returns the per-country and per-day breakdowns plus totals.
+//
+// Requires an active enterprise subscription on Pangolin Cloud. On
+// self-hosted enterprise installs the endpoint is always available.
+func (c *Client) GetLogsAnalytics(ctx context.Context, orgID string, q LogsAnalyticsQuery) (*LogsAnalytics, error) {
+	path := fmt.Sprintf("/org/%s/logs/analytics", orgID)
+	values := url.Values{}
+	for k, v := range map[string]string{
+		"timeStart":  q.TimeStart,
+		"timeEnd":    q.TimeEnd,
+		"resourceId": q.ResourceID,
+	} {
+		if v != "" {
+			values.Set(k, v)
+		}
+	}
+	if qs := values.Encode(); qs != "" {
+		path += "?" + qs
+	}
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out LogsAnalytics
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse logs analytics: %w", err)
+	}
+	return &out, nil
 }
