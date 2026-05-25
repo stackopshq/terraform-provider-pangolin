@@ -672,35 +672,58 @@ func TestListRequestLogs_QueryParamsEncoded(t *testing.T) {
 }
 
 func TestListRequestLogs_EntriesAndFilterAttributes(t *testing.T) {
+	// Payload mirrors a real /logs/request entry observed against the
+	// enterprise self-host. All numeric / boolean fields land on the
+	// wire as their JSON-native types, not strings.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(t, w, http.StatusOK, map[string]any{
 			"log": []map[string]any{
 				{
-					"timestamp":  "2026-05-25T10:00:00Z",
-					"actor":      "alice@example.com",
-					"method":     "GET",
-					"reason":     "accept",
-					"resourceId": "42",
-					"location":   "Paris, FR",
-					"host":       "app.example.com",
-					"path":       "/dashboard",
-					// extra field not modeled — should land in Raw
-					"statusCode": 200,
-					"userAgent":  "curl/8.4",
+					"id":                 965105,
+					"timestamp":          1779694741,
+					"orgId":              "test-org",
+					"action":             true,
+					"reason":             101,
+					"actorType":          "user",
+					"actor":              "alice@example.com",
+					"actorId":            "u-42",
+					"resourceId":         14,
+					"siteResourceId":     nil,
+					"ip":                 "82.65.56.201",
+					"location":           "FR",
+					"userAgent":          "curl/8.4",
+					"metadata":           map[string]any{"trace": "abc"},
+					"headers":            nil,
+					"query":              nil,
+					"originalRequestURL": "https://app.example.com/dashboard",
+					"scheme":             "",
+					"host":               "app.example.com",
+					"path":               "/dashboard",
+					"method":             "GET",
+					"tls":                true,
+					"resourceName":       "Dashboard",
+					"resourceNiceId":     "absolute-blue-fox",
 				},
 				{
-					"timestamp": "2026-05-25T10:01:00Z",
-					"actor":     "anonymous",
-					"method":    "POST",
-					"reason":    "deny:no_credentials",
-					"path":      "/admin",
+					"id":         965106,
+					"timestamp":  1779694800,
+					"orgId":      "test-org",
+					"action":     false,
+					"reason":     403,
+					"actorType":  nil,
+					"actor":      nil,
+					"actorId":    nil,
+					"resourceId": 14,
+					"path":       "/admin",
+					"method":     "POST",
+					"tls":        true,
 				},
 			},
 			"pagination": map[string]any{"total": 2, "limit": 1000, "offset": 0},
 			"filterAttributes": map[string]any{
-				"actors":    []string{"alice@example.com", "anonymous"},
-				"resources": []string{"42"},
-				"locations": []string{"Paris, FR"},
+				"actors":    []string{"alice@example.com"},
+				"resources": []map[string]any{{"id": 14, "name": "Dashboard"}},
+				"locations": []string{"FR"},
 				"hosts":     []string{"app.example.com"},
 				"paths":     []string{"/dashboard", "/admin"},
 			},
@@ -716,23 +739,45 @@ func TestListRequestLogs_EntriesAndFilterAttributes(t *testing.T) {
 	}
 
 	e0 := res.Log[0]
-	if e0.Actor != "alice@example.com" || e0.Method != "GET" || e0.Reason != "accept" {
-		t.Errorf("e0 modeled fields = %+v", e0)
+	if e0.ID != 965105 || e0.Timestamp != 1779694741 {
+		t.Errorf("e0 numeric fields = id=%d ts=%d", e0.ID, e0.Timestamp)
 	}
-	// Raw must include the unmodeled fields
-	if !strings.Contains(string(e0.Raw), `"statusCode":200`) {
-		t.Errorf("e0.Raw missing statusCode: %s", e0.Raw)
+	if !e0.Action || e0.Reason != 101 {
+		t.Errorf("e0 action/reason = %v / %d, want true / 101", e0.Action, e0.Reason)
 	}
-	if !strings.Contains(string(e0.Raw), `"userAgent":"curl/8.4"`) {
-		t.Errorf("e0.Raw missing userAgent: %s", e0.Raw)
+	if e0.ResourceID != 14 {
+		t.Errorf("e0 ResourceID = %d, want 14", e0.ResourceID)
+	}
+	if e0.Actor == nil || *e0.Actor != "alice@example.com" {
+		t.Errorf("e0 Actor = %v", e0.Actor)
+	}
+	if e0.IP != "82.65.56.201" || !e0.TLS || e0.Method != "GET" {
+		t.Errorf("e0 transport fields = %+v", e0)
+	}
+	if string(e0.Metadata) != `{"trace":"abc"}` {
+		t.Errorf("e0.Metadata = %s, want object", e0.Metadata)
+	}
+	// Raw must include every original field
+	if !strings.Contains(string(e0.Raw), `"resourceNiceId":"absolute-blue-fox"`) {
+		t.Errorf("e0.Raw missing resourceNiceId: %s", e0.Raw)
 	}
 
-	if res.Log[1].Actor != "anonymous" || res.Log[1].Reason != "deny:no_credentials" {
-		t.Errorf("e1 = %+v", res.Log[1])
+	e1 := res.Log[1]
+	if e1.Action {
+		t.Errorf("e1.Action = true, want false")
+	}
+	if e1.Reason != 403 {
+		t.Errorf("e1.Reason = %d, want 403", e1.Reason)
+	}
+	if e1.Actor != nil || e1.ActorType != nil || e1.ActorID != nil {
+		t.Errorf("e1 nullable actor fields = %v / %v / %v, want all nil", e1.Actor, e1.ActorType, e1.ActorID)
 	}
 
-	if len(res.FilterAttributes.Actors) != 2 || res.FilterAttributes.Actors[0] != "alice@example.com" {
+	if len(res.FilterAttributes.Actors) != 1 || res.FilterAttributes.Actors[0] != "alice@example.com" {
 		t.Errorf("FilterAttributes.Actors = %v", res.FilterAttributes.Actors)
+	}
+	if len(res.FilterAttributes.Resources) != 1 || res.FilterAttributes.Resources[0].ID != 14 || res.FilterAttributes.Resources[0].Name != "Dashboard" {
+		t.Errorf("FilterAttributes.Resources = %+v", res.FilterAttributes.Resources)
 	}
 	if res.Pagination.Total != 2 {
 		t.Errorf("Pagination.Total = %d, want 2", res.Pagination.Total)

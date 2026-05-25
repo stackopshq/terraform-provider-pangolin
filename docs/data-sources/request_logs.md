@@ -4,14 +4,14 @@ page_title: "pangolin_request_logs Data Source - pangolin"
 subcategory: ""
 description: |-
   Queries the request audit log of the configured organization. This is the same log the Pangolin web UI displays under "Logs > Requests". All filter attributes are optional; the API defaults to the last 7 days when time_start is omitted.
-  **Note:** Each entry exposes the fields that map to the documented query dimensions (`timestamp`, `actor`, `method`, `reason`, `resource_id`, `location`, `host`, `path`). The full server payload for the entry is also available as `raw_json` for consumers that need fields not modeled here.
+  **Note:** Field types match what the Pangolin API actually returns. `timestamp`, `reason`, `resource_id` and the IDs are integers; `action` is a boolean (`true` = request was allowed, `false` = denied). `metadata`, `headers` and `query` come back as JSON strings; use `jsondecode()` to access their fields. `raw_json` on each entry preserves the full server payload as a fallback.
 ---
 
 # pangolin_request_logs (Data Source)
 
 Queries the request audit log of the configured organization. This is the same log the Pangolin web UI displays under "Logs > Requests". All filter attributes are optional; the API defaults to the last 7 days when `time_start` is omitted.
 
-> **Note:** Each entry exposes the fields that map to the documented query dimensions (`timestamp`, `actor`, `method`, `reason`, `resource_id`, `location`, `host`, `path`). The full server payload for the entry is also available as `raw_json` for consumers that need fields not modeled here.
+> **Note:** Field types match what the Pangolin API actually returns. `timestamp`, `reason`, `resource_id` and the IDs are integers; `action` is a boolean (`true` = request was allowed, `false` = denied). `metadata`, `headers` and `query` come back as JSON strings; use `jsondecode()` to access their fields. `raw_json` on each entry preserves the full server payload as a fallback.
 
 ## Example Usage
 
@@ -46,15 +46,15 @@ output "denied_status_codes" {
 
 ### Optional
 
-- `action` (String) Filter by request action (typically `accept` or `deny`, plus reason variants).
+- `action` (String) Filter by request action. The API accepts either a boolean string (`true` / `false`) or a textual reason variant.
 - `actor` (String) Filter by actor identifier (user, API key, or anonymous).
 - `host` (String) Filter by the `Host` header of the request.
-- `limit` (Number) Maximum number of entries to return. The API enforces its own ceiling (1000 in observed responses).
+- `limit` (Number) Maximum number of entries to return. The API enforces its own ceiling.
 - `location` (String) Filter by client geolocation string as resolved by Pangolin.
 - `method` (String) Filter by HTTP method. One of `GET`, `POST`, `PUT`, `DELETE`, `PATCH`.
 - `offset` (Number) Skip the first N entries in the result set. Use with `limit` to paginate.
 - `path` (String) Filter by URL path of the request.
-- `reason` (String) Filter by the access decision reason string emitted by Pangolin.
+- `reason` (String) Filter by the access decision reason code emitted by Pangolin.
 - `resource_id` (String) Filter by the numeric ID of the resource that received the request.
 - `time_end` (String) End of the time range as an ISO 8601 / RFC 3339 timestamp. Defaults to the current time when omitted.
 - `time_start` (String) Start of the time range as an ISO 8601 / RFC 3339 timestamp (e.g. `2026-05-01T00:00:00Z`). Defaults to 7 days ago when omitted.
@@ -70,15 +70,31 @@ output "denied_status_codes" {
 
 Read-Only:
 
-- `actor` (String) The actor that made the request.
-- `host` (String) `Host` header of the request.
-- `location` (String) Client geolocation.
+- `action` (Boolean) `true` if the request was allowed, `false` if denied.
+- `actor` (String) Human-readable identifier of the actor (e.g. email). Null when unauthenticated.
+- `actor_id` (String) Pangolin's internal identifier for the actor. Null when unauthenticated.
+- `actor_type` (String) Kind of actor (user, api_key, anonymous, …). Null when the request was unauthenticated.
+- `headers` (String) Captured request headers, serialized as JSON. Null when not captured.
+- `host` (String) Host header of the request.
+- `id` (Number) Unique entry ID assigned by Pangolin.
+- `ip` (String) Source IP of the requester.
+- `location` (String) Geolocation code (e.g. `FR`) resolved from the source IP.
+- `metadata` (String) Free-form metadata, serialized as JSON. Null when empty.
 - `method` (String) HTTP method.
+- `org_id` (String) Organization that received the request.
+- `original_request_url` (String) Original URL of the incoming request.
 - `path` (String) URL path of the request.
-- `raw_json` (String) The full server payload for this entry, serialized as JSON. Use `jsondecode()` to access fields not modeled above.
-- `reason` (String) Access decision reason.
-- `resource_id` (String) Resource ID that received the request.
-- `timestamp` (String) ISO 8601 / RFC 3339 timestamp of the request.
+- `query` (String) Captured query string parameters, serialized as JSON. Null when not captured.
+- `raw_json` (String) Full server payload for this entry, serialized as JSON. Use `jsondecode()` to access fields not modeled above.
+- `reason` (Number) Numeric reason code for the access decision.
+- `resource_id` (Number) Numeric ID of the resource that received the request.
+- `resource_name` (String) Display name of the Pangolin resource that received the request.
+- `resource_nice_id` (String) Human-readable nice ID of the Pangolin resource.
+- `scheme` (String) URL scheme (often empty).
+- `site_resource_id` (Number) Numeric ID of the site-scoped resource that handled the request, if any.
+- `timestamp` (Number) Unix epoch seconds when the request was processed.
+- `tls` (Boolean) `true` when the request was received over TLS.
+- `user_agent` (String) `User-Agent` header of the request. Null when not sent.
 
 
 <a id="nestedatt--filter_attributes"></a>
@@ -90,4 +106,12 @@ Read-Only:
 - `hosts` (List of String) Distinct hosts seen.
 - `locations` (List of String) Distinct geolocations seen.
 - `paths` (List of String) Distinct paths seen.
-- `resources` (List of String) Distinct resource IDs seen.
+- `resources` (Attributes List) Distinct resources seen, as `{id, name}` pairs. (see [below for nested schema](#nestedatt--filter_attributes--resources))
+
+<a id="nestedatt--filter_attributes--resources"></a>
+### Nested Schema for `filter_attributes.resources`
+
+Read-Only:
+
+- `id` (Number) Resource ID.
+- `name` (String) Resource display name.
