@@ -796,6 +796,92 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Site extended shape + GetSiteByNiceID tests ---
+
+func TestGetSiteByNiceID_FullShape(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/stackops/site/smart-marbled-salamander" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"siteId":              4,
+			"orgId":               "stackops",
+			"niceId":              "smart-marbled-salamander",
+			"exitNodeId":          1,
+			"name":                "Kwatch",
+			"pubKey":              "KWRyJnnUBxd0adPAYu7FQegMXapahlAKaeGzIhtZin8=",
+			"subnet":              "100.89.128.8/30",
+			"megabytesIn":         29.69217,
+			"megabytesOut":        102.718094,
+			"lastBandwidthUpdate": "2026-05-25T20:27:11.840Z",
+			"type":                "newt",
+			"online":              true,
+			"lastPing":            1779741077,
+			"address":             "100.90.128.0/24",
+			"endpoint":            "82.65.56.201:63328",
+			"publicKey":           "XY4jYKb60ITzUXyVVyUTdK5Kae1CYM6sxQ3lHc2kbFg=",
+			"lastHolePunch":       1779741075,
+			"listenPort":          63328,
+			"dockerSocketEnabled": true,
+			"status":              "approved",
+			"newtId":              "q37zyhmys02nttl",
+		})
+	})
+
+	site, err := c.GetSiteByNiceID(context.Background(), "stackops", "smart-marbled-salamander")
+	if err != nil {
+		t.Fatalf("GetSiteByNiceID: %v", err)
+	}
+	if site.SiteID != 4 || site.Name != "Kwatch" || site.Type != "newt" {
+		t.Errorf("base fields = %+v", site)
+	}
+	if site.ExitNodeID == nil || *site.ExitNodeID != 1 {
+		t.Errorf("ExitNodeID = %v, want *1", site.ExitNodeID)
+	}
+	if site.MegabytesIn < 29 || site.MegabytesIn > 30 {
+		t.Errorf("MegabytesIn = %v, want ~29.7", site.MegabytesIn)
+	}
+	if site.Status != "approved" || site.NewtID != "q37zyhmys02nttl" {
+		t.Errorf("status/newtId wrong: status=%q newtId=%q", site.Status, site.NewtID)
+	}
+	if site.ListenPort != 63328 {
+		t.Errorf("ListenPort = %d, want 63328", site.ListenPort)
+	}
+}
+
+func TestGetSiteByNiceID_NullExitNode(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"siteId":     5,
+			"orgId":      "stackops",
+			"niceId":     "lone-site",
+			"exitNodeId": nil,
+			"name":       "Detached",
+			"type":       "newt",
+			"online":     false,
+		})
+	})
+
+	site, err := c.GetSiteByNiceID(context.Background(), "stackops", "lone-site")
+	if err != nil {
+		t.Fatalf("GetSiteByNiceID: %v", err)
+	}
+	if site.ExitNodeID != nil {
+		t.Errorf("ExitNodeID = %v, want nil", site.ExitNodeID)
+	}
+}
+
+func TestGetSiteByNiceID_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.GetSiteByNiceID(context.Background(), "stackops", "ghost")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
 // --- Domain extended shape + DNS records tests ---
 
 func TestGetDomain_FullShape(t *testing.T) {
