@@ -1719,32 +1719,62 @@ type RequestLogPagination struct {
 	Offset int `json:"offset"`
 }
 
+// RequestLogResourceRef is a tiny {id, name} object embedded in the
+// FilterAttributes.Resources slice — the server returns resource
+// references as objects, not bare IDs.
+type RequestLogResourceRef struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // RequestLogFilterAttributes lists the distinct values seen in the result
 // set for each filterable dimension. Useful to populate UIs with allowed
 // values for refining a query.
 type RequestLogFilterAttributes struct {
-	Actors    []string `json:"actors"`
-	Resources []string `json:"resources"`
-	Locations []string `json:"locations"`
-	Hosts     []string `json:"hosts"`
-	Paths     []string `json:"paths"`
+	Actors    []string                `json:"actors"`
+	Resources []RequestLogResourceRef `json:"resources"`
+	Locations []string                `json:"locations"`
+	Hosts     []string                `json:"hosts"`
+	Paths     []string                `json:"paths"`
 }
 
-// RequestLogEntry is one audit log line. The Pangolin API documents the
-// filterable dimensions (query params on GET /logs/request) but does not
-// publish a response schema for the entry itself, so we capture the fields
-// we can infer from those dimensions and also keep the full raw JSON in
-// Raw for consumers that need fields we did not model.
+// RequestLogEntry is one request audit log line as actually returned by
+// GET /org/{org}/logs/request. The Pangolin OpenAPI spec does not
+// publish a response schema, so this shape was captured by sampling
+// live traffic against the enterprise self-host. Fields that the
+// server can return null (actor*, userAgent, siteResourceId, metadata,
+// headers, query) are modeled as pointer types so callers can
+// distinguish "no value" from a zero / empty value.
 type RequestLogEntry struct {
-	Timestamp  string          `json:"timestamp,omitempty"`
-	Actor      string          `json:"actor,omitempty"`
-	Method     string          `json:"method,omitempty"`
-	Reason     string          `json:"reason,omitempty"`
-	ResourceID string          `json:"resourceId,omitempty"`
-	Location   string          `json:"location,omitempty"`
-	Host       string          `json:"host,omitempty"`
-	Path       string          `json:"path,omitempty"`
-	Raw        json.RawMessage `json:"-"`
+	ID                 int64           `json:"id"`
+	Timestamp          int64           `json:"timestamp"`
+	OrgID              string          `json:"orgId,omitempty"`
+	Action             bool            `json:"action"`
+	Reason             int64           `json:"reason"`
+	ActorType          *string         `json:"actorType"`
+	Actor              *string         `json:"actor"`
+	ActorID            *string         `json:"actorId"`
+	ResourceID         int64           `json:"resourceId"`
+	SiteResourceID     *int64          `json:"siteResourceId"`
+	IP                 string          `json:"ip,omitempty"`
+	Location           string          `json:"location,omitempty"`
+	UserAgent          *string         `json:"userAgent"`
+	Metadata           json.RawMessage `json:"metadata,omitempty"`
+	Headers            json.RawMessage `json:"headers,omitempty"`
+	Query              json.RawMessage `json:"query,omitempty"`
+	OriginalRequestURL string          `json:"originalRequestURL,omitempty"`
+	Scheme             string          `json:"scheme,omitempty"`
+	Host               string          `json:"host,omitempty"`
+	Path               string          `json:"path,omitempty"`
+	Method             string          `json:"method,omitempty"`
+	TLS                bool            `json:"tls"`
+	ResourceName       string          `json:"resourceName,omitempty"`
+	ResourceNiceID     string          `json:"resourceNiceId,omitempty"`
+
+	// Raw is the full JSON of the entry as received from the server,
+	// preserved so consumers can still reach any field added by the
+	// server after this struct was written.
+	Raw json.RawMessage `json:"-"`
 }
 
 // UnmarshalJSON captures the full raw entry in Raw before unpacking the
