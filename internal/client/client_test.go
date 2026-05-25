@@ -796,6 +796,110 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Domain extended shape + DNS records tests ---
+
+func TestGetDomain_FullShape(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/stackops/domain/egcq4bwo41tak9o" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"domainId":           "egcq4bwo41tak9o",
+			"baseDomain":         "domokit.fr",
+			"verified":           true,
+			"type":               "wildcard",
+			"failed":             false,
+			"tries":              0,
+			"configManaged":      false,
+			"certResolver":       nil,
+			"customCertResolver": nil,
+			"preferWildcardCert": false,
+			"errorMessage":       nil,
+		})
+	})
+
+	d, err := c.GetDomain(context.Background(), "stackops", "egcq4bwo41tak9o")
+	if err != nil {
+		t.Fatalf("GetDomain: %v", err)
+	}
+	if d.BaseDomain != "domokit.fr" || d.Type != "wildcard" || !d.Verified {
+		t.Errorf("base fields wrong: %+v", d)
+	}
+	if d.CertResolver != nil || d.CustomCertResolver != nil || d.ErrorMessage != nil {
+		t.Errorf("nullable string fields should be nil: cert=%v custom=%v err=%v",
+			d.CertResolver, d.CustomCertResolver, d.ErrorMessage)
+	}
+}
+
+func TestGetDomain_PopulatedNullables(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"domainId":           "x",
+			"baseDomain":         "fail.example.com",
+			"verified":           false,
+			"type":               "cname",
+			"failed":             true,
+			"tries":              3,
+			"certResolver":       "letsencrypt-staging",
+			"customCertResolver": "internal-ca",
+			"errorMessage":       "verification timed out",
+		})
+	})
+
+	d, err := c.GetDomain(context.Background(), "stackops", "x")
+	if err != nil {
+		t.Fatalf("GetDomain: %v", err)
+	}
+	if !d.Failed || d.Tries != 3 {
+		t.Errorf("retry fields = failed=%v tries=%d", d.Failed, d.Tries)
+	}
+	if d.CertResolver == nil || *d.CertResolver != "letsencrypt-staging" {
+		t.Errorf("CertResolver = %v", d.CertResolver)
+	}
+	if d.ErrorMessage == nil || *d.ErrorMessage != "verification timed out" {
+		t.Errorf("ErrorMessage = %v", d.ErrorMessage)
+	}
+}
+
+func TestListDomainDNSRecords_BareArrayResponse(t *testing.T) {
+	// The endpoint returns a JSON array directly under `data`, not
+	// wrapped in a `{records: [...]}` object. Confirmed live.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/stackops/domain/x/dns-records" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, []map[string]any{
+			{"id": 5, "domainId": "x", "recordType": "A", "baseDomain": "*.example.com", "value": "1.2.3.4", "verified": true},
+			{"id": 6, "domainId": "x", "recordType": "TXT", "baseDomain": "example.com", "value": "v=spf1 -all", "verified": false},
+		})
+	})
+
+	records, err := c.ListDomainDNSRecords(context.Background(), "stackops", "x")
+	if err != nil {
+		t.Fatalf("ListDomainDNSRecords: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("len = %d, want 2", len(records))
+	}
+	if records[0].RecordType != "A" || records[0].Value != "1.2.3.4" || !records[0].Verified {
+		t.Errorf("records[0] = %+v", records[0])
+	}
+	if records[1].RecordType != "TXT" || records[1].Verified {
+		t.Errorf("records[1] = %+v", records[1])
+	}
+}
+
+func TestGetDomain_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.GetDomain(context.Background(), "stackops", "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
 // --- Resource sub-listings tests ---
 
 func TestListResourceTargets_FullShape(t *testing.T) {

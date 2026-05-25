@@ -345,12 +345,33 @@ func (c *Client) DeleteSite(ctx context.Context, siteID int) error {
 
 // --- Domains ---
 
-// Domain represents a Pangolin domain.
+// Domain represents a Pangolin domain. The list endpoint returns a
+// richer shape than the older provider modeled — verification flags,
+// retry counters, cert resolver configuration and the last error
+// message are all surfaced now.
 type Domain struct {
+	DomainID           string  `json:"domainId"`
+	BaseDomain         string  `json:"baseDomain"`
+	Verified           bool    `json:"verified"`
+	Type               string  `json:"type"`
+	Failed             bool    `json:"failed,omitempty"`
+	Tries              int     `json:"tries,omitempty"`
+	ConfigManaged      bool    `json:"configManaged,omitempty"`
+	CertResolver       *string `json:"certResolver,omitempty"`
+	CustomCertResolver *string `json:"customCertResolver,omitempty"`
+	PreferWildcardCert bool    `json:"preferWildcardCert,omitempty"`
+	ErrorMessage       *string `json:"errorMessage,omitempty"`
+}
+
+// DomainDNSRecord is one row of the DNS records list returned by
+// GET /org/{org}/domain/{id}/dns-records.
+type DomainDNSRecord struct {
+	ID         int    `json:"id"`
 	DomainID   string `json:"domainId"`
+	RecordType string `json:"recordType"`
 	BaseDomain string `json:"baseDomain"`
+	Value      string `json:"value"`
 	Verified   bool   `json:"verified"`
-	Type       string `json:"type"`
 }
 
 // DomainsResponse wraps the domains list response.
@@ -1620,7 +1641,8 @@ func (c *Client) GetIDPOrgPolicy(ctx context.Context, idpID int, orgID string) (
 
 // --- Domain ---
 
-// GetDomainByID retrieves a domain by ID (via list + filter).
+// GetDomainByID retrieves a domain by ID (via list + filter). Kept
+// for callers that still use the list-based lookup.
 func (c *Client) GetDomainByID(ctx context.Context, domainID string) (*Domain, error) {
 	domains, err := c.ListDomains(ctx)
 	if err != nil {
@@ -1633,6 +1655,35 @@ func (c *Client) GetDomainByID(ctx context.Context, domainID string) (*Domain, e
 		}
 	}
 	return nil, fmt.Errorf("domain %s: %w", domainID, ErrNotFound)
+}
+
+// GetDomain retrieves a domain by ID via the per-id endpoint
+// (GET /org/{org}/domain/{id}) — preferred over GetDomainByID since
+// it avoids fetching the full list.
+func (c *Client) GetDomain(ctx context.Context, orgID, domainID string) (*Domain, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/domain/%s", orgID, domainID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var domain Domain
+	if err := json.Unmarshal(resp.Data, &domain); err != nil {
+		return nil, fmt.Errorf("failed to parse domain: %w", err)
+	}
+	return &domain, nil
+}
+
+// ListDomainDNSRecords retrieves the DNS records configured for a
+// domain. Returned in declaration order from the server.
+func (c *Client) ListDomainDNSRecords(ctx context.Context, orgID, domainID string) ([]DomainDNSRecord, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/domain/%s/dns-records", orgID, domainID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var records []DomainDNSRecord
+	if err := json.Unmarshal(resp.Data, &records); err != nil {
+		return nil, fmt.Errorf("failed to parse DNS records: %w", err)
+	}
+	return records, nil
 }
 
 // --- Resource Rules ---
