@@ -1512,6 +1512,48 @@ func (c *Client) ListResourceWhitelist(ctx context.Context, resourceID int) ([]s
 	return out, nil
 }
 
+// SetResourceRoles replaces the non-admin role bindings of an HTTP
+// resource with the given set. Quirk observed live: the built-in
+// Admin role is mandatory on every resource — the API rejects any
+// roleIds list that *includes* role 1 ("Admin role cannot be
+// assigned to resources") and silently keeps Admin attached when
+// the list does *not* mention it. In practice, callers should pass
+// only the additional roles they want bound; Admin stays put.
+func (c *Client) SetResourceRoles(ctx context.Context, resourceID int, roleIDs []int) error {
+	if roleIDs == nil {
+		roleIDs = []int{}
+	}
+	body := map[string]any{"roleIds": roleIDs}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/roles", resourceID), body)
+	return err
+}
+
+// SetResourceUsers replaces the user bindings of an HTTP resource
+// with the given set. Pass an empty slice to clear all per-user
+// bindings (role-based access still applies).
+func (c *Client) SetResourceUsers(ctx context.Context, resourceID int, userIDs []string) error {
+	if userIDs == nil {
+		userIDs = []string{}
+	}
+	body := map[string]any{"userIds": userIDs}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/users", resourceID), body)
+	return err
+}
+
+// SetResourceWhitelist replaces the email whitelist of an HTTP
+// resource with the given set. The resource must have
+// email_whitelist_enabled = true for the call to succeed; otherwise
+// the server responds with 400 "Email whitelist is not enabled for
+// this resource".
+func (c *Client) SetResourceWhitelist(ctx context.Context, resourceID int, emails []string) error {
+	if emails == nil {
+		emails = []string{}
+	}
+	body := map[string]any{"emails": emails}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/whitelist", resourceID), body)
+	return err
+}
+
 // --- Client assignments for site resources ---
 
 // AddClientToSiteResource assigns an OLM client to a private site resource.

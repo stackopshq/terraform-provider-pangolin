@@ -796,6 +796,93 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Resource set-replace endpoints tests ---
+
+func TestSetResourceRoles_BodyAndPath(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/resource/7/roles" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetResourceRoles(context.Background(), 7, []int{2, 3}); err != nil {
+		t.Fatalf("SetResourceRoles: %v", err)
+	}
+	if string(gotBody["roleIds"]) != "[2,3]" {
+		t.Errorf("roleIds = %s, want [2,3]", gotBody["roleIds"])
+	}
+}
+
+func TestSetResourceRoles_NilTreatedAsEmptyArray(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetResourceRoles(context.Background(), 7, nil); err != nil {
+		t.Fatalf("SetResourceRoles: %v", err)
+	}
+	if string(gotBody["roleIds"]) != "[]" {
+		t.Errorf("roleIds = %s, want []", gotBody["roleIds"])
+	}
+}
+
+func TestSetResourceUsers_BodyAndPath(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/resource/7/users" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetResourceUsers(context.Background(), 7, []string{"u-1", "u-2"}); err != nil {
+		t.Fatalf("SetResourceUsers: %v", err)
+	}
+	if string(gotBody["userIds"]) != `["u-1","u-2"]` {
+		t.Errorf("userIds = %s", gotBody["userIds"])
+	}
+}
+
+func TestSetResourceWhitelist_BodyAndPath(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/resource/7/whitelist" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetResourceWhitelist(context.Background(), 7, []string{"alice@example.com", "bob@example.com"}); err != nil {
+		t.Fatalf("SetResourceWhitelist: %v", err)
+	}
+	if string(gotBody["emails"]) != `["alice@example.com","bob@example.com"]` {
+		t.Errorf("emails = %s", gotBody["emails"])
+	}
+}
+
+func TestSetResourceWhitelist_ErrorWhenDisabled(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		// Simulate the 400 the API returns when emailWhitelistEnabled = false.
+		writeEnvelope(t, w, http.StatusBadRequest, nil)
+	})
+	err := c.SetResourceWhitelist(context.Background(), 7, []string{"x@example.com"})
+	if err == nil {
+		t.Fatal("expected error when whitelist disabled")
+	}
+}
+
 // --- User-centric role binding tests ---
 
 func TestAddRoleToUser_PathAndMethod(t *testing.T) {
