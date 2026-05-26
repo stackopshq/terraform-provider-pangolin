@@ -36,7 +36,7 @@ output "example_newt_secret" {
 
 ### Optional
 
-- `docker_socket_enabled` (Boolean) Enable Docker socket access on this site. Defaults to `false`.
+- `docker_socket_enabled` (Boolean) Enable Docker socket access on this site. Defaults to `true` to match the Pangolin API default.
 
 ### Read-Only
 
