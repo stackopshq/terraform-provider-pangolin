@@ -496,45 +496,76 @@ func (c *Client) DeleteResource(ctx context.Context, resourceID int) error {
 
 // --- Targets ---
 
-// Target represents a backend target for a resource.
-//
-// The list endpoint (GET /resource/{id}/targets) returns extra fields
-// not echoed by the per-id GET — site display info, the health-check
-// configuration, and routing details. They are all optional and
-// marked with omitempty so an unmarshal on the smaller per-id payload
-// leaves them at their zero values without polluting CRUD payloads.
-type Target struct {
-	TargetID   int    `json:"targetId"`
-	ResourceID int    `json:"resourceId"`
-	SiteID     int    `json:"siteId"`
-	IP         string `json:"ip"`
-	Method     string `json:"method"`
-	Port       int    `json:"port"`
-	Enabled    bool   `json:"enabled"`
+// TargetHCHeader is one entry of the health-check request headers
+// list sent on Create / Update target bodies.
+type TargetHCHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
 
-	// List-view extras (read-only; emitted only by /resource/{id}/targets)
-	SiteType            string  `json:"siteType,omitempty"`
-	SiteName            string  `json:"siteName,omitempty"`
-	HCEnabled           bool    `json:"hcEnabled,omitempty"`
-	HCPath              *string `json:"hcPath,omitempty"`
-	HCScheme            *string `json:"hcScheme,omitempty"`
-	HCMode              *string `json:"hcMode,omitempty"`
-	HCHostname          *string `json:"hcHostname,omitempty"`
-	HCPort              *int    `json:"hcPort,omitempty"`
-	HCInterval          *int    `json:"hcInterval,omitempty"`
-	HCUnhealthyInterval *int    `json:"hcUnhealthyInterval,omitempty"`
-	HCTimeout           *int    `json:"hcTimeout,omitempty"`
-	HCHeaders           *string `json:"hcHeaders,omitempty"`
-	HCFollowRedirects   *bool   `json:"hcFollowRedirects,omitempty"`
-	HCMethod            *string `json:"hcMethod,omitempty"`
-	HCStatus            *string `json:"hcStatus,omitempty"`
-	HCHealth            string  `json:"hcHealth,omitempty"`
-	HCTLSServerName     *string `json:"hcTlsServerName,omitempty"`
-	Path                *string `json:"path,omitempty"`
-	PathMatchType       *string `json:"pathMatchType,omitempty"`
-	RewritePath         *string `json:"rewritePath,omitempty"`
-	RewritePathType     *string `json:"rewritePathType,omitempty"`
-	Priority            *int    `json:"priority,omitempty"`
+// Target represents a backend target for a resource. The response
+// payload now carries the full health-check + routing configuration
+// returned by both the list endpoint and the per-id GET. Nullable
+// upstream fields are modeled as pointer types so callers can
+// distinguish "no value" from a zero / empty value.
+//
+// Wire quirk: hcHeaders is sent as a typed array of {name, value}
+// on Create / Update bodies but comes back as a JSON-string in the
+// response (cf. roles' sshSudoCommands quirk). HCHeadersRaw holds
+// that string; ParseTargetHCHeaders decodes it into []TargetHCHeader.
+type Target struct {
+	TargetID            int    `json:"targetId"`
+	ResourceID          int    `json:"resourceId"`
+	SiteID              int    `json:"siteId"`
+	IP                  string `json:"ip"`
+	Method              string `json:"method"`
+	Port                int    `json:"port"`
+	Enabled             bool   `json:"enabled"`
+	TargetHealthCheckID *int   `json:"targetHealthCheckId,omitempty"`
+	OrgID               string `json:"orgId,omitempty"`
+	Name                string `json:"name,omitempty"`
+	InternalPort        *int   `json:"internalPort,omitempty"`
+
+	// List-view extras (read-only; emitted by /resource/{id}/targets
+	// and the create/update responses)
+	SiteType             string  `json:"siteType,omitempty"`
+	SiteName             string  `json:"siteName,omitempty"`
+	HCEnabled            bool    `json:"hcEnabled,omitempty"`
+	HCPath               *string `json:"hcPath,omitempty"`
+	HCScheme             *string `json:"hcScheme,omitempty"`
+	HCMode               *string `json:"hcMode,omitempty"`
+	HCHostname           *string `json:"hcHostname,omitempty"`
+	HCPort               *int    `json:"hcPort,omitempty"`
+	HCInterval           *int    `json:"hcInterval,omitempty"`
+	HCUnhealthyInterval  *int    `json:"hcUnhealthyInterval,omitempty"`
+	HCTimeout            *int    `json:"hcTimeout,omitempty"`
+	HCHeadersRaw         *string `json:"hcHeaders,omitempty"`
+	HCFollowRedirects    *bool   `json:"hcFollowRedirects,omitempty"`
+	HCMethod             *string `json:"hcMethod,omitempty"`
+	HCStatus             *int    `json:"hcStatus,omitempty"`
+	HCHealth             string  `json:"hcHealth,omitempty"`
+	HCTLSServerName      *string `json:"hcTlsServerName,omitempty"`
+	HCHealthyThreshold   *int    `json:"hcHealthyThreshold,omitempty"`
+	HCUnhealthyThreshold *int    `json:"hcUnhealthyThreshold,omitempty"`
+	Path                 *string `json:"path,omitempty"`
+	PathMatchType        *string `json:"pathMatchType,omitempty"`
+	RewritePath          *string `json:"rewritePath,omitempty"`
+	RewritePathType      *string `json:"rewritePathType,omitempty"`
+	Priority             *int    `json:"priority,omitempty"`
+}
+
+// ParseTargetHCHeaders decodes a target's hcHeaders response field —
+// emitted by the server as a JSON-string (e.g. `"[]"` or `"[{\"name\":
+// \"X-Probe\",\"value\":\"yes\"}]"`) — into a typed slice.
+func ParseTargetHCHeaders(raw *string) ([]TargetHCHeader, error) {
+	if raw == nil || *raw == "" || *raw == "[]" {
+		return []TargetHCHeader{}, nil
+	}
+	var out []TargetHCHeader
+	if err := json.Unmarshal([]byte(*raw), &out); err != nil {
+		return nil, fmt.Errorf("parse target hcHeaders %q: %w", *raw, err)
+	}
+	return out, nil
 }
 
 // ListResourceTargets lists all targets that back a resource, with
@@ -580,11 +611,43 @@ func (c *Client) ListResourceRoles(ctx context.Context, resourceID int) ([]Resou
 }
 
 // CreateTargetRequest is the payload for creating a target.
+//
+// All hc* fields and routing extras are optional. Pointer types let
+// callers send the zero value (e.g. priority=0) without colliding
+// with "leave at server default" (nil → omitempty). HCHeaders is a
+// typed slice; the server returns it back as a JSON-string in the
+// response (cf. Target.HCHeadersRaw).
 type CreateTargetRequest struct {
-	IP     string `json:"ip"`
-	Port   int    `json:"port"`
-	Method string `json:"method"`
-	SiteID int    `json:"siteId"`
+	IP      string `json:"ip"`
+	Port    int    `json:"port"`
+	Method  string `json:"method"`
+	SiteID  int    `json:"siteId"`
+	Enabled *bool  `json:"enabled,omitempty"`
+
+	// Health-check configuration
+	HCEnabled            *bool            `json:"hcEnabled,omitempty"`
+	HCPath               *string          `json:"hcPath,omitempty"`
+	HCScheme             *string          `json:"hcScheme,omitempty"`
+	HCMode               *string          `json:"hcMode,omitempty"`
+	HCHostname           *string          `json:"hcHostname,omitempty"`
+	HCPort               *int             `json:"hcPort,omitempty"`
+	HCInterval           *int             `json:"hcInterval,omitempty"`
+	HCUnhealthyInterval  *int             `json:"hcUnhealthyInterval,omitempty"`
+	HCTimeout            *int             `json:"hcTimeout,omitempty"`
+	HCHeaders            []TargetHCHeader `json:"hcHeaders,omitempty"`
+	HCFollowRedirects    *bool            `json:"hcFollowRedirects,omitempty"`
+	HCMethod             *string          `json:"hcMethod,omitempty"`
+	HCStatus             *int             `json:"hcStatus,omitempty"`
+	HCTLSServerName      *string          `json:"hcTlsServerName,omitempty"`
+	HCHealthyThreshold   *int             `json:"hcHealthyThreshold,omitempty"`
+	HCUnhealthyThreshold *int             `json:"hcUnhealthyThreshold,omitempty"`
+
+	// Routing extras
+	Path            *string `json:"path,omitempty"`
+	PathMatchType   *string `json:"pathMatchType,omitempty"`
+	RewritePath     *string `json:"rewritePath,omitempty"`
+	RewritePathType *string `json:"rewritePathType,omitempty"`
+	Priority        *int    `json:"priority,omitempty"`
 }
 
 // CreateTarget creates a new target for a resource.
@@ -615,13 +678,40 @@ func (c *Client) GetTarget(ctx context.Context, targetID int) (*Target, error) {
 	return &target, nil
 }
 
-// UpdateTargetRequest is the payload for updating a target.
+// UpdateTargetRequest is the payload for updating a target. Mirrors
+// the CreateTargetRequest shape — every hc* / routing field is
+// optional, sent only when the pointer is non-nil.
 type UpdateTargetRequest struct {
 	IP      string `json:"ip"`
 	Port    int    `json:"port"`
 	Method  string `json:"method"`
 	Enabled bool   `json:"enabled"`
 	SiteID  int    `json:"siteId"`
+
+	// Health-check configuration
+	HCEnabled            *bool            `json:"hcEnabled,omitempty"`
+	HCPath               *string          `json:"hcPath,omitempty"`
+	HCScheme             *string          `json:"hcScheme,omitempty"`
+	HCMode               *string          `json:"hcMode,omitempty"`
+	HCHostname           *string          `json:"hcHostname,omitempty"`
+	HCPort               *int             `json:"hcPort,omitempty"`
+	HCInterval           *int             `json:"hcInterval,omitempty"`
+	HCUnhealthyInterval  *int             `json:"hcUnhealthyInterval,omitempty"`
+	HCTimeout            *int             `json:"hcTimeout,omitempty"`
+	HCHeaders            []TargetHCHeader `json:"hcHeaders,omitempty"`
+	HCFollowRedirects    *bool            `json:"hcFollowRedirects,omitempty"`
+	HCMethod             *string          `json:"hcMethod,omitempty"`
+	HCStatus             *int             `json:"hcStatus,omitempty"`
+	HCTLSServerName      *string          `json:"hcTlsServerName,omitempty"`
+	HCHealthyThreshold   *int             `json:"hcHealthyThreshold,omitempty"`
+	HCUnhealthyThreshold *int             `json:"hcUnhealthyThreshold,omitempty"`
+
+	// Routing extras
+	Path            *string `json:"path,omitempty"`
+	PathMatchType   *string `json:"pathMatchType,omitempty"`
+	RewritePath     *string `json:"rewritePath,omitempty"`
+	RewritePathType *string `json:"rewritePathType,omitempty"`
+	Priority        *int    `json:"priority,omitempty"`
 }
 
 // UpdateTarget updates an existing target by ID.
