@@ -3,23 +3,35 @@
 page_title: "pangolin_site_resource Resource - pangolin"
 subcategory: ""
 description: |-
-  Manages a Pangolin private site resource (VPN-accessible endpoint).
+  Manages a Pangolin private site resource (VPN-accessible endpoint, including private HTTP resources).
 ---
 
 # pangolin_site_resource (Resource)
 
-Manages a Pangolin private site resource (VPN-accessible endpoint).
+Manages a Pangolin private site resource (VPN-accessible endpoint, including private HTTP resources).
 
 ## Example Usage
 
 ```terraform
-resource "pangolin_site_resource" "example" {
-  site_id     = pangolin_site.example.id
-  name        = "internal-db"
-  mode        = "host"
-  destination = "db.internal"
-  alias       = "db.local"
+resource "pangolin_site_resource" "db" {
+  site_id        = pangolin_site.example.id
+  name           = "internal-db"
+  mode           = "host"
+  destination    = "db.internal"
+  alias          = "db.local"
   tcp_port_range = "5432"
+}
+
+resource "pangolin_site_resource" "admin" {
+  site_id          = pangolin_site.example.id
+  name             = "workspace-admin"
+  mode             = "http"
+  destination      = "workspace-admin.example.run.app"
+  destination_port = 443
+  scheme           = "https"
+  ssl              = true
+  domain_id        = data.pangolin_domains.all.domains[0].domain_id
+  subdomain        = "workspace.admin"
 }
 ```
 
@@ -28,22 +40,29 @@ resource "pangolin_site_resource" "example" {
 
 ### Required
 
-- `alias` (String) The internal DNS alias (e.g. 'myservice.internal'). Required by the Pangolin API.
-- `destination` (String) The destination (hostname for 'host' mode, CIDR for 'cidr' mode).
-- `mode` (String) The mode: 'host' or 'cidr'.
+- `destination` (String) The destination hostname for host/http mode, or CIDR for cidr mode.
+- `mode` (String) The mode: 'host', 'cidr', or 'http'.
 - `name` (String) The name of the private resource.
 - `site_id` (Number) The site ID this resource belongs to.
 
 ### Optional
 
+- `alias` (String) The internal DNS alias for host/cidr private resources.
 - `auth_daemon_mode` (String) Auth daemon mode: 'site' or 'remote'. Defaults to 'site'.
 - `disable_icmp` (Boolean) Whether to disable ICMP. Defaults to false.
-- `tcp_port_range` (String) TCP port range string. '*' for all, '' for none, or specific ports/ranges (e.g. '80,443,8080-8090').
-- `udp_port_range` (String) UDP port range string. '*' for all, '' for none, or specific ports/ranges.
+- `domain_id` (String) The Pangolin domain ID used for private HTTP full-domain routing.
+- `destination_port` (Number) The destination port for private HTTP mode.
+- `enabled` (Boolean) Whether the private resource is enabled. Defaults to true.
+- `scheme` (String) The destination scheme for private HTTP mode: 'http' or 'https'.
+- `ssl` (Boolean) Whether Pangolin should use SSL for the private HTTP resource.
+- `subdomain` (String) The subdomain used with domain_id for private HTTP full-domain routing.
+- `tcp_port_range` (String) TCP port range string. '*' for all, '' for none, or specific ports/ranges (e.g. '80,443,8080-8090'). Ignored for private HTTP mode.
+- `udp_port_range` (String) UDP port range string. '*' for all, '' for none, or specific ports/ranges. Ignored for private HTTP mode.
 
 ### Read-Only
 
 - `auth_daemon_port` (Number) The auth daemon port (computed by the API).
+- `full_domain` (String) The computed full domain for private HTTP mode.
 - `id` (Number) The numeric ID of the site resource.
 - `nice_id` (String) The human-readable ID.
 
