@@ -911,6 +911,45 @@ func (c *Client) RemoveUserFromRole(ctx context.Context, roleID int, userID stri
 	return err
 }
 
+// AddRoleToUser binds an additional role to a user (cumulative).
+// Distinct from AddUserToRole / POST /role/{id}/users/add, which the
+// Pangolin server treats as a single-role assignment endpoint —
+// calling it strips the user's other roles. Use this when you want a
+// user to hold *multiple* roles simultaneously, e.g. Member + Admin.
+func (c *Client) AddRoleToUser(ctx context.Context, userID string, roleID int) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/user/%s/add-role/%d", userID, roleID), nil)
+	return err
+}
+
+// RemoveRoleFromUser detaches one role from a user without touching
+// the user's other roles. Pairs with AddRoleToUser.
+func (c *Client) RemoveRoleFromUser(ctx context.Context, userID string, roleID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/user/%s/remove-role/%d", userID, roleID), nil)
+	return err
+}
+
+// UserHasRole reports whether a given role is currently bound to a
+// user. Uses the org-scoped list+filter on /users since the API does
+// not expose a per-user roles endpoint.
+func (c *Client) UserHasRole(ctx context.Context, userID string, roleID int) (bool, error) {
+	users, err := c.ListUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, u := range users {
+		if u.ID != userID {
+			continue
+		}
+		for _, r := range u.Roles {
+			if r.RoleID == roleID {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("user %s: %w", userID, ErrNotFound)
+}
+
 // ListRoleUsers retrieves all users assigned to a role.
 func (c *Client) ListRoleUsers(ctx context.Context, roleID int) ([]string, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/role/%d/users", roleID), nil)
