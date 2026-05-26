@@ -26,3 +26,14 @@ resource "pangolin_site_resource_user" "example" {
 
 - `site_resource_id` (Number) The ID of the private site resource.
 - `user_id` (String) The ID of the user to assign.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Composite ID: {site_resource_id}/{user_id}
+terraform import pangolin_site_resource_user.example 42/u-abc123
+```

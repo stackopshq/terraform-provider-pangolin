@@ -26,3 +26,14 @@ resource "pangolin_resource_whitelist" "example" {
 
 - `email` (String) The email address to whitelist.
 - `resource_id` (Number) The ID of the HTTP resource.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Composite ID: {resource_id}/{email}
+terraform import pangolin_resource_whitelist.example 42/alice@example.com
+```

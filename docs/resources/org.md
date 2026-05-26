@@ -71,3 +71,18 @@ output "ssh_ca_public_key" {
 - `is_billing_org` (Boolean) Whether this organization carries its own billing account (`true`) or piggybacks on another (`false`).
 - `ssh_ca_private_key` (String, Sensitive) Private key of the SSH certificate authority. Returned in clear by the API; stored in Terraform state. Treat the state as a secret accordingly.
 - `ssh_ca_public_key` (String) Public key of the SSH certificate authority used to sign user certificates for the Pangolin SSH bastion feature. Distribute to host `TrustedUserCAKeys` config.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Organizations import by their string ID (the slug shown in the
+# Pangolin web UI URL).
+#
+# Note: `ssh_ca_private_key` is returned by the API on import and
+# lands in state. Treat the Terraform state as a secret accordingly.
+terraform import pangolin_org.example <org_id>
+```

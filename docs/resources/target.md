@@ -96,3 +96,15 @@ Required:
 
 - `name` (String) Header name.
 - `value` (String) Header value.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Targets import by numeric ID. Look it up via the
+# pangolin_resource_targets data source.
+terraform import pangolin_target.example <target_id>
+```
