@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -30,11 +31,13 @@ type OLMClientResource struct {
 
 // OLMClientResourceModel describes the resource data model.
 type OLMClientResourceModel struct {
-	ID     types.Int64  `tfsdk:"id"`
-	NiceID types.String `tfsdk:"nice_id"`
-	Name   types.String `tfsdk:"name"`
-	Online types.Bool   `tfsdk:"online"`
-	Secret types.String `tfsdk:"secret"`
+	ID       types.Int64  `tfsdk:"id"`
+	NiceID   types.String `tfsdk:"nice_id"`
+	Name     types.String `tfsdk:"name"`
+	Online   types.Bool   `tfsdk:"online"`
+	Archived types.Bool   `tfsdk:"archived"`
+	Blocked  types.Bool   `tfsdk:"blocked"`
+	Secret   types.String `tfsdk:"secret"`
 }
 
 // NewOLMClientResource returns a new resource factory.
@@ -77,6 +80,18 @@ func (r *OLMClientResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
+			},
+			"archived": schema.BoolAttribute{
+				Description: "Whether the client is archived. Archived clients are kept for audit but cannot connect. Defaults to `false`.",
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
+			},
+			"blocked": schema.BoolAttribute{
+				Description: "Whether the client is blocked. Blocked clients are denied from connecting until unblocked. Defaults to `false`.",
+				Optional:    true,
+				Computed:    true,
+				Default:     booldefault.StaticBool(false),
 			},
 			"secret": schema.StringAttribute{
 				Description: "The client secret. Only available at creation time; stored in state.",
@@ -127,10 +142,17 @@ func (r *OLMClientResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
+	if err := reconcileClientLifecycle(ctx, r.client, olmClient.ClientID, olmClient.Archived, plan.Archived.ValueBool(), olmClient.Blocked, plan.Blocked.ValueBool()); err != nil {
+		resp.Diagnostics.AddError("Failed to reconcile client lifecycle", err.Error())
+		return
+	}
+
 	plan.ID = types.Int64Value(int64(olmClient.ClientID))
 	plan.NiceID = types.StringValue(olmClient.NiceID)
 	plan.Name = types.StringValue(olmClient.Name)
 	plan.Online = types.BoolValue(olmClient.Online)
+	plan.Archived = types.BoolValue(plan.Archived.ValueBool())
+	plan.Blocked = types.BoolValue(plan.Blocked.ValueBool())
 	// The secret is the olmSecret used during creation (not returned by the API).
 	plan.Secret = types.StringValue(defaults.OlmSecret)
 
@@ -157,6 +179,8 @@ func (r *OLMClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 	state.NiceID = types.StringValue(olmClient.NiceID)
 	state.Name = types.StringValue(olmClient.Name)
 	state.Online = types.BoolValue(olmClient.Online)
+	state.Archived = types.BoolValue(olmClient.Archived)
+	state.Blocked = types.BoolValue(olmClient.Blocked)
 	// Secret is not returned by Get; preserve existing state value.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -165,6 +189,11 @@ func (r *OLMClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 func (r *OLMClientResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan OLMClientResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	var state OLMClientResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -177,11 +206,48 @@ func (r *OLMClientResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
+	if err := reconcileClientLifecycle(ctx, r.client, int(plan.ID.ValueInt64()), state.Archived.ValueBool(), plan.Archived.ValueBool(), state.Blocked.ValueBool(), plan.Blocked.ValueBool()); err != nil {
+		resp.Diagnostics.AddError("Failed to reconcile client lifecycle", err.Error())
+		return
+	}
+
 	plan.NiceID = types.StringValue(olmClient.NiceID)
 	plan.Name = types.StringValue(olmClient.Name)
 	plan.Online = types.BoolValue(olmClient.Online)
+	plan.Archived = types.BoolValue(plan.Archived.ValueBool())
+	plan.Blocked = types.BoolValue(plan.Blocked.ValueBool())
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+// reconcileClientLifecycle issues the archive/unarchive and block/unblock calls
+// needed to drive a client from the (currentArchived, currentBlocked) tuple to
+// the (wantArchived, wantBlocked) tuple. Each direction is independently no-op
+// when already in the desired state.
+func reconcileClientLifecycle(ctx context.Context, c *client.Client, clientID int, currentArchived, wantArchived, currentBlocked, wantBlocked bool) error {
+	if currentArchived != wantArchived {
+		if wantArchived {
+			if err := c.ArchiveClient(ctx, clientID); err != nil {
+				return err
+			}
+		} else {
+			if err := c.UnarchiveClient(ctx, clientID); err != nil {
+				return err
+			}
+		}
+	}
+	if currentBlocked != wantBlocked {
+		if wantBlocked {
+			if err := c.BlockClient(ctx, clientID); err != nil {
+				return err
+			}
+		} else {
+			if err := c.UnblockClient(ctx, clientID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (r *OLMClientResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -212,10 +278,12 @@ func (r *OLMClientResource) ImportState(ctx context.Context, req resource.Import
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &OLMClientResourceModel{
-		ID:     types.Int64Value(int64(olmClient.ClientID)),
-		NiceID: types.StringValue(olmClient.NiceID),
-		Name:   types.StringValue(olmClient.Name),
-		Online: types.BoolValue(olmClient.Online),
-		Secret: types.StringValue(""), // Secret cannot be recovered after creation.
+		ID:       types.Int64Value(int64(olmClient.ClientID)),
+		NiceID:   types.StringValue(olmClient.NiceID),
+		Name:     types.StringValue(olmClient.Name),
+		Online:   types.BoolValue(olmClient.Online),
+		Archived: types.BoolValue(olmClient.Archived),
+		Blocked:  types.BoolValue(olmClient.Blocked),
+		Secret:   types.StringValue(""), // Secret cannot be recovered after creation.
 	})...)
 }

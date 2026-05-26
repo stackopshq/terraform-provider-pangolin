@@ -1365,6 +1365,8 @@ type OLMClient struct {
 	NiceID   string `json:"niceId"`
 	Name     string `json:"name"`
 	Online   bool   `json:"online"`
+	Archived bool   `json:"archived"`
+	Blocked  bool   `json:"blocked"`
 	Secret   string `json:"secret"` // Only returned on creation.
 }
 
@@ -1427,21 +1429,56 @@ func (c *Client) GetOLMClient(ctx context.Context, clientID int) (*OLMClient, er
 }
 
 // UpdateOLMClient updates an OLM client by ID.
+//
+// The upstream endpoint wraps the updated entity in a single-element array
+// (i.e. `"data": [{...}]`), so we unmarshal into a slice first and fall back
+// to a bare object for older server builds that return the entity directly.
 func (c *Client) UpdateOLMClient(ctx context.Context, clientID int, req *UpdateOLMClientRequest) (*OLMClient, error) {
 	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d", clientID), req)
 	if err != nil {
 		return nil, err
 	}
-	var client OLMClient
-	if err := json.Unmarshal(resp.Data, &client); err != nil {
+	var clients []OLMClient
+	if err := json.Unmarshal(resp.Data, &clients); err == nil {
+		if len(clients) == 0 {
+			return nil, fmt.Errorf("OLM client update returned empty array")
+		}
+		return &clients[0], nil
+	}
+	var single OLMClient
+	if err := json.Unmarshal(resp.Data, &single); err != nil {
 		return nil, fmt.Errorf("failed to parse OLM client: %w", err)
 	}
-	return &client, nil
+	return &single, nil
 }
 
 // DeleteOLMClient deletes an OLM client by ID.
 func (c *Client) DeleteOLMClient(ctx context.Context, clientID int) error {
 	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/client/%d", clientID), nil)
+	return err
+}
+
+// ArchiveClient archives an OLM client.
+func (c *Client) ArchiveClient(ctx context.Context, clientID int) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d/archive", clientID), nil)
+	return err
+}
+
+// UnarchiveClient un-archives an OLM client.
+func (c *Client) UnarchiveClient(ctx context.Context, clientID int) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d/unarchive", clientID), nil)
+	return err
+}
+
+// BlockClient blocks an OLM client.
+func (c *Client) BlockClient(ctx context.Context, clientID int) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d/block", clientID), nil)
+	return err
+}
+
+// UnblockClient un-blocks an OLM client.
+func (c *Client) UnblockClient(ctx context.Context, clientID int) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d/unblock", clientID), nil)
 	return err
 }
 
