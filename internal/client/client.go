@@ -556,7 +556,9 @@ type Target struct {
 
 // ParseTargetHCHeaders decodes a target's hcHeaders response field —
 // emitted by the server as a JSON-string (e.g. `"[]"` or `"[{\"name\":
-// \"X-Probe\",\"value\":\"yes\"}]"`) — into a typed slice.
+// \"X-Probe\",\"value\":\"yes\"}]"`) — into a typed slice. Target's
+// custom UnmarshalJSON already normalizes the wire-shape asymmetry
+// (string vs native array), so callers only see the string form.
 func ParseTargetHCHeaders(raw *string) ([]TargetHCHeader, error) {
 	if raw == nil || *raw == "" || *raw == "[]" {
 		return []TargetHCHeader{}, nil
@@ -566,6 +568,40 @@ func ParseTargetHCHeaders(raw *string) ([]TargetHCHeader, error) {
 		return nil, fmt.Errorf("parse target hcHeaders %q: %w", *raw, err)
 	}
 	return out, nil
+}
+
+// UnmarshalJSON normalizes the hcHeaders wire-shape asymmetry: the
+// PUT /resource/{id}/target and POST /target/{id} responses emit
+// hcHeaders as a JSON-encoded *string* (e.g. `"[{...}]"`), while
+// GET /target/{id} returns the same data as a native JSON array.
+// Both forms decode into HCHeadersRaw as the string form, so
+// downstream consumers (and ParseTargetHCHeaders) work uniformly
+// regardless of which endpoint produced the payload.
+func (t *Target) UnmarshalJSON(data []byte) error {
+	type targetAlias Target
+	aux := &struct {
+		HCHeaders json.RawMessage `json:"hcHeaders"`
+		*targetAlias
+	}{targetAlias: (*targetAlias)(t)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	switch {
+	case len(aux.HCHeaders) == 0, string(aux.HCHeaders) == "null":
+		t.HCHeadersRaw = nil
+	case aux.HCHeaders[0] == '"':
+		// JSON-encoded string form — decode the outer string layer
+		var s string
+		if err := json.Unmarshal(aux.HCHeaders, &s); err != nil {
+			return fmt.Errorf("decode hcHeaders string: %w", err)
+		}
+		t.HCHeadersRaw = &s
+	default:
+		// Native array (or any other JSON value) — keep verbatim
+		s := string(aux.HCHeaders)
+		t.HCHeadersRaw = &s
+	}
+	return nil
 }
 
 // ListResourceTargets lists all targets that back a resource, with
