@@ -773,34 +773,47 @@ func (c *Client) DeleteTarget(ctx context.Context, targetID int) error {
 
 // SiteResource represents a private site resource.
 type SiteResource struct {
-	SiteResourceID int    `json:"siteResourceId"`
-	SiteID         int    `json:"siteId"`
-	NiceID         string `json:"niceId"`
-	Name           string `json:"name"`
-	Mode           string `json:"mode"`
-	Destination    string `json:"destination"`
-	Alias          string `json:"alias"`
-	TCPPortRange   string `json:"tcpPortRangeString"`
-	UDPPortRange   string `json:"udpPortRangeString"`
-	DisableICMP    bool   `json:"disableIcmp"`
-	AuthDaemonPort int    `json:"authDaemonPort"`
-	AuthDaemonMode string `json:"authDaemonMode"`
+	SiteResourceID  int    `json:"siteResourceId"`
+	SiteID          int    `json:"siteId"`
+	NiceID          string `json:"niceId"`
+	Name            string `json:"name"`
+	Mode            string `json:"mode"`
+	Destination     string `json:"destination"`
+	DestinationPort int    `json:"destinationPort"`
+	Alias           string `json:"alias"`
+	DomainID        string `json:"domainId"`
+	Subdomain       string `json:"subdomain"`
+	FullDomain      string `json:"fullDomain"`
+	Scheme          string `json:"scheme"`
+	SSL             bool   `json:"ssl"`
+	Enabled         bool   `json:"enabled"`
+	TCPPortRange    string `json:"tcpPortRangeString"`
+	UDPPortRange    string `json:"udpPortRangeString"`
+	DisableICMP     bool   `json:"disableIcmp"`
+	AuthDaemonPort  int    `json:"authDaemonPort"`
+	AuthDaemonMode  string `json:"authDaemonMode"`
 }
 
 // CreateSiteResourceRequest is the payload for creating a private site resource.
 type CreateSiteResourceRequest struct {
-	Name           string   `json:"name"`
-	SiteID         int      `json:"siteId"`
-	Mode           string   `json:"mode"`
-	Destination    string   `json:"destination"`
-	Alias          string   `json:"alias,omitempty"`
-	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
-	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
-	DisableICMP    bool     `json:"disableIcmp,omitempty"`
-	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
-	RoleIDs        []int    `json:"roleIds"`
-	UserIDs        []string `json:"userIds"`
-	ClientIDs      []int    `json:"clientIds"`
+	Name            string   `json:"name"`
+	SiteID          int      `json:"siteId"`
+	Mode            string   `json:"mode"`
+	Destination     string   `json:"destination"`
+	DestinationPort *int     `json:"destinationPort,omitempty"`
+	Alias           string   `json:"alias,omitempty"`
+	DomainID        *string  `json:"domainId,omitempty"`
+	Subdomain       *string  `json:"subdomain,omitempty"`
+	Scheme          *string  `json:"scheme,omitempty"`
+	SSL             *bool    `json:"ssl,omitempty"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	TCPPortRange    string   `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange    string   `json:"udpPortRangeString,omitempty"`
+	DisableICMP     bool     `json:"disableIcmp,omitempty"`
+	AuthDaemonMode  string   `json:"authDaemonMode,omitempty"`
+	RoleIDs         []int    `json:"roleIds"`
+	UserIDs         []string `json:"userIds"`
+	ClientIDs       []int    `json:"clientIds"`
 }
 
 // CreateSiteResource creates a new private site resource.
@@ -1165,17 +1178,23 @@ func (c *Client) UpdateResource(ctx context.Context, resourceID int, req *Update
 
 // UpdateSiteResourceRequest is the payload for updating a private site resource.
 type UpdateSiteResourceRequest struct {
-	Name           string   `json:"name"`
-	SiteID         int      `json:"siteId"`
-	Destination    string   `json:"destination"`
-	Alias          string   `json:"alias,omitempty"`
-	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
-	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
-	DisableICMP    bool     `json:"disableIcmp,omitempty"`
-	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
-	RoleIDs        []int    `json:"roleIds"`
-	UserIDs        []string `json:"userIds"`
-	ClientIDs      []int    `json:"clientIds"`
+	Name            string   `json:"name"`
+	SiteID          int      `json:"siteId"`
+	Destination     string   `json:"destination"`
+	DestinationPort *int     `json:"destinationPort,omitempty"`
+	Alias           string   `json:"alias,omitempty"`
+	DomainID        *string  `json:"domainId,omitempty"`
+	Subdomain       *string  `json:"subdomain,omitempty"`
+	Scheme          *string  `json:"scheme,omitempty"`
+	SSL             *bool    `json:"ssl,omitempty"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	TCPPortRange    string   `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange    string   `json:"udpPortRangeString,omitempty"`
+	DisableICMP     bool     `json:"disableIcmp,omitempty"`
+	AuthDaemonMode  string   `json:"authDaemonMode,omitempty"`
+	RoleIDs         []int    `json:"roleIds"`
+	UserIDs         []string `json:"userIds"`
+	ClientIDs       []int    `json:"clientIds"`
 }
 
 // UpdateSiteResource updates a private site resource by ID.
