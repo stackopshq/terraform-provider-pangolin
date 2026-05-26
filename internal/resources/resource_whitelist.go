@@ -2,8 +2,10 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -100,11 +102,31 @@ func (r *ResourceWhitelistResource) Create(ctx context.Context, req resource.Cre
 }
 
 func (r *ResourceWhitelistResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	// The Pangolin API does not expose an endpoint to list whitelist entries.
-	// Preserve existing state as-is.
 	var state ResourceWhitelistModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	emails, err := r.client.ListResourceWhitelist(ctx, int(state.ResourceID.ValueInt64()))
+	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			// Parent resource is gone — drop the binding from state.
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read resource whitelist", err.Error())
+		return
+	}
+
+	if slices.Contains(emails, state.Email.ValueString()) {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+		return
+	}
+	// Email no longer present (removed out of band, or whitelist
+	// disabled on the resource). Remove from state so Terraform can
+	// re-create on next apply.
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *ResourceWhitelistResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
