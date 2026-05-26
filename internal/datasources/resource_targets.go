@@ -18,40 +18,48 @@ type ResourceTargetsDataSource struct {
 	client *client.Client
 }
 
+// HCHeaderItemModel mirrors one probe header on the wire.
+type HCHeaderItemModel struct {
+	Name  types.String `tfsdk:"name"`
+	Value types.String `tfsdk:"value"`
+}
+
 // ResourceTargetItemModel mirrors the fields of one target in the list
 // view. Health-check fields are nullable on the wire (no probe set =
 // null); pointer types in the client struct land them as types.*Null()
 // in the Terraform model.
 type ResourceTargetItemModel struct {
-	ID                  types.Int64  `tfsdk:"id"`
-	ResourceID          types.Int64  `tfsdk:"resource_id"`
-	SiteID              types.Int64  `tfsdk:"site_id"`
-	IP                  types.String `tfsdk:"ip"`
-	Method              types.String `tfsdk:"method"`
-	Port                types.Int64  `tfsdk:"port"`
-	Enabled             types.Bool   `tfsdk:"enabled"`
-	SiteType            types.String `tfsdk:"site_type"`
-	SiteName            types.String `tfsdk:"site_name"`
-	HCEnabled           types.Bool   `tfsdk:"hc_enabled"`
-	HCPath              types.String `tfsdk:"hc_path"`
-	HCScheme            types.String `tfsdk:"hc_scheme"`
-	HCMode              types.String `tfsdk:"hc_mode"`
-	HCHostname          types.String `tfsdk:"hc_hostname"`
-	HCPort              types.Int64  `tfsdk:"hc_port"`
-	HCInterval          types.Int64  `tfsdk:"hc_interval"`
-	HCUnhealthyInterval types.Int64  `tfsdk:"hc_unhealthy_interval"`
-	HCTimeout           types.Int64  `tfsdk:"hc_timeout"`
-	HCHeaders           types.String `tfsdk:"hc_headers"`
-	HCFollowRedirects   types.Bool   `tfsdk:"hc_follow_redirects"`
-	HCMethod            types.String `tfsdk:"hc_method"`
-	HCStatus            types.String `tfsdk:"hc_status"`
-	HCHealth            types.String `tfsdk:"hc_health"`
-	HCTLSServerName     types.String `tfsdk:"hc_tls_server_name"`
-	Path                types.String `tfsdk:"path"`
-	PathMatchType       types.String `tfsdk:"path_match_type"`
-	RewritePath         types.String `tfsdk:"rewrite_path"`
-	RewritePathType     types.String `tfsdk:"rewrite_path_type"`
-	Priority            types.Int64  `tfsdk:"priority"`
+	ID                   types.Int64         `tfsdk:"id"`
+	ResourceID           types.Int64         `tfsdk:"resource_id"`
+	SiteID               types.Int64         `tfsdk:"site_id"`
+	IP                   types.String        `tfsdk:"ip"`
+	Method               types.String        `tfsdk:"method"`
+	Port                 types.Int64         `tfsdk:"port"`
+	Enabled              types.Bool          `tfsdk:"enabled"`
+	SiteType             types.String        `tfsdk:"site_type"`
+	SiteName             types.String        `tfsdk:"site_name"`
+	HCEnabled            types.Bool          `tfsdk:"hc_enabled"`
+	HCPath               types.String        `tfsdk:"hc_path"`
+	HCScheme             types.String        `tfsdk:"hc_scheme"`
+	HCMode               types.String        `tfsdk:"hc_mode"`
+	HCHostname           types.String        `tfsdk:"hc_hostname"`
+	HCPort               types.Int64         `tfsdk:"hc_port"`
+	HCInterval           types.Int64         `tfsdk:"hc_interval"`
+	HCUnhealthyInterval  types.Int64         `tfsdk:"hc_unhealthy_interval"`
+	HCTimeout            types.Int64         `tfsdk:"hc_timeout"`
+	HCHeaders            []HCHeaderItemModel `tfsdk:"hc_headers"`
+	HCFollowRedirects    types.Bool          `tfsdk:"hc_follow_redirects"`
+	HCMethod             types.String        `tfsdk:"hc_method"`
+	HCStatus             types.Int64         `tfsdk:"hc_status"`
+	HCHealth             types.String        `tfsdk:"hc_health"`
+	HCTLSServerName      types.String        `tfsdk:"hc_tls_server_name"`
+	HCHealthyThreshold   types.Int64         `tfsdk:"hc_healthy_threshold"`
+	HCUnhealthyThreshold types.Int64         `tfsdk:"hc_unhealthy_threshold"`
+	Path                 types.String        `tfsdk:"path"`
+	PathMatchType        types.String        `tfsdk:"path_match_type"`
+	RewritePath          types.String        `tfsdk:"rewrite_path"`
+	RewritePathType      types.String        `tfsdk:"rewrite_path_type"`
+	Priority             types.Int64         `tfsdk:"priority"`
 }
 
 // ResourceTargetsDataSourceModel describes the data source data model.
@@ -104,17 +112,28 @@ func (d *ResourceTargetsDataSource) Schema(_ context.Context, _ datasource.Schem
 						"hc_interval":           schema.Int64Attribute{Description: "Probe interval in seconds when the target is healthy.", Computed: true},
 						"hc_unhealthy_interval": schema.Int64Attribute{Description: "Probe interval in seconds when the target is unhealthy.", Computed: true},
 						"hc_timeout":            schema.Int64Attribute{Description: "Probe timeout in seconds.", Computed: true},
-						"hc_headers":            schema.StringAttribute{Description: "Probe request headers as a JSON-string.", Computed: true},
-						"hc_follow_redirects":   schema.BoolAttribute{Description: "Whether the probe follows HTTP redirects.", Computed: true},
-						"hc_method":             schema.StringAttribute{Description: "HTTP method of the probe (e.g. `GET`).", Computed: true},
-						"hc_status":             schema.StringAttribute{Description: "Status string returned by the probe (e.g. `200`).", Computed: true},
-						"hc_health":             schema.StringAttribute{Description: "Current health summary (`unknown`, `healthy`, `unhealthy`).", Computed: true},
-						"hc_tls_server_name":    schema.StringAttribute{Description: "TLS SNI used when probing over HTTPS.", Computed: true},
-						"path":                  schema.StringAttribute{Description: "URL path prefix this target serves.", Computed: true},
-						"path_match_type":       schema.StringAttribute{Description: "How `path` is matched (e.g. `prefix`, `exact`, `regex`).", Computed: true},
-						"rewrite_path":          schema.StringAttribute{Description: "Path the request is rewritten to before being forwarded.", Computed: true},
-						"rewrite_path_type":     schema.StringAttribute{Description: "Rewrite mode.", Computed: true},
-						"priority":              schema.Int64Attribute{Description: "Routing priority — lower numbers win.", Computed: true},
+						"hc_headers": schema.ListNestedAttribute{
+							Description: "Probe request headers — list of `{name, value}` objects.",
+							Computed:    true,
+							NestedObject: schema.NestedAttributeObject{
+								Attributes: map[string]schema.Attribute{
+									"name":  schema.StringAttribute{Description: "Header name.", Computed: true},
+									"value": schema.StringAttribute{Description: "Header value.", Computed: true},
+								},
+							},
+						},
+						"hc_follow_redirects":    schema.BoolAttribute{Description: "Whether the probe follows HTTP redirects.", Computed: true},
+						"hc_method":              schema.StringAttribute{Description: "HTTP method of the probe (e.g. `GET`).", Computed: true},
+						"hc_status":              schema.Int64Attribute{Description: "Expected HTTP status code from the probe (e.g. `200`).", Computed: true},
+						"hc_health":              schema.StringAttribute{Description: "Current health summary (`unknown`, `healthy`, `unhealthy`).", Computed: true},
+						"hc_tls_server_name":     schema.StringAttribute{Description: "TLS SNI used when probing over HTTPS.", Computed: true},
+						"hc_healthy_threshold":   schema.Int64Attribute{Description: "Consecutive successful probes required to mark the target healthy.", Computed: true},
+						"hc_unhealthy_threshold": schema.Int64Attribute{Description: "Consecutive failed probes required to mark the target unhealthy.", Computed: true},
+						"path":                   schema.StringAttribute{Description: "URL path prefix this target serves.", Computed: true},
+						"path_match_type":        schema.StringAttribute{Description: "How `path` is matched (e.g. `prefix`, `exact`, `regex`).", Computed: true},
+						"rewrite_path":           schema.StringAttribute{Description: "Path the request is rewritten to before being forwarded.", Computed: true},
+						"rewrite_path_type":      schema.StringAttribute{Description: "Rewrite mode.", Computed: true},
+						"priority":               schema.Int64Attribute{Description: "Routing priority — lower numbers win.", Computed: true},
 					},
 				},
 			},
@@ -150,35 +169,37 @@ func (d *ResourceTargetsDataSource) Read(ctx context.Context, req datasource.Rea
 	cfg.Targets = make([]ResourceTargetItemModel, len(targets))
 	for i, t := range targets {
 		cfg.Targets[i] = ResourceTargetItemModel{
-			ID:                  types.Int64Value(int64(t.TargetID)),
-			ResourceID:          types.Int64Value(int64(t.ResourceID)),
-			SiteID:              types.Int64Value(int64(t.SiteID)),
-			IP:                  types.StringValue(t.IP),
-			Method:              types.StringValue(t.Method),
-			Port:                types.Int64Value(int64(t.Port)),
-			Enabled:             types.BoolValue(t.Enabled),
-			SiteType:            types.StringValue(t.SiteType),
-			SiteName:            types.StringValue(t.SiteName),
-			HCEnabled:           types.BoolValue(t.HCEnabled),
-			HCPath:              nullableString(t.HCPath),
-			HCScheme:            nullableString(t.HCScheme),
-			HCMode:              nullableString(t.HCMode),
-			HCHostname:          nullableString(t.HCHostname),
-			HCPort:              nullableIntFromIntPtr(t.HCPort),
-			HCInterval:          nullableIntFromIntPtr(t.HCInterval),
-			HCUnhealthyInterval: nullableIntFromIntPtr(t.HCUnhealthyInterval),
-			HCTimeout:           nullableIntFromIntPtr(t.HCTimeout),
-			HCHeaders:           nullableString(t.HCHeaders),
-			HCFollowRedirects:   nullableBool(t.HCFollowRedirects),
-			HCMethod:            nullableString(t.HCMethod),
-			HCStatus:            nullableString(t.HCStatus),
-			HCHealth:            types.StringValue(t.HCHealth),
-			HCTLSServerName:     nullableString(t.HCTLSServerName),
-			Path:                nullableString(t.Path),
-			PathMatchType:       nullableString(t.PathMatchType),
-			RewritePath:         nullableString(t.RewritePath),
-			RewritePathType:     nullableString(t.RewritePathType),
-			Priority:            nullableIntFromIntPtr(t.Priority),
+			ID:                   types.Int64Value(int64(t.TargetID)),
+			ResourceID:           types.Int64Value(int64(t.ResourceID)),
+			SiteID:               types.Int64Value(int64(t.SiteID)),
+			IP:                   types.StringValue(t.IP),
+			Method:               types.StringValue(t.Method),
+			Port:                 types.Int64Value(int64(t.Port)),
+			Enabled:              types.BoolValue(t.Enabled),
+			SiteType:             types.StringValue(t.SiteType),
+			SiteName:             types.StringValue(t.SiteName),
+			HCEnabled:            types.BoolValue(t.HCEnabled),
+			HCPath:               nullableString(t.HCPath),
+			HCScheme:             nullableString(t.HCScheme),
+			HCMode:               nullableString(t.HCMode),
+			HCHostname:           nullableString(t.HCHostname),
+			HCPort:               nullableIntFromIntPtr(t.HCPort),
+			HCInterval:           nullableIntFromIntPtr(t.HCInterval),
+			HCUnhealthyInterval:  nullableIntFromIntPtr(t.HCUnhealthyInterval),
+			HCTimeout:            nullableIntFromIntPtr(t.HCTimeout),
+			HCHeaders:            decodeTargetHCHeaders(t.HCHeadersRaw),
+			HCFollowRedirects:    nullableBool(t.HCFollowRedirects),
+			HCMethod:             nullableString(t.HCMethod),
+			HCStatus:             nullableIntFromIntPtr(t.HCStatus),
+			HCHealth:             types.StringValue(t.HCHealth),
+			HCTLSServerName:      nullableString(t.HCTLSServerName),
+			HCHealthyThreshold:   nullableIntFromIntPtr(t.HCHealthyThreshold),
+			HCUnhealthyThreshold: nullableIntFromIntPtr(t.HCUnhealthyThreshold),
+			Path:                 nullableString(t.Path),
+			PathMatchType:        nullableString(t.PathMatchType),
+			RewritePath:          nullableString(t.RewritePath),
+			RewritePathType:      nullableString(t.RewritePathType),
+			Priority:             nullableIntFromIntPtr(t.Priority),
 		}
 	}
 
@@ -198,4 +219,23 @@ func nullableIntFromIntPtr(p *int) types.Int64 {
 		return types.Int64Null()
 	}
 	return types.Int64Value(int64(*p))
+}
+
+// decodeTargetHCHeaders parses the JSON-string-encoded hcHeaders
+// field from a Target response into the typed Terraform model.
+// Returns an empty slice on absent / empty / parse failure so the
+// data source does not surface a partial state.
+func decodeTargetHCHeaders(raw *string) []HCHeaderItemModel {
+	headers, err := client.ParseTargetHCHeaders(raw)
+	if err != nil || len(headers) == 0 {
+		return []HCHeaderItemModel{}
+	}
+	out := make([]HCHeaderItemModel, len(headers))
+	for i, h := range headers {
+		out[i] = HCHeaderItemModel{
+			Name:  types.StringValue(h.Name),
+			Value: types.StringValue(h.Value),
+		}
+	}
+	return out
 }
