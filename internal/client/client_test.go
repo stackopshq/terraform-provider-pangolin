@@ -796,6 +796,75 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- User-centric role binding tests ---
+
+func TestAddRoleToUser_PathAndMethod(t *testing.T) {
+	var hits int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "POST" || r.URL.Path != "/v1/user/u-123/add-role/7" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"userId": "u-123", "orgId": "org", "roleId": 7,
+		})
+	})
+	if err := c.AddRoleToUser(context.Background(), "u-123", 7); err != nil {
+		t.Fatalf("AddRoleToUser: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("server hits = %d, want 1", hits)
+	}
+}
+
+func TestRemoveRoleFromUser_PathAndMethod(t *testing.T) {
+	var hits int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "DELETE" || r.URL.Path != "/v1/user/u-123/remove-role/7" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.RemoveRoleFromUser(context.Background(), "u-123", 7); err != nil {
+		t.Fatalf("RemoveRoleFromUser: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("server hits = %d, want 1", hits)
+	}
+}
+
+func TestUserHasRole_HitAndMiss(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"users": []map[string]any{
+				{
+					"id": "u-1", "username": "alice", "orgId": "org",
+					"roles": []map[string]any{{"roleId": 1, "roleName": "Admin"}, {"roleId": 2, "roleName": "Member"}},
+				},
+				{
+					"id": "u-2", "username": "bob", "orgId": "org",
+					"roles": []map[string]any{{"roleId": 2, "roleName": "Member"}},
+				},
+			},
+		})
+	})
+
+	if has, err := c.UserHasRole(context.Background(), "u-1", 1); err != nil || !has {
+		t.Errorf("alice/1: has=%v err=%v, want true/nil", has, err)
+	}
+	if has, err := c.UserHasRole(context.Background(), "u-1", 2); err != nil || !has {
+		t.Errorf("alice/2: has=%v err=%v, want true/nil", has, err)
+	}
+	if has, err := c.UserHasRole(context.Background(), "u-2", 1); err != nil || has {
+		t.Errorf("bob/1: has=%v err=%v, want false/nil", has, err)
+	}
+	_, err := c.UserHasRole(context.Background(), "u-999", 1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing user err = %v, want ErrNotFound", err)
+	}
+}
+
 // --- Resource whitelist GET tests ---
 
 func TestListResourceWhitelist_EmptyList(t *testing.T) {
