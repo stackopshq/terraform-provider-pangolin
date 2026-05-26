@@ -11,9 +11,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
@@ -29,6 +32,12 @@ type TargetResource struct {
 	client *client.Client
 }
 
+// TargetHCHeaderModel mirrors one health-check header for HCL input.
+type TargetHCHeaderModel struct {
+	Name  types.String `tfsdk:"name"`
+	Value types.String `tfsdk:"value"`
+}
+
 // TargetResourceModel describes the resource data model.
 type TargetResourceModel struct {
 	ID         types.Int64  `tfsdk:"id"`
@@ -38,6 +47,34 @@ type TargetResourceModel struct {
 	Port       types.Int64  `tfsdk:"port"`
 	Method     types.String `tfsdk:"method"`
 	Enabled    types.Bool   `tfsdk:"enabled"`
+
+	// Health-check configuration (all optional + computed)
+	HCEnabled            types.Bool            `tfsdk:"hc_enabled"`
+	HCPath               types.String          `tfsdk:"hc_path"`
+	HCScheme             types.String          `tfsdk:"hc_scheme"`
+	HCMode               types.String          `tfsdk:"hc_mode"`
+	HCHostname           types.String          `tfsdk:"hc_hostname"`
+	HCPort               types.Int64           `tfsdk:"hc_port"`
+	HCInterval           types.Int64           `tfsdk:"hc_interval"`
+	HCUnhealthyInterval  types.Int64           `tfsdk:"hc_unhealthy_interval"`
+	HCTimeout            types.Int64           `tfsdk:"hc_timeout"`
+	HCHeaders            []TargetHCHeaderModel `tfsdk:"hc_headers"`
+	HCFollowRedirects    types.Bool            `tfsdk:"hc_follow_redirects"`
+	HCMethod             types.String          `tfsdk:"hc_method"`
+	HCStatus             types.Int64           `tfsdk:"hc_status"`
+	HCTLSServerName      types.String          `tfsdk:"hc_tls_server_name"`
+	HCHealthyThreshold   types.Int64           `tfsdk:"hc_healthy_threshold"`
+	HCUnhealthyThreshold types.Int64           `tfsdk:"hc_unhealthy_threshold"`
+
+	// Routing extras
+	Path            types.String `tfsdk:"path"`
+	PathMatchType   types.String `tfsdk:"path_match_type"`
+	RewritePath     types.String `tfsdk:"rewrite_path"`
+	RewritePathType types.String `tfsdk:"rewrite_path_type"`
+	Priority        types.Int64  `tfsdk:"priority"`
+
+	// Read-only computed health summary
+	HCHealth types.String `tfsdk:"hc_health"`
 }
 
 // NewTargetResource returns a new resource factory.
@@ -50,8 +87,15 @@ func (r *TargetResource) Metadata(_ context.Context, req resource.MetadataReques
 }
 
 func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	hcCompPlanModifierStr := stringplanmodifier.UseStateForUnknown()
+	hcCompPlanModifierInt := int64planmodifier.UseStateForUnknown()
+	hcCompPlanModifierBool := boolplanmodifier.UseStateForUnknown()
 	resp.Schema = schema.Schema{
-		Description: "Manages a Pangolin target (backend endpoint for an HTTP resource).",
+		Description: "Manages a Pangolin target (backend endpoint for an HTTP resource). " +
+			"Exposes the full health-check (`hc_*`) and request-routing (`path`, `rewrite_path`, `priority`) " +
+			"configuration accepted by the Pangolin API.\n\n" +
+			"> **Note:** `hc_*` fields are sent only when set. Leaving one unset means the server default applies. " +
+			"`hc_headers` is a list of `{name, value}` objects sent as the typed probe header set.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric ID of the target.",
@@ -72,7 +116,7 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Required:    true,
 			},
 			"ip": schema.StringAttribute{
-				Description: "The IP address or hostname of the target (e.g. 'localhost', '10.0.0.1').",
+				Description: "The IP address or hostname of the target (e.g. `localhost`, `10.0.0.1`).",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
@@ -86,7 +130,7 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"method": schema.StringAttribute{
-				Description: "The method (http or https). Defaults to http.",
+				Description: "Scheme used to reach the target (`http` or `https`). Defaults to `http`.",
 				Optional:    true,
 				Computed:    true,
 				Default:     stringdefault.StaticString("http"),
@@ -95,10 +139,217 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"enabled": schema.BoolAttribute{
-				Description: "Enable or disable this target. Defaults to true.",
+				Description: "Enable or disable this target. Defaults to `true`.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(true),
+			},
+			// Health-check configuration
+			"hc_enabled": schema.BoolAttribute{
+				Description: "Whether to enable active health-check probing for this target.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					hcCompPlanModifierBool,
+				},
+			},
+			"hc_path": schema.StringAttribute{
+				Description: "URL path the probe requests (e.g. `/health`).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"hc_scheme": schema.StringAttribute{
+				Description: "Scheme used by the probe (`http` or `https`).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("http", "https"),
+				},
+			},
+			"hc_mode": schema.StringAttribute{
+				Description: "Health-check mode (e.g. `http`, `tcp`).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"hc_hostname": schema.StringAttribute{
+				Description: "`Host` header value used by the probe.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"hc_port": schema.Int64Attribute{
+				Description: "Port used by the probe. Defaults to the target port when unset.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.Between(1, 65535),
+				},
+			},
+			"hc_interval": schema.Int64Attribute{
+				Description: "Probe interval in seconds while the target is healthy.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
+			"hc_unhealthy_interval": schema.Int64Attribute{
+				Description: "Probe interval in seconds while the target is unhealthy (typically shorter).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
+			"hc_timeout": schema.Int64Attribute{
+				Description: "Probe timeout in seconds.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
+			"hc_headers": schema.ListNestedAttribute{
+				Description: "Request headers to set on the probe — list of `{name, value}` objects.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
+				},
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"name":  schema.StringAttribute{Description: "Header name.", Required: true},
+						"value": schema.StringAttribute{Description: "Header value.", Required: true},
+					},
+				},
+			},
+			"hc_follow_redirects": schema.BoolAttribute{
+				Description: "Whether the probe follows HTTP redirects.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					hcCompPlanModifierBool,
+				},
+			},
+			"hc_method": schema.StringAttribute{
+				Description: "HTTP method used by the probe (e.g. `GET`, `HEAD`).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"hc_status": schema.Int64Attribute{
+				Description: "Expected HTTP status code from the probe (e.g. `200`).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.Between(100, 599),
+				},
+			},
+			"hc_tls_server_name": schema.StringAttribute{
+				Description: "TLS SNI used when probing over HTTPS.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"hc_healthy_threshold": schema.Int64Attribute{
+				Description: "Consecutive successful probes required to mark the target healthy.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
+			"hc_unhealthy_threshold": schema.Int64Attribute{
+				Description: "Consecutive failed probes required to mark the target unhealthy.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
+			"hc_health": schema.StringAttribute{
+				Description: "Current health summary as reported by Pangolin (`unknown`, `healthy`, `unhealthy`).",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			// Routing extras
+			"path": schema.StringAttribute{
+				Description: "URL path prefix routed to this target. Combined with `path_match_type`.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"path_match_type": schema.StringAttribute{
+				Description: "How `path` is matched (e.g. `prefix`, `exact`, `regex`).",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"rewrite_path": schema.StringAttribute{
+				Description: "Path the request is rewritten to before being forwarded.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"rewrite_path_type": schema.StringAttribute{
+				Description: "Rewrite mode.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					hcCompPlanModifierStr,
+				},
+			},
+			"priority": schema.Int64Attribute{
+				Description: "Routing priority — lower numbers win when multiple targets match.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					hcCompPlanModifierInt,
+				},
 			},
 		},
 	}
@@ -123,21 +374,34 @@ func (r *TargetResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	target, err := r.client.CreateTarget(ctx, int(plan.ResourceID.ValueInt64()), &client.CreateTargetRequest{
+	createReq := &client.CreateTargetRequest{
 		IP:     plan.IP.ValueString(),
 		Port:   int(plan.Port.ValueInt64()),
 		Method: plan.Method.ValueString(),
 		SiteID: int(plan.SiteID.ValueInt64()),
-	})
+	}
+	if v := plan.Enabled.ValueBool(); plan.Enabled.IsNull() || plan.Enabled.IsUnknown() {
+		_ = v
+	} else {
+		b := v
+		createReq.Enabled = &b
+	}
+	applyTargetHCFields(plan, &createReq.HCEnabled, &createReq.HCPath, &createReq.HCScheme,
+		&createReq.HCMode, &createReq.HCHostname, &createReq.HCPort, &createReq.HCInterval,
+		&createReq.HCUnhealthyInterval, &createReq.HCTimeout, &createReq.HCHeaders,
+		&createReq.HCFollowRedirects, &createReq.HCMethod, &createReq.HCStatus,
+		&createReq.HCTLSServerName, &createReq.HCHealthyThreshold, &createReq.HCUnhealthyThreshold,
+		&createReq.Path, &createReq.PathMatchType, &createReq.RewritePath, &createReq.RewritePathType,
+		&createReq.Priority)
+
+	target, err := r.client.CreateTarget(ctx, int(plan.ResourceID.ValueInt64()), createReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create target", err.Error())
 		return
 	}
 
-	plan.ID = types.Int64Value(int64(target.TargetID))
-	plan.Enabled = types.BoolValue(target.Enabled)
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	state := targetToModel(target, plan)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *TargetResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -157,14 +421,8 @@ func (r *TargetResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	state.ResourceID = types.Int64Value(int64(target.ResourceID))
-	state.SiteID = types.Int64Value(int64(target.SiteID))
-	state.IP = types.StringValue(target.IP)
-	state.Port = types.Int64Value(int64(target.Port))
-	state.Method = types.StringValue(target.Method)
-	state.Enabled = types.BoolValue(target.Enabled)
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	next := targetToModel(target, state)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 }
 
 func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -174,25 +432,29 @@ func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	target, err := r.client.UpdateTarget(ctx, int(plan.ID.ValueInt64()), &client.UpdateTargetRequest{
+	updateReq := &client.UpdateTargetRequest{
 		IP:      plan.IP.ValueString(),
 		Port:    int(plan.Port.ValueInt64()),
 		Method:  plan.Method.ValueString(),
 		Enabled: plan.Enabled.ValueBool(),
 		SiteID:  int(plan.SiteID.ValueInt64()),
-	})
+	}
+	applyTargetHCFields(plan, &updateReq.HCEnabled, &updateReq.HCPath, &updateReq.HCScheme,
+		&updateReq.HCMode, &updateReq.HCHostname, &updateReq.HCPort, &updateReq.HCInterval,
+		&updateReq.HCUnhealthyInterval, &updateReq.HCTimeout, &updateReq.HCHeaders,
+		&updateReq.HCFollowRedirects, &updateReq.HCMethod, &updateReq.HCStatus,
+		&updateReq.HCTLSServerName, &updateReq.HCHealthyThreshold, &updateReq.HCUnhealthyThreshold,
+		&updateReq.Path, &updateReq.PathMatchType, &updateReq.RewritePath, &updateReq.RewritePathType,
+		&updateReq.Priority)
+
+	target, err := r.client.UpdateTarget(ctx, int(plan.ID.ValueInt64()), updateReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update target", err.Error())
 		return
 	}
 
-	plan.SiteID = types.Int64Value(int64(target.SiteID))
-	plan.IP = types.StringValue(target.IP)
-	plan.Port = types.Int64Value(int64(target.Port))
-	plan.Method = types.StringValue(target.Method)
-	plan.Enabled = types.BoolValue(target.Enabled)
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	state := targetToModel(target, plan)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *TargetResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -222,15 +484,144 @@ func (r *TargetResource) ImportState(ctx context.Context, req resource.ImportSta
 		return
 	}
 
-	state := TargetResourceModel{
-		ID:         types.Int64Value(int64(target.TargetID)),
-		ResourceID: types.Int64Value(int64(target.ResourceID)),
-		SiteID:     types.Int64Value(int64(target.SiteID)),
-		IP:         types.StringValue(target.IP),
-		Port:       types.Int64Value(int64(target.Port)),
-		Method:     types.StringValue(target.Method),
-		Enabled:    types.BoolValue(target.Enabled),
-	}
-
+	state := targetToModel(target, TargetResourceModel{})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// applyTargetHCFields copies plan health-check + routing attributes
+// into the pointer fields of the matching client request struct. A
+// null/unknown plan attribute leaves the request pointer nil (=
+// "omit from body, keep server default"). hc_headers is the single
+// list-typed attribute and goes through ElementsAs.
+func applyTargetHCFields(
+	plan TargetResourceModel,
+	hcEnabled **bool, hcPath, hcScheme, hcMode, hcHostname **string,
+	hcPort, hcInterval, hcUnhealthyInterval, hcTimeout **int,
+	hcHeaders *[]client.TargetHCHeader, hcFollowRedirects **bool,
+	hcMethod **string, hcStatus **int, hcTLSServerName **string,
+	hcHealthyThreshold, hcUnhealthyThreshold **int,
+	path, pathMatchType, rewritePath, rewritePathType **string,
+	priority **int,
+) {
+	setStr := func(t types.String, dst **string) {
+		if !t.IsNull() && !t.IsUnknown() {
+			v := t.ValueString()
+			*dst = &v
+		}
+	}
+	setInt := func(t types.Int64, dst **int) {
+		if !t.IsNull() && !t.IsUnknown() {
+			v := int(t.ValueInt64())
+			*dst = &v
+		}
+	}
+	setBool := func(t types.Bool, dst **bool) {
+		if !t.IsNull() && !t.IsUnknown() {
+			v := t.ValueBool()
+			*dst = &v
+		}
+	}
+	setBool(plan.HCEnabled, hcEnabled)
+	setStr(plan.HCPath, hcPath)
+	setStr(plan.HCScheme, hcScheme)
+	setStr(plan.HCMode, hcMode)
+	setStr(plan.HCHostname, hcHostname)
+	setInt(plan.HCPort, hcPort)
+	setInt(plan.HCInterval, hcInterval)
+	setInt(plan.HCUnhealthyInterval, hcUnhealthyInterval)
+	setInt(plan.HCTimeout, hcTimeout)
+	setBool(plan.HCFollowRedirects, hcFollowRedirects)
+	setStr(plan.HCMethod, hcMethod)
+	setInt(plan.HCStatus, hcStatus)
+	setStr(plan.HCTLSServerName, hcTLSServerName)
+	setInt(plan.HCHealthyThreshold, hcHealthyThreshold)
+	setInt(plan.HCUnhealthyThreshold, hcUnhealthyThreshold)
+	setStr(plan.Path, path)
+	setStr(plan.PathMatchType, pathMatchType)
+	setStr(plan.RewritePath, rewritePath)
+	setStr(plan.RewritePathType, rewritePathType)
+	setInt(plan.Priority, priority)
+	if len(plan.HCHeaders) > 0 {
+		hs := make([]client.TargetHCHeader, len(plan.HCHeaders))
+		for i, h := range plan.HCHeaders {
+			hs[i] = client.TargetHCHeader{
+				Name:  h.Name.ValueString(),
+				Value: h.Value.ValueString(),
+			}
+		}
+		*hcHeaders = hs
+	}
+}
+
+// targetToModel maps a *client.Target onto a TargetResourceModel,
+// decoding the JSON-string-encoded hcHeaders into the typed list.
+// Malformed hcHeaders silently fall back to an empty list — the
+// alternative would be a hard error on every Read of a corrupt
+// server-side payload, which is the wrong tradeoff here.
+func targetToModel(t *client.Target, prior TargetResourceModel) TargetResourceModel {
+	headers, _ := client.ParseTargetHCHeaders(t.HCHeadersRaw)
+	hcHeaders := make([]TargetHCHeaderModel, len(headers))
+	for i, h := range headers {
+		hcHeaders[i] = TargetHCHeaderModel{
+			Name:  types.StringValue(h.Name),
+			Value: types.StringValue(h.Value),
+		}
+	}
+	_ = prior
+
+	return TargetResourceModel{
+		ID:                   types.Int64Value(int64(t.TargetID)),
+		ResourceID:           types.Int64Value(int64(t.ResourceID)),
+		SiteID:               types.Int64Value(int64(t.SiteID)),
+		IP:                   types.StringValue(t.IP),
+		Port:                 types.Int64Value(int64(t.Port)),
+		Method:               types.StringValue(t.Method),
+		Enabled:              types.BoolValue(t.Enabled),
+		HCEnabled:            types.BoolValue(t.HCEnabled),
+		HCPath:               nullableString(t.HCPath),
+		HCScheme:             nullableString(t.HCScheme),
+		HCMode:               nullableString(t.HCMode),
+		HCHostname:           nullableString(t.HCHostname),
+		HCPort:               nullableIntFromIntPtr(t.HCPort),
+		HCInterval:           nullableIntFromIntPtr(t.HCInterval),
+		HCUnhealthyInterval:  nullableIntFromIntPtr(t.HCUnhealthyInterval),
+		HCTimeout:            nullableIntFromIntPtr(t.HCTimeout),
+		HCHeaders:            hcHeaders,
+		HCFollowRedirects:    nullableBool(t.HCFollowRedirects),
+		HCMethod:             nullableString(t.HCMethod),
+		HCStatus:             nullableIntFromIntPtr(t.HCStatus),
+		HCTLSServerName:      nullableString(t.HCTLSServerName),
+		HCHealthyThreshold:   nullableIntFromIntPtr(t.HCHealthyThreshold),
+		HCUnhealthyThreshold: nullableIntFromIntPtr(t.HCUnhealthyThreshold),
+		HCHealth:             types.StringValue(t.HCHealth),
+		Path:                 nullableString(t.Path),
+		PathMatchType:        nullableString(t.PathMatchType),
+		RewritePath:          nullableString(t.RewritePath),
+		RewritePathType:      nullableString(t.RewritePathType),
+		Priority:             nullableIntFromIntPtr(t.Priority),
+	}
+}
+
+// Small local helpers (these duplicate the datasource helpers but
+// live here to keep the resource self-contained; both packages
+// have their own type system around types.*).
+func nullableString(p *string) types.String {
+	if p == nil {
+		return types.StringNull()
+	}
+	return types.StringValue(*p)
+}
+
+func nullableBool(p *bool) types.Bool {
+	if p == nil {
+		return types.BoolNull()
+	}
+	return types.BoolValue(*p)
+}
+
+func nullableIntFromIntPtr(p *int) types.Int64 {
+	if p == nil {
+		return types.Int64Null()
+	}
+	return types.Int64Value(int64(*p))
 }
