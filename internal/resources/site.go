@@ -109,7 +109,7 @@ func (r *SiteResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"docker_socket_enabled": schema.BoolAttribute{
-				Description: "Enable Docker socket access on this site. Defaults to `false`.",
+				Description: "Enable Docker socket access on this site. Defaults to `true` to match the Pangolin API default.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(true),
