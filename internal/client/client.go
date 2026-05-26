@@ -271,6 +271,7 @@ func classifyError(status int, message string) error {
 type SiteDefaults struct {
 	NewtID     string `json:"newtId"`
 	NewtSecret string `json:"newtSecret"`
+	Address    string `json:"clientAddress"`
 }
 
 // GetSiteDefaults picks site defaults for creating a new site.
@@ -324,11 +325,11 @@ type Site struct {
 
 // CreateSiteRequest is the payload for creating a site.
 type CreateSiteRequest struct {
-	Name                string `json:"name"`
-	Type                string `json:"type"`
-	NewtID              string `json:"newtId,omitempty"`
-	Secret              string `json:"secret,omitempty"`
-	DockerSocketEnabled bool   `json:"dockerSocketEnabled"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	NewtID  string `json:"newtId,omitempty"`
+	Secret  string `json:"secret,omitempty"`
+	Address string `json:"address,omitempty"`
 }
 
 // CreateSite creates a new site in the organization.
