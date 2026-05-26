@@ -796,6 +796,143 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Target hcHeaders wire-shape normalization tests ---
+
+func TestTarget_UnmarshalJSON_StringEncodedHCHeaders(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"targetId":   23,
+			"resourceId": 7,
+			"siteId":     4,
+			"ip":         "127.0.0.1",
+			"method":     "http",
+			"port":       9090,
+			"enabled":    true,
+			"hcEnabled":  true,
+			"hcStatus":   200,
+			"hcHeaders":  `[{"name":"X-Probe","value":"yes"}]`,
+		})
+	})
+
+	target, err := c.GetTarget(context.Background(), 23)
+	if err != nil {
+		t.Fatalf("GetTarget: %v", err)
+	}
+	if target.HCHeadersRaw == nil || *target.HCHeadersRaw != `[{"name":"X-Probe","value":"yes"}]` {
+		t.Errorf("HCHeadersRaw = %v, want the inner JSON-string", target.HCHeadersRaw)
+	}
+	headers, err := ParseTargetHCHeaders(target.HCHeadersRaw)
+	if err != nil {
+		t.Fatalf("ParseTargetHCHeaders: %v", err)
+	}
+	if len(headers) != 1 || headers[0].Name != "X-Probe" || headers[0].Value != "yes" {
+		t.Errorf("Parsed headers = %+v", headers)
+	}
+}
+
+func TestTarget_UnmarshalJSON_NativeArrayHCHeaders(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"targetId":   24,
+			"resourceId": 7,
+			"siteId":     4,
+			"ip":         "127.0.0.1",
+			"method":     "http",
+			"port":       9090,
+			"enabled":    true,
+			"hcEnabled":  true,
+			"hcHeaders":  []map[string]any{{"name": "X-Probe", "value": "yes"}, {"name": "X-Suite", "value": "smoke"}},
+		})
+	})
+
+	target, err := c.GetTarget(context.Background(), 24)
+	if err != nil {
+		t.Fatalf("GetTarget: %v", err)
+	}
+	if target.HCHeadersRaw == nil {
+		t.Fatal("HCHeadersRaw should not be nil for a native array payload")
+	}
+	headers, err := ParseTargetHCHeaders(target.HCHeadersRaw)
+	if err != nil {
+		t.Fatalf("ParseTargetHCHeaders: %v", err)
+	}
+	if len(headers) != 2 || headers[0].Name != "X-Probe" || headers[1].Value != "smoke" {
+		t.Errorf("Parsed headers = %+v", headers)
+	}
+}
+
+func TestTarget_UnmarshalJSON_NullHCHeaders(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"targetId":   25,
+			"resourceId": 7,
+			"siteId":     4,
+			"ip":         "127.0.0.1",
+			"method":     "http",
+			"port":       9090,
+			"enabled":    true,
+			"hcHeaders":  nil,
+		})
+	})
+
+	target, err := c.GetTarget(context.Background(), 25)
+	if err != nil {
+		t.Fatalf("GetTarget: %v", err)
+	}
+	if target.HCHeadersRaw != nil {
+		t.Errorf("HCHeadersRaw = %v, want nil", target.HCHeadersRaw)
+	}
+	headers, err := ParseTargetHCHeaders(target.HCHeadersRaw)
+	if err != nil || len(headers) != 0 {
+		t.Errorf("Parsed headers from nil = %+v, %v", headers, err)
+	}
+}
+
+func TestCreateTarget_HCFieldsOnWire(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PUT" || r.URL.Path != "/v1/resource/7/target" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"targetId": 1, "resourceId": 7, "siteId": 4,
+			"ip": "127.0.0.1", "method": "http", "port": 9090, "enabled": true,
+		})
+	})
+
+	hcEnabled := true
+	hcStatus := 200
+	priority := 50
+	if _, err := c.CreateTarget(context.Background(), 7, &CreateTargetRequest{
+		IP: "127.0.0.1", Port: 9090, Method: "http", SiteID: 4,
+		HCEnabled: &hcEnabled, HCStatus: &hcStatus,
+		HCHeaders: []TargetHCHeader{{Name: "X-Probe", Value: "yes"}},
+		Priority:  &priority,
+	}); err != nil {
+		t.Fatalf("CreateTarget: %v", err)
+	}
+	if string(gotBody["hcEnabled"]) != "true" {
+		t.Errorf("hcEnabled wire = %s, want true", gotBody["hcEnabled"])
+	}
+	if string(gotBody["hcStatus"]) != "200" {
+		t.Errorf("hcStatus wire = %s, want 200", gotBody["hcStatus"])
+	}
+	if string(gotBody["hcHeaders"]) != `[{"name":"X-Probe","value":"yes"}]` {
+		t.Errorf("hcHeaders wire = %s, want native array", gotBody["hcHeaders"])
+	}
+	if string(gotBody["priority"]) != "50" {
+		t.Errorf("priority wire = %s, want 50", gotBody["priority"])
+	}
+	for _, k := range []string{"hcPath", "hcMethod", "hcInterval", "hcHealthyThreshold", "rewritePath"} {
+		if _, ok := gotBody[k]; ok {
+			t.Errorf("body should not contain %q (left unset)", k)
+		}
+	}
+}
+
 // --- User extended shape + GetUserByUsername tests ---
 
 func TestListUsers_ExtendedFields(t *testing.T) {
