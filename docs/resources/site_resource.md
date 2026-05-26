@@ -46,3 +46,15 @@ resource "pangolin_site_resource" "example" {
 - `auth_daemon_port` (Number) The auth daemon port (computed by the API).
 - `id` (Number) The numeric ID of the site resource.
 - `nice_id` (String) The human-readable ID.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Private site resources import by numeric ID. Look it up via the
+# pangolin_site_resources data source.
+terraform import pangolin_site_resource.example <site_resource_id>
+```

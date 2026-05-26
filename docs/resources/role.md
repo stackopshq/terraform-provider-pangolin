@@ -62,3 +62,15 @@ resource "pangolin_role" "auditors" {
 - `id` (Number) The numeric ID of the role.
 - `is_admin` (Boolean) Whether this is the built-in admin role of the organization. Admin roles cannot be deleted.
 - `org_name` (String) Display name of the organization the role belongs to.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Roles import by numeric ID. Look it up via the pangolin_roles
+# data source.
+terraform import pangolin_role.example <role_id>
+```

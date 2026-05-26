@@ -31,3 +31,19 @@ resource "pangolin_client" "example" {
 - `nice_id` (String) The human-readable ID of the client.
 - `online` (Boolean) Whether the client is currently online.
 - `secret` (String, Sensitive) The client secret. Only available at creation time; stored in state.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# OLM clients import by numeric ID. Look it up via the pangolin_clients
+# field on the org (or in the Pangolin web UI).
+#
+# Note: `secret` cannot be recovered from the Pangolin API after
+# creation. After importing, it is set to empty in state. Existing
+# olm connectors keep working with their original secret.
+terraform import pangolin_client.example <client_id>
+```

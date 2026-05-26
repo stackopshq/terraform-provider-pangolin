@@ -34,3 +34,18 @@ output "api_key_secret" {
 
 - `id` (String) The API key ID.
 - `secret` (String, Sensitive) The API key secret. Only available at creation time; stored in state.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# API keys import by their string identifier. Look it up via the
+# pangolin_api_keys data source.
+#
+# Note: `secret` cannot be recovered from the Pangolin API after
+# creation. After importing, it is set to empty in state.
+terraform import pangolin_api_key.example <api_key_id>
+```

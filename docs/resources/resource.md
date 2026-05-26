@@ -50,3 +50,15 @@ resource "pangolin_resource" "example" {
 - `full_domain` (String) The full domain of the resource (computed).
 - `id` (Number) The numeric ID of the resource.
 - `nice_id` (String) The human-readable ID of the resource.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# HTTP resources import by numeric ID. Look it up in the Pangolin
+# web UI URL or via the pangolin_resources data source.
+terraform import pangolin_resource.example <resource_id>
+```

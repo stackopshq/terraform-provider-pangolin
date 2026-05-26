@@ -26,3 +26,14 @@ resource "pangolin_resource_role" "example" {
 
 - `resource_id` (Number) The ID of the HTTP resource.
 - `role_id` (Number) The ID of the role to assign.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Composite ID: {resource_id}/{role_id}
+terraform import pangolin_resource_role.example 42/7
+```
