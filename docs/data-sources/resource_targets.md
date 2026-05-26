@@ -57,8 +57,9 @@ Read-Only:
 - `enabled` (Boolean) Whether the target is currently enabled.
 - `hc_enabled` (Boolean) Whether the active health check is enabled.
 - `hc_follow_redirects` (Boolean) Whether the probe follows HTTP redirects.
-- `hc_headers` (String) Probe request headers as a JSON-string.
+- `hc_headers` (Attributes List) Probe request headers — list of `{name, value}` objects. (see [below for nested schema](#nestedatt--targets--hc_headers))
 - `hc_health` (String) Current health summary (`unknown`, `healthy`, `unhealthy`).
+- `hc_healthy_threshold` (Number) Consecutive successful probes required to mark the target healthy.
 - `hc_hostname` (String) Hostname used by the health-check probe.
 - `hc_interval` (Number) Probe interval in seconds when the target is healthy.
 - `hc_method` (String) HTTP method of the probe (e.g. `GET`).
@@ -66,10 +67,11 @@ Read-Only:
 - `hc_path` (String) Health-check URL path.
 - `hc_port` (Number) Port used by the health-check probe.
 - `hc_scheme` (String) Health-check scheme (`http` / `https`).
-- `hc_status` (String) Status string returned by the probe (e.g. `200`).
+- `hc_status` (Number) Expected HTTP status code from the probe (e.g. `200`).
 - `hc_timeout` (Number) Probe timeout in seconds.
 - `hc_tls_server_name` (String) TLS SNI used when probing over HTTPS.
 - `hc_unhealthy_interval` (Number) Probe interval in seconds when the target is unhealthy.
+- `hc_unhealthy_threshold` (Number) Consecutive failed probes required to mark the target unhealthy.
 - `id` (Number) Numeric ID of the target.
 - `ip` (String) Target IP or hostname.
 - `method` (String) Scheme used to reach the target (`http` or `https`).
@@ -83,3 +85,11 @@ Read-Only:
 - `site_id` (Number) ID of the site that serves this target.
 - `site_name` (String) Site display name.
 - `site_type` (String) Site type (e.g. `newt`).
+
+<a id="nestedatt--targets--hc_headers"></a>
+### Nested Schema for `targets.hc_headers`
+
+Read-Only:
+
+- `name` (String) Header name.
+- `value` (String) Header value.
