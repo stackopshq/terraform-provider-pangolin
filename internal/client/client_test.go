@@ -796,6 +796,73 @@ func TestListRequestLogs_ErrorPropagates(t *testing.T) {
 	}
 }
 
+// --- Resource whitelist GET tests ---
+
+func TestListResourceWhitelist_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/resource/7/whitelist" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"whitelist": []any{}})
+	})
+
+	emails, err := c.ListResourceWhitelist(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListResourceWhitelist: %v", err)
+	}
+	if len(emails) != 0 {
+		t.Errorf("emails = %v, want empty", emails)
+	}
+}
+
+func TestListResourceWhitelist_StringItems(t *testing.T) {
+	// Shape A: items are plain email strings.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"whitelist": []string{"alice@example.com", "bob@example.com"},
+		})
+	})
+
+	emails, err := c.ListResourceWhitelist(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListResourceWhitelist: %v", err)
+	}
+	if len(emails) != 2 || emails[0] != "alice@example.com" || emails[1] != "bob@example.com" {
+		t.Errorf("emails = %v", emails)
+	}
+}
+
+func TestListResourceWhitelist_ObjectItems(t *testing.T) {
+	// Shape B: items are {email} objects — the other form the server may emit.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"whitelist": []map[string]any{
+				{"email": "alice@example.com"},
+				{"email": "bob@example.com"},
+			},
+		})
+	})
+
+	emails, err := c.ListResourceWhitelist(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListResourceWhitelist: %v", err)
+	}
+	if len(emails) != 2 || emails[0] != "alice@example.com" {
+		t.Errorf("emails = %v", emails)
+	}
+}
+
+func TestListResourceWhitelist_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.ListResourceWhitelist(context.Background(), 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
 // --- Target hcHeaders wire-shape normalization tests ---
 
 func TestTarget_UnmarshalJSON_StringEncodedHCHeaders(t *testing.T) {

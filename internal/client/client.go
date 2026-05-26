@@ -1422,6 +1422,57 @@ func (c *Client) RemoveWhitelistFromResource(ctx context.Context, resourceID int
 	return err
 }
 
+// ListResourceWhitelist returns the email whitelist currently
+// configured on an HTTP resource. The response shape is `{whitelist:
+// [...]}` — the items are either plain email strings or `{email}`
+// objects depending on the server build, so the unmarshaler accepts
+// both forms and normalizes to a `[]string` of emails.
+//
+// Returns an empty slice when the resource has no whitelist
+// configured or when email_whitelist_enabled is off. The 400 error
+// "Email whitelist is not enabled for this resource" only fires on
+// add/remove, not on the GET — confirmed live.
+func (c *Client) ListResourceWhitelist(ctx context.Context, resourceID int) ([]string, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/whitelist", resourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	// Accept both `{whitelist: ["a@x", "b@x"]}` and
+	// `{whitelist: [{email: "a@x"}, {email: "b@x"}]}` shapes by
+	// unmarshalling each item as a json.RawMessage and probing
+	// whether it is a string or an object.
+	var wrapper struct {
+		Whitelist []json.RawMessage `json:"whitelist"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse resource whitelist: %w", err)
+	}
+	out := make([]string, 0, len(wrapper.Whitelist))
+	for i, raw := range wrapper.Whitelist {
+		if len(raw) == 0 {
+			continue
+		}
+		if raw[0] == '"' {
+			// String form
+			var s string
+			if err := json.Unmarshal(raw, &s); err != nil {
+				return nil, fmt.Errorf("whitelist[%d]: %w", i, err)
+			}
+			out = append(out, s)
+			continue
+		}
+		// Object form
+		var obj struct {
+			Email string `json:"email"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, fmt.Errorf("whitelist[%d]: %w", i, err)
+		}
+		out = append(out, obj.Email)
+	}
+	return out, nil
+}
+
 // --- Client assignments for site resources ---
 
 // AddClientToSiteResource assigns an OLM client to a private site resource.
