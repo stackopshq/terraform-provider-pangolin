@@ -43,9 +43,20 @@ resource "pangolin_site_resource" "example" {
 
 ### Read-Only
 
+- `alias_address` (String) The resolved alias address, when applicable. Null otherwise.
 - `auth_daemon_port` (Number) The auth daemon port (computed by the API).
+- `default_network_id` (Number) The default network ID, when set by the org configuration. Null when unset.
+- `destination_port` (Number) The destination port behind the proxy. Only set for HTTP-mode resources; null otherwise.
+- `domain_id` (String) The associated domain ID, when applicable. Null otherwise.
+- `enabled` (Boolean) Whether the resource is enabled. Read-only here; the API returns `true` on creation. Use a future toggle endpoint to disable.
+- `full_domain` (String) The full FQDN of the resource. Null otherwise.
 - `id` (Number) The numeric ID of the site resource.
+- `network_id` (Number) The numeric network ID the resource is bound to.
 - `nice_id` (String) The human-readable ID.
+- `proxy_port` (Number) The proxy-facing port. Only set for HTTP-mode resources; null otherwise.
+- `scheme` (String) The protocol scheme (e.g. `http`, `https`). Only set for HTTP-mode resources; null otherwise.
+- `ssl` (Boolean) Whether SSL is terminated by the proxy in front of this resource.
+- `subdomain` (String) The subdomain configured on this resource. Null otherwise.
 
 ## Import
 
