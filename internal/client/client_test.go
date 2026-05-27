@@ -2244,6 +2244,94 @@ func TestUpdateOrg_ZeroValueRetentionIsSent(t *testing.T) {
 	}
 }
 
+// --- OLM client lifecycle tests ---
+
+func TestArchiveClient_PathAndMethod(t *testing.T) {
+	hits := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "POST" || r.URL.Path != "/v1/client/42/archive" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if r.ContentLength > 0 {
+			t.Errorf("expected empty body, got Content-Length=%d", r.ContentLength)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.ArchiveClient(context.Background(), 42); err != nil {
+		t.Fatalf("ArchiveClient: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d, want 1", hits)
+	}
+}
+
+func TestUnarchiveClient_PathAndMethod(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/client/42/unarchive" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.UnarchiveClient(context.Background(), 42); err != nil {
+		t.Fatalf("UnarchiveClient: %v", err)
+	}
+}
+
+func TestBlockClient_PathAndMethod(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/client/42/block" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.BlockClient(context.Background(), 42); err != nil {
+		t.Fatalf("BlockClient: %v", err)
+	}
+}
+
+func TestUnblockClient_PathAndMethod(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/client/42/unblock" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.UnblockClient(context.Background(), 42); err != nil {
+		t.Fatalf("UnblockClient: %v", err)
+	}
+}
+
+func TestGetOLMClient_DecodesArchivedAndBlocked(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"clientId": 7,
+			"niceId":   "abc",
+			"name":     "n",
+			"online":   false,
+			"archived": true,
+			"blocked":  true,
+		})
+	})
+	got, err := c.GetOLMClient(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetOLMClient: %v", err)
+	}
+	if !got.Archived || !got.Blocked {
+		t.Errorf("Archived=%v Blocked=%v, want both true", got.Archived, got.Blocked)
+	}
+}
+
+func TestArchiveClient_PropagatesError(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusInternalServerError, nil)
+	})
+	if err := c.ArchiveClient(context.Background(), 1); err == nil {
+		t.Fatal("expected error on 500")
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
