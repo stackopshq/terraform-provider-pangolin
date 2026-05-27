@@ -1027,6 +1027,63 @@ func (c *Client) RemoveUserFromSiteResource(ctx context.Context, siteResourceID 
 	return err
 }
 
+// SiteResourceRoleEntry is one entry in the role list returned by
+// GET /site-resource/{id}/roles. Only RoleID is needed for drift
+// detection on the assignment resource; the rest is surfaced for
+// future datasources.
+type SiteResourceRoleEntry struct {
+	RoleID      int    `json:"roleId"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsAdmin     bool   `json:"isAdmin"`
+}
+
+// ListSiteResourceRoles returns the roles currently assigned to a
+// private site resource. Response shape is `{roles: [...]}`. The
+// built-in Admin role is auto-attached at site-resource creation
+// and will always appear here even when the caller never bound it
+// via the API.
+func (c *Client) ListSiteResourceRoles(ctx context.Context, siteResourceID int) ([]SiteResourceRoleEntry, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/site-resource/%d/roles", siteResourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Roles []SiteResourceRoleEntry `json:"roles"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse site resource roles: %w", err)
+	}
+	return wrapper.Roles, nil
+}
+
+// SiteResourceUserEntry is one entry in the user list returned by
+// GET /site-resource/{id}/users.
+type SiteResourceUserEntry struct {
+	UserID   string  `json:"userId"`
+	Username string  `json:"username"`
+	Type     string  `json:"type"`
+	IDPName  *string `json:"idpName"`
+	IDPID    *int64  `json:"idpId"`
+	Email    string  `json:"email"`
+}
+
+// ListSiteResourceUsers returns the users currently assigned to a
+// private site resource. Response shape is `{users: [...]}`.
+func (c *Client) ListSiteResourceUsers(ctx context.Context, siteResourceID int) ([]SiteResourceUserEntry, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/site-resource/%d/users", siteResourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Users []SiteResourceUserEntry `json:"users"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse site resource users: %w", err)
+	}
+	return wrapper.Users, nil
+}
+
 // --- Users ---
 
 // UserRoleBinding is the slim role pair embedded in a User's roles
@@ -1605,6 +1662,32 @@ func (c *Client) RemoveClientFromSiteResource(ctx context.Context, siteResourceI
 	body := map[string]int{"clientId": clientID}
 	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/clients/remove", siteResourceID), body)
 	return err
+}
+
+// SiteResourceClientEntry is one entry in the client list returned
+// by GET /site-resource/{id}/clients. The slim shape is intentional
+// — the upstream payload only carries clientId / name / subnet.
+type SiteResourceClientEntry struct {
+	ClientID int    `json:"clientId"`
+	Name     string `json:"name"`
+	Subnet   string `json:"subnet"`
+}
+
+// ListSiteResourceClients returns the OLM clients currently
+// assigned to a private site resource. Response shape is
+// `{clients: [...]}`.
+func (c *Client) ListSiteResourceClients(ctx context.Context, siteResourceID int) ([]SiteResourceClientEntry, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/site-resource/%d/clients", siteResourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Clients []SiteResourceClientEntry `json:"clients"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse site resource clients: %w", err)
+	}
+	return wrapper.Clients, nil
 }
 
 // --- List operations ---

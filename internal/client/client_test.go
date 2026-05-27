@@ -2332,6 +2332,116 @@ func TestArchiveClient_PropagatesError(t *testing.T) {
 	}
 }
 
+// --- Site-resource sub-listing tests ---
+
+func TestListSiteResourceRoles_Decodes(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/site-resource/12/roles" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if r.Method != "GET" {
+			t.Errorf("method = %q, want GET", r.Method)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roles": []map[string]any{
+				{"roleId": 1, "name": "Admin", "description": "Admin role", "isAdmin": true},
+				{"roleId": 42, "name": "ops", "description": "ops role", "isAdmin": false},
+			},
+		})
+	})
+
+	roles, err := c.ListSiteResourceRoles(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("ListSiteResourceRoles: %v", err)
+	}
+	if len(roles) != 2 {
+		t.Fatalf("len(roles) = %d, want 2", len(roles))
+	}
+	if roles[0].RoleID != 1 || !roles[0].IsAdmin {
+		t.Errorf("roles[0] = %+v", roles[0])
+	}
+	if roles[1].RoleID != 42 || roles[1].Name != "ops" {
+		t.Errorf("roles[1] = %+v", roles[1])
+	}
+}
+
+func TestListSiteResourceRoles_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.ListSiteResourceRoles(context.Background(), 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestListSiteResourceUsers_Decodes(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/site-resource/12/users" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"users": []map[string]any{
+				{
+					"userId":   "abc123",
+					"username": "alice@example.com",
+					"type":     "internal",
+					"idpName":  nil,
+					"idpId":    nil,
+					"email":    "alice@example.com",
+				},
+			},
+		})
+	})
+
+	users, err := c.ListSiteResourceUsers(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("ListSiteResourceUsers: %v", err)
+	}
+	if len(users) != 1 || users[0].UserID != "abc123" || users[0].Type != "internal" {
+		t.Errorf("users = %+v", users)
+	}
+	if users[0].IDPName != nil || users[0].IDPID != nil {
+		t.Errorf("nullable IDP fields should decode to nil, got %+v", users[0])
+	}
+}
+
+func TestListSiteResourceClients_Decodes(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/site-resource/12/clients" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"clients": []map[string]any{
+				{"clientId": 7, "name": "olm-laptop", "subnet": "100.90.128.2/24"},
+			},
+		})
+	})
+
+	clients, err := c.ListSiteResourceClients(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("ListSiteResourceClients: %v", err)
+	}
+	if len(clients) != 1 || clients[0].ClientID != 7 || clients[0].Subnet != "100.90.128.2/24" {
+		t.Errorf("clients = %+v", clients)
+	}
+}
+
+func TestListSiteResourceClients_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"clients": []any{}})
+	})
+
+	clients, err := c.ListSiteResourceClients(context.Background(), 12)
+	if err != nil {
+		t.Fatalf("ListSiteResourceClients: %v", err)
+	}
+	if len(clients) != 0 {
+		t.Errorf("clients = %+v, want empty", clients)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
