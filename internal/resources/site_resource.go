@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -31,18 +32,29 @@ type SitePrivateResource struct {
 
 // SitePrivateResourceModel describes the resource data model.
 type SitePrivateResourceModel struct {
-	ID             types.Int64  `tfsdk:"id"`
-	NiceID         types.String `tfsdk:"nice_id"`
-	SiteID         types.Int64  `tfsdk:"site_id"`
-	Name           types.String `tfsdk:"name"`
-	Mode           types.String `tfsdk:"mode"`
-	Destination    types.String `tfsdk:"destination"`
-	Alias          types.String `tfsdk:"alias"`
-	TCPPortRange   types.String `tfsdk:"tcp_port_range"`
-	UDPPortRange   types.String `tfsdk:"udp_port_range"`
-	DisableICMP    types.Bool   `tfsdk:"disable_icmp"`
-	AuthDaemonMode types.String `tfsdk:"auth_daemon_mode"`
-	AuthDaemonPort types.Int64  `tfsdk:"auth_daemon_port"`
+	ID               types.Int64  `tfsdk:"id"`
+	NiceID           types.String `tfsdk:"nice_id"`
+	SiteID           types.Int64  `tfsdk:"site_id"`
+	Name             types.String `tfsdk:"name"`
+	Mode             types.String `tfsdk:"mode"`
+	Destination      types.String `tfsdk:"destination"`
+	Alias            types.String `tfsdk:"alias"`
+	TCPPortRange     types.String `tfsdk:"tcp_port_range"`
+	UDPPortRange     types.String `tfsdk:"udp_port_range"`
+	DisableICMP      types.Bool   `tfsdk:"disable_icmp"`
+	AuthDaemonMode   types.String `tfsdk:"auth_daemon_mode"`
+	AuthDaemonPort   types.Int64  `tfsdk:"auth_daemon_port"`
+	Enabled          types.Bool   `tfsdk:"enabled"`
+	SSL              types.Bool   `tfsdk:"ssl"`
+	NetworkID        types.Int64  `tfsdk:"network_id"`
+	DefaultNetworkID types.Int64  `tfsdk:"default_network_id"`
+	Scheme           types.String `tfsdk:"scheme"`
+	ProxyPort        types.Int64  `tfsdk:"proxy_port"`
+	DestinationPort  types.Int64  `tfsdk:"destination_port"`
+	AliasAddress     types.String `tfsdk:"alias_address"`
+	DomainID         types.String `tfsdk:"domain_id"`
+	Subdomain        types.String `tfsdk:"subdomain"`
+	FullDomain       types.String `tfsdk:"full_domain"`
 }
 
 // NewSitePrivateResource returns a new resource factory.
@@ -143,6 +155,83 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
+			"enabled": schema.BoolAttribute{
+				Description: "Whether the resource is enabled. Read-only here; the API returns `true` on creation. Use a future toggle endpoint to disable.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"ssl": schema.BoolAttribute{
+				Description: "Whether SSL is terminated by the proxy in front of this resource.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"network_id": schema.Int64Attribute{
+				Description: "The numeric network ID the resource is bound to.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"default_network_id": schema.Int64Attribute{
+				Description: "The default network ID, when set by the org configuration. Null when unset.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"scheme": schema.StringAttribute{
+				Description: "The protocol scheme (e.g. `http`, `https`). Only set for HTTP-mode resources; null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"proxy_port": schema.Int64Attribute{
+				Description: "The proxy-facing port. Only set for HTTP-mode resources; null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"destination_port": schema.Int64Attribute{
+				Description: "The destination port behind the proxy. Only set for HTTP-mode resources; null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
+				},
+			},
+			"alias_address": schema.StringAttribute{
+				Description: "The resolved alias address, when applicable. Null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"domain_id": schema.StringAttribute{
+				Description: "The associated domain ID, when applicable. Null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"subdomain": schema.StringAttribute{
+				Description: "The subdomain configured on this resource. Null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"full_domain": schema.StringAttribute{
+				Description: "The full FQDN of the resource. Null otherwise.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 		},
 	}
 }
@@ -186,12 +275,7 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 	}
 
 	plan.ID = types.Int64Value(int64(siteRes.SiteResourceID))
-	plan.NiceID = types.StringValue(siteRes.NiceID)
-	plan.TCPPortRange = types.StringValue(siteRes.TCPPortRange)
-	plan.UDPPortRange = types.StringValue(siteRes.UDPPortRange)
-	plan.DisableICMP = types.BoolValue(siteRes.DisableICMP)
-	plan.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
-	plan.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
+	hydrateSiteResourceState(&plan, siteRes)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -213,17 +297,7 @@ func (r *SitePrivateResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	state.NiceID = types.StringValue(siteRes.NiceID)
-	state.SiteID = types.Int64Value(int64(siteRes.SiteID))
-	state.Name = types.StringValue(siteRes.Name)
-	state.Mode = types.StringValue(siteRes.Mode)
-	state.Destination = types.StringValue(siteRes.Destination)
-	state.Alias = types.StringValue(siteRes.Alias)
-	state.TCPPortRange = types.StringValue(siteRes.TCPPortRange)
-	state.UDPPortRange = types.StringValue(siteRes.UDPPortRange)
-	state.DisableICMP = types.BoolValue(siteRes.DisableICMP)
-	state.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
-	state.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
+	hydrateSiteResourceState(&state, siteRes)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -253,15 +327,7 @@ func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	plan.NiceID = types.StringValue(siteRes.NiceID)
-	plan.Name = types.StringValue(siteRes.Name)
-	plan.Destination = types.StringValue(siteRes.Destination)
-	plan.Alias = types.StringValue(siteRes.Alias)
-	plan.TCPPortRange = types.StringValue(siteRes.TCPPortRange)
-	plan.UDPPortRange = types.StringValue(siteRes.UDPPortRange)
-	plan.DisableICMP = types.BoolValue(siteRes.DisableICMP)
-	plan.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
-	plan.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
+	hydrateSiteResourceState(&plan, siteRes)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -293,20 +359,48 @@ func (r *SitePrivateResource) ImportState(ctx context.Context, req resource.Impo
 		return
 	}
 
-	state := SitePrivateResourceModel{
-		ID:             types.Int64Value(int64(siteRes.SiteResourceID)),
-		NiceID:         types.StringValue(siteRes.NiceID),
-		SiteID:         types.Int64Value(int64(siteRes.SiteID)),
-		Name:           types.StringValue(siteRes.Name),
-		Mode:           types.StringValue(siteRes.Mode),
-		Destination:    types.StringValue(siteRes.Destination),
-		Alias:          types.StringValue(siteRes.Alias),
-		TCPPortRange:   types.StringValue(siteRes.TCPPortRange),
-		UDPPortRange:   types.StringValue(siteRes.UDPPortRange),
-		DisableICMP:    types.BoolValue(siteRes.DisableICMP),
-		AuthDaemonMode: types.StringValue(siteRes.AuthDaemonMode),
-		AuthDaemonPort: types.Int64Value(int64(siteRes.AuthDaemonPort)),
-	}
+	state := SitePrivateResourceModel{ID: types.Int64Value(int64(siteRes.SiteResourceID))}
+	hydrateSiteResourceState(&state, siteRes)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// hydrateSiteResourceState copies every server-owned field from a
+// freshly-fetched SiteResource into the TF state model. The caller
+// must populate state.ID separately (it's the import-time key and
+// not always present on the wire — e.g. on Create the response does
+// carry siteResourceId, but we set it explicitly to keep the codepaths
+// symmetric).
+//
+// site_id is derived from SiteIDs[0] when the slice is populated
+// (LIST/Import codepath). On Create/Update the upstream response
+// omits siteIds entirely, so the existing state value (the user's
+// plan input) is preserved.
+func hydrateSiteResourceState(state *SitePrivateResourceModel, siteRes *client.SiteResource) {
+	state.NiceID = types.StringValue(siteRes.NiceID)
+	state.Name = types.StringValue(siteRes.Name)
+	state.Mode = types.StringValue(siteRes.Mode)
+	state.Destination = types.StringValue(siteRes.Destination)
+	state.Alias = types.StringValue(siteRes.Alias)
+	state.TCPPortRange = types.StringValue(siteRes.TCPPortRange)
+	state.UDPPortRange = types.StringValue(siteRes.UDPPortRange)
+	state.DisableICMP = types.BoolValue(siteRes.DisableICMP)
+	state.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
+	state.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
+	state.Enabled = types.BoolValue(siteRes.Enabled)
+	state.SSL = types.BoolValue(siteRes.SSL)
+	state.NetworkID = types.Int64Value(int64(siteRes.NetworkID))
+
+	if len(siteRes.SiteIDs) > 0 {
+		state.SiteID = types.Int64Value(int64(siteRes.SiteIDs[0]))
+	}
+
+	state.Scheme = nullableString(siteRes.Scheme)
+	state.AliasAddress = nullableString(siteRes.AliasAddress)
+	state.DomainID = nullableString(siteRes.DomainID)
+	state.Subdomain = nullableString(siteRes.Subdomain)
+	state.FullDomain = nullableString(siteRes.FullDomain)
+	state.ProxyPort = nullableIntFromIntPtr(siteRes.ProxyPort)
+	state.DestinationPort = nullableIntFromIntPtr(siteRes.DestinationPort)
+	state.DefaultNetworkID = nullableIntFromIntPtr(siteRes.DefaultNetworkID)
 }

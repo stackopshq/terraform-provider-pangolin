@@ -352,6 +352,206 @@ func TestGetSiteResource_ListHit(t *testing.T) {
 	}
 }
 
+func TestSiteResource_DecodesListWireShape(t *testing.T) {
+	// Real LIST payload captured live on the enterprise tenant —
+	// covers all the new fields, nullable scalars (emitted as JSON
+	// null), and the siteIds/siteNames/... LIST-only arrays.
+	const payload = `{"siteResources":[{
+		"siteResourceId": 2,
+		"orgId": "stackops",
+		"niceId": "worst-bog-turtle",
+		"name": "probe-fields",
+		"mode": "cidr",
+		"ssl": false,
+		"scheme": null,
+		"proxyPort": null,
+		"destinationPort": null,
+		"destination": "10.99.99.0/24",
+		"enabled": true,
+		"alias": "probe-fields.internal",
+		"aliasAddress": null,
+		"tcpPortRangeString": "8443",
+		"udpPortRangeString": "*",
+		"disableIcmp": false,
+		"authDaemonMode": "site",
+		"authDaemonPort": 22123,
+		"subdomain": null,
+		"domainId": null,
+		"fullDomain": null,
+		"networkId": 2,
+		"defaultNetworkId": null,
+		"siteNames": ["core-storage"],
+		"siteNiceIds": ["cool-bengal-fox"],
+		"siteIds": [5],
+		"siteAddresses": ["100.90.128.1/24"],
+		"siteOnlines": [true]
+	}]}`
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":`+payload+`,"success":true,"error":false,"status":200}`)
+	})
+
+	got, err := c.GetSiteResource(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("GetSiteResource: %v", err)
+	}
+
+	if got.OrgID != "stackops" || got.NiceID != "worst-bog-turtle" {
+		t.Errorf("scalars: %+v", got)
+	}
+	if !got.Enabled || got.SSL || got.NetworkID != 2 {
+		t.Errorf("enabled/ssl/networkId: %+v", got)
+	}
+	for _, p := range []*string{got.Scheme, got.AliasAddress, got.DomainID, got.Subdomain, got.FullDomain} {
+		if p != nil {
+			t.Errorf("nullable string should be nil, got %q", *p)
+		}
+	}
+	for _, p := range []*int{got.ProxyPort, got.DestinationPort, got.DefaultNetworkID} {
+		if p != nil {
+			t.Errorf("nullable int should be nil, got %d", *p)
+		}
+	}
+	if len(got.SiteIDs) != 1 || got.SiteIDs[0] != 5 {
+		t.Errorf("siteIds = %v, want [5]", got.SiteIDs)
+	}
+	if len(got.SiteNames) != 1 || got.SiteNames[0] != "core-storage" {
+		t.Errorf("siteNames = %v", got.SiteNames)
+	}
+	if len(got.SiteNiceIDs) != 1 || got.SiteNiceIDs[0] != "cool-bengal-fox" {
+		t.Errorf("siteNiceIds = %v", got.SiteNiceIDs)
+	}
+	if len(got.SiteAddresses) != 1 || got.SiteAddresses[0] != "100.90.128.1/24" {
+		t.Errorf("siteAddresses = %v", got.SiteAddresses)
+	}
+	if len(got.SiteOnlines) != 1 || !got.SiteOnlines[0] {
+		t.Errorf("siteOnlines = %v", got.SiteOnlines)
+	}
+}
+
+func TestSiteResource_DecodesCreateWireShape_NoSiteIDs(t *testing.T) {
+	// Real CREATE payload captured live: the response carries every
+	// scalar but does NOT include the siteIds/siteNames/... arrays.
+	// SiteIDs must therefore stay nil after decode — the resource
+	// model preserves the user's plan input for site_id in that case.
+	const payload = `{
+		"siteResourceId": 2,
+		"orgId": "stackops",
+		"networkId": 2,
+		"defaultNetworkId": null,
+		"niceId": "worst-bog-turtle",
+		"name": "probe-fields",
+		"ssl": false,
+		"mode": "cidr",
+		"scheme": null,
+		"proxyPort": null,
+		"destinationPort": null,
+		"destination": "10.99.99.0/24",
+		"enabled": true,
+		"alias": "probe-fields.internal",
+		"aliasAddress": null,
+		"tcpPortRangeString": "8443",
+		"udpPortRangeString": "*",
+		"disableIcmp": false,
+		"authDaemonPort": 22123,
+		"authDaemonMode": "site",
+		"domainId": null,
+		"subdomain": null,
+		"fullDomain": null
+	}`
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":`+payload+`,"success":true,"error":false,"status":200}`)
+	})
+
+	got, err := c.CreateSiteResource(context.Background(), &CreateSiteResourceRequest{
+		Name: "probe-fields", SiteID: 5, Mode: "cidr", Destination: "10.99.99.0/24",
+		Alias: "probe-fields.internal", RoleIDs: []int{}, UserIDs: []string{}, ClientIDs: []int{},
+	})
+	if err != nil {
+		t.Fatalf("CreateSiteResource: %v", err)
+	}
+	if got.SiteIDs != nil {
+		t.Errorf("Create response must not expose siteIds (got %v)", got.SiteIDs)
+	}
+	if got.Enabled != true || got.NetworkID != 2 {
+		t.Errorf("scalars wrong: %+v", got)
+	}
+}
+
+func TestSiteResource_NullableScalarsPopulated(t *testing.T) {
+	// Same shape but with the nullable scalars set — ensures the
+	// pointer fields round-trip non-null values correctly.
+	const payload = `{"siteResources":[{
+		"siteResourceId": 3,
+		"orgId": "stackops",
+		"niceId": "hot-foo-bar",
+		"name": "probe-http",
+		"mode": "http",
+		"ssl": true,
+		"scheme": "https",
+		"proxyPort": 443,
+		"destinationPort": 8080,
+		"destination": "backend.internal",
+		"enabled": true,
+		"alias": "",
+		"aliasAddress": "10.0.0.42",
+		"tcpPortRangeString": "",
+		"udpPortRangeString": "",
+		"disableIcmp": true,
+		"authDaemonMode": "site",
+		"authDaemonPort": 22123,
+		"subdomain": "api",
+		"domainId": "dom-123",
+		"fullDomain": "api.example.com",
+		"networkId": 1,
+		"defaultNetworkId": 1,
+		"siteIds": [7]
+	}]}`
+
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":`+payload+`,"success":true,"error":false,"status":200}`)
+	})
+
+	got, err := c.GetSiteResource(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("GetSiteResource: %v", err)
+	}
+	if got.Scheme == nil || *got.Scheme != "https" {
+		t.Errorf("scheme = %v", got.Scheme)
+	}
+	if got.ProxyPort == nil || *got.ProxyPort != 443 {
+		t.Errorf("proxyPort = %v", got.ProxyPort)
+	}
+	if got.DestinationPort == nil || *got.DestinationPort != 8080 {
+		t.Errorf("destinationPort = %v", got.DestinationPort)
+	}
+	if got.AliasAddress == nil || *got.AliasAddress != "10.0.0.42" {
+		t.Errorf("aliasAddress = %v", got.AliasAddress)
+	}
+	if got.Subdomain == nil || *got.Subdomain != "api" {
+		t.Errorf("subdomain = %v", got.Subdomain)
+	}
+	if got.FullDomain == nil || *got.FullDomain != "api.example.com" {
+		t.Errorf("fullDomain = %v", got.FullDomain)
+	}
+	if got.DomainID == nil || *got.DomainID != "dom-123" {
+		t.Errorf("domainId = %v", got.DomainID)
+	}
+	if got.DefaultNetworkID == nil || *got.DefaultNetworkID != 1 {
+		t.Errorf("defaultNetworkId = %v", got.DefaultNetworkID)
+	}
+	if !got.SSL {
+		t.Errorf("ssl should be true")
+	}
+	if len(got.SiteIDs) != 1 || got.SiteIDs[0] != 7 {
+		t.Errorf("siteIds = %v", got.SiteIDs)
+	}
+}
+
 // --- Retry policy tests ---
 
 func TestDoRequest_RetriesOnServerError(t *testing.T) {

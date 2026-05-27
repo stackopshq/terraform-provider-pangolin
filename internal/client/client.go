@@ -772,9 +772,22 @@ func (c *Client) DeleteTarget(ctx context.Context, targetID int) error {
 // --- Site Resources (private) ---
 
 // SiteResource represents a private site resource.
+//
+// Three wire shapes feed this struct, with subtly different fields:
+//
+//   - CREATE (PUT /org/{org}/site-resource) and UPDATE
+//     (POST /site-resource/{id}) return every scalar field but **omit**
+//     the multi-site arrays (siteIds / siteNames / ...). The org-level
+//     `siteId` documented in the OpenAPI is never returned.
+//   - LIST (GET /org/{org}/site-resources) returns the scalars **plus**
+//     the multi-site arrays. The singular site assignment is therefore
+//     surfaced as SiteIDs[0]; the legacy `siteId` field is absent.
+//
+// Fields whose wire value is `null` when unset use pointer types so
+// callers can distinguish unset (nil) from zero ("" / 0).
 type SiteResource struct {
 	SiteResourceID int    `json:"siteResourceId"`
-	SiteID         int    `json:"siteId"`
+	OrgID          string `json:"orgId"`
 	NiceID         string `json:"niceId"`
 	Name           string `json:"name"`
 	Mode           string `json:"mode"`
@@ -785,6 +798,28 @@ type SiteResource struct {
 	DisableICMP    bool   `json:"disableIcmp"`
 	AuthDaemonPort int    `json:"authDaemonPort"`
 	AuthDaemonMode string `json:"authDaemonMode"`
+	Enabled        bool   `json:"enabled"`
+	SSL            bool   `json:"ssl"`
+	NetworkID      int    `json:"networkId"`
+
+	// Nullable scalars — wire emits literal `null` when unset.
+	Scheme           *string `json:"scheme"`
+	ProxyPort        *int    `json:"proxyPort"`
+	DestinationPort  *int    `json:"destinationPort"`
+	AliasAddress     *string `json:"aliasAddress"`
+	DomainID         *string `json:"domainId"`
+	Subdomain        *string `json:"subdomain"`
+	FullDomain       *string `json:"fullDomain"`
+	DefaultNetworkID *int    `json:"defaultNetworkId"`
+
+	// LIST-only enrichments. The singular site attachment lives in
+	// SiteIDs[0] when the slice is populated; Create/Update responses
+	// leave these nil.
+	SiteIDs       []int    `json:"siteIds,omitempty"`
+	SiteNames     []string `json:"siteNames,omitempty"`
+	SiteNiceIDs   []string `json:"siteNiceIds,omitempty"`
+	SiteAddresses []string `json:"siteAddresses,omitempty"`
+	SiteOnlines   []bool   `json:"siteOnlines,omitempty"`
 }
 
 // CreateSiteResourceRequest is the payload for creating a private site resource.

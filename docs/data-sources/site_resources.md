@@ -33,14 +33,25 @@ output "site_resource_names" {
 Read-Only:
 
 - `alias` (String) The internal DNS alias.
+- `alias_address` (String) The resolved alias address. Null when unset.
 - `auth_daemon_mode` (String) Auth daemon mode.
 - `auth_daemon_port` (Number) Auth daemon port.
+- `default_network_id` (Number) The default network ID. Null when unset.
 - `destination` (String) The destination.
+- `destination_port` (Number) The destination port. HTTP-mode resources only; null otherwise.
 - `disable_icmp` (Boolean) Whether ICMP is disabled.
+- `domain_id` (String) The associated domain ID. Null when unset.
+- `enabled` (Boolean) Whether the resource is enabled.
+- `full_domain` (String) The full FQDN of the resource. Null when unset.
 - `id` (Number) The numeric site resource ID.
 - `mode` (String) The mode (host or cidr).
 - `name` (String) The resource name.
+- `network_id` (Number) The numeric network ID.
 - `nice_id` (String) The human-readable ID.
-- `site_id` (Number) The parent site ID.
+- `proxy_port` (Number) The proxy-facing port. HTTP-mode resources only; null otherwise.
+- `scheme` (String) The protocol scheme. HTTP-mode resources only; null otherwise.
+- `site_id` (Number) The parent site ID (first entry of the upstream `siteIds` array).
+- `ssl` (Boolean) Whether SSL is terminated by the proxy.
+- `subdomain` (String) The configured subdomain. Null when unset.
 - `tcp_port_range` (String) TCP port range.
 - `udp_port_range` (String) UDP port range.
