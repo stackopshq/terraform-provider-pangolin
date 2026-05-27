@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -96,11 +97,30 @@ func (r *SiteResourceUserResource) Create(ctx context.Context, req resource.Crea
 }
 
 func (r *SiteResourceUserResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	// The Pangolin API does not expose an endpoint to list users assigned to a site resource.
-	// Preserve existing state as-is.
 	var state SiteResourceUserModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	users, err := r.client.ListSiteResourceUsers(ctx, int(state.SiteResourceID.ValueInt64()))
+	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read site resource users", err.Error())
+		return
+	}
+
+	wantUserID := state.UserID.ValueString()
+	for _, user := range users {
+		if user.UserID == wantUserID {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+			return
+		}
+	}
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *SiteResourceUserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {

@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -90,11 +91,30 @@ func (r *SiteResourceClientResource) Create(ctx context.Context, req resource.Cr
 }
 
 func (r *SiteResourceClientResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	// The Pangolin API does not expose an endpoint to list clients assigned to a site resource.
-	// Preserve existing state as-is.
 	var state SiteResourceClientModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	clients, err := r.client.ListSiteResourceClients(ctx, int(state.SiteResourceID.ValueInt64()))
+	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read site resource clients", err.Error())
+		return
+	}
+
+	wantClientID := state.ClientID.ValueInt64()
+	for _, c := range clients {
+		if int64(c.ClientID) == wantClientID {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+			return
+		}
+	}
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *SiteResourceClientResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
