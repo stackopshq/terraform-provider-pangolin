@@ -156,6 +156,7 @@ func (p *PangolinProvider) Resources(_ context.Context) []func() resource.Resour
 		resources.NewUserRoleResource,
 		resources.NewResourceAccessTokenResource,
 		resources.NewAPIKeyActionsResource,
+		resources.NewOrgIDPResource,
 	}
 }
 
