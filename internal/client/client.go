@@ -2272,6 +2272,140 @@ func (c *Client) ListDomainDNSRecords(ctx context.Context, orgID, domainID strin
 	return records, nil
 }
 
+// --- Resource Access Tokens ---
+
+// ResourceAccessToken represents an access token bound to an HTTP
+// resource. Three wire shapes feed this struct with subtly different
+// fields:
+//
+//   - CREATE (POST /resource/{id}/access-token) returns the freshly
+//     generated `accessToken` (the bearer secret) but **does not**
+//     return `tokenHash` / `resourceName` / `resourceNiceId` / `siteName`.
+//     The secret is only visible here — store it before discarding the
+//     response.
+//   - LIST per-resource (GET /resource/{id}/access-tokens) and LIST
+//     org-wide (GET /org/{orgId}/access-tokens) both omit `accessToken`
+//     entirely and surface `tokenHash` + the enrichment fields instead.
+//     There is no way to recover the bearer secret after creation.
+//
+// Nullable upstream fields use pointer types so callers can
+// distinguish unset (nil) from zero ("" / 0).
+type ResourceAccessToken struct {
+	AccessTokenID string  `json:"accessTokenId"`
+	OrgID         string  `json:"orgId"`
+	ResourceID    int     `json:"resourceId"`
+	SessionLength int64   `json:"sessionLength"`
+	ExpiresAt     *int64  `json:"expiresAt"`
+	Title         *string `json:"title"`
+	Description   *string `json:"description"`
+	CreatedAt     int64   `json:"createdAt"`
+
+	// CREATE-only: the bearer secret. Empty on list responses.
+	AccessToken string `json:"accessToken,omitempty"`
+
+	// LIST-only enrichments. Empty on the CREATE response.
+	TokenHash      string  `json:"tokenHash,omitempty"`
+	ResourceName   string  `json:"resourceName,omitempty"`
+	ResourceNiceID string  `json:"resourceNiceId,omitempty"`
+	SiteName       *string `json:"siteName,omitempty"`
+}
+
+// CreateResourceAccessTokenRequest is the request body for
+// POST /resource/{id}/access-token. All fields are optional; the API
+// fills in sensible defaults (sessionLength ≈ 30 days, expiresAt
+// derived from createdAt + sessionLength when validForSeconds is set,
+// otherwise null = never expires).
+type CreateResourceAccessTokenRequest struct {
+	Title           *string `json:"title,omitempty"`
+	Description     *string `json:"description,omitempty"`
+	ValidForSeconds *int64  `json:"validForSeconds,omitempty"`
+}
+
+// CreateResourceAccessToken provisions a new access token on an HTTP
+// resource. The returned struct's AccessToken field carries the bearer
+// secret — only visible here. Subsequent reads expose only TokenHash.
+func (c *Client) CreateResourceAccessToken(ctx context.Context, resourceID int, req *CreateResourceAccessTokenRequest) (*ResourceAccessToken, error) {
+	if req == nil {
+		req = &CreateResourceAccessTokenRequest{}
+	}
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/resource/%d/access-token", resourceID), req)
+	if err != nil {
+		return nil, err
+	}
+	var out ResourceAccessToken
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse resource access token: %w", err)
+	}
+	return &out, nil
+}
+
+// ResourceAccessTokenListResponse wraps the paginated list payload
+// returned by both per-resource and org-wide list endpoints.
+type ResourceAccessTokenListResponse struct {
+	AccessTokens []ResourceAccessToken `json:"accessTokens"`
+	Pagination   struct {
+		Total  int `json:"total"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	} `json:"pagination"`
+}
+
+// ListResourceAccessTokens returns the access tokens bound to a
+// specific HTTP resource. The bearer secrets are not exposed by this
+// endpoint — only TokenHash + enrichment fields.
+func (c *Client) ListResourceAccessTokens(ctx context.Context, resourceID int) ([]ResourceAccessToken, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/access-tokens", resourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper ResourceAccessTokenListResponse
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse resource access tokens: %w", err)
+	}
+	return wrapper.AccessTokens, nil
+}
+
+// ListOrgAccessTokens returns every access token in the organization,
+// regardless of which resource they're bound to. Useful for org-wide
+// audit datasources.
+func (c *Client) ListOrgAccessTokens(ctx context.Context) ([]ResourceAccessToken, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/access-tokens", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper ResourceAccessTokenListResponse
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse org access tokens: %w", err)
+	}
+	return wrapper.AccessTokens, nil
+}
+
+// GetResourceAccessToken retrieves a single access token by ID via
+// list+filter on the org-wide list endpoint. The Pangolin API does
+// not expose a per-id GET, so this scales linearly with the number
+// of tokens in the org.
+func (c *Client) GetResourceAccessToken(ctx context.Context, accessTokenID string) (*ResourceAccessToken, error) {
+	tokens, err := c.ListOrgAccessTokens(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tokens {
+		if t.AccessTokenID == accessTokenID {
+			tok := t
+			return &tok, nil
+		}
+	}
+	return nil, fmt.Errorf("access token %s: %w", accessTokenID, ErrNotFound)
+}
+
+// DeleteResourceAccessToken revokes an access token by its ID.
+// The endpoint is keyed by the token ID alone — no resource scope is
+// required.
+func (c *Client) DeleteResourceAccessToken(ctx context.Context, accessTokenID string) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/access-token/%s", accessTokenID), nil)
+	return err
+}
+
 // --- Resource Rules ---
 
 // ResourceRule represents an access control rule for a resource.
