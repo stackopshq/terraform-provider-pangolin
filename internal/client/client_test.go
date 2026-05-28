@@ -2761,6 +2761,204 @@ func TestAddClientToSiteResources_PropagatesConflict(t *testing.T) {
 	}
 }
 
+// --- Resource access-token tests ---
+
+func TestCreateResourceAccessToken_BodyAndSecretSurfaced(t *testing.T) {
+	// Real CREATE payload captured live: the response includes the
+	// bearer `accessToken` (only here) but **omits** `tokenHash` and
+	// the enrichment fields. Verifies both directions.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/resource/13/access-token" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"accessTokenId": "fake-id-create",
+			"orgId":         "stackops",
+			"resourceId":    13,
+			"expiresAt":     1779985696429,
+			"sessionLength": 3600000,
+			"title":         "probe-token",
+			"description":   "hello",
+			"createdAt":     1779982096429,
+			"accessToken":   "FAKE-BEARER-CREATE",
+		})
+	})
+
+	title := "probe-token"
+	desc := "hello"
+	var lifetime int64 = 3600
+	tok, err := c.CreateResourceAccessToken(context.Background(), 13, &CreateResourceAccessTokenRequest{
+		Title:           &title,
+		Description:     &desc,
+		ValidForSeconds: &lifetime,
+	})
+	if err != nil {
+		t.Fatalf("CreateResourceAccessToken: %v", err)
+	}
+	if tok.AccessTokenID != "fake-id-create" || tok.AccessToken != "FAKE-BEARER-CREATE" {
+		t.Errorf("scalars: %+v", tok)
+	}
+	if tok.SessionLength != 3600000 || tok.ExpiresAt == nil || *tok.ExpiresAt != 1779985696429 {
+		t.Errorf("lifetime fields: %+v", tok)
+	}
+	if tok.Title == nil || *tok.Title != "probe-token" {
+		t.Errorf("title = %v", tok.Title)
+	}
+	if tok.TokenHash != "" || tok.ResourceName != "" {
+		t.Errorf("CREATE response must not surface list-only fields (got hash=%q name=%q)", tok.TokenHash, tok.ResourceName)
+	}
+	// Verify request body shape — pointer-with-omitempty preserves the
+	// distinction between "field not set" and "field set to zero".
+	if string(gotBody["title"]) != `"probe-token"` || string(gotBody["validForSeconds"]) != "3600" {
+		t.Errorf("body shape wrong: %s", gotBody)
+	}
+}
+
+func TestCreateResourceAccessToken_DefaultsWhenAllNil(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"accessTokenId": "fake-id-defaults",
+			"orgId":         "stackops",
+			"resourceId":    13,
+			"expiresAt":     nil,
+			"sessionLength": 2592000000,
+			"title":         nil,
+			"description":   nil,
+			"createdAt":     1779982096276,
+			"accessToken":   "FAKE-BEARER-DEFAULTS",
+		})
+	})
+
+	tok, err := c.CreateResourceAccessToken(context.Background(), 13, nil)
+	if err != nil {
+		t.Fatalf("CreateResourceAccessToken: %v", err)
+	}
+	if tok.ExpiresAt != nil {
+		t.Errorf("expiresAt should be nil when unset, got %v", *tok.ExpiresAt)
+	}
+	if tok.Title != nil || tok.Description != nil {
+		t.Errorf("title/description should be nil, got %v / %v", tok.Title, tok.Description)
+	}
+	// Body must be `{}` — none of the optional fields should be serialized.
+	for _, k := range []string{"title", "description", "validForSeconds"} {
+		if _, ok := gotBody[k]; ok {
+			t.Errorf("body should omit %q, got %s", k, gotBody[k])
+		}
+	}
+}
+
+func TestListResourceAccessTokens_DecodesEnrichmentFields(t *testing.T) {
+	// Real LIST payload captured live: items include `tokenHash` +
+	// `resourceName` / `resourceNiceId` / `siteName` (nullable), but
+	// **never** the bearer secret.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/resource/13/access-tokens" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"accessTokens": []map[string]any{
+				{
+					"accessTokenId":  "fake-id-list",
+					"orgId":          "stackops",
+					"resourceId":     13,
+					"sessionLength":  2592000000,
+					"expiresAt":      nil,
+					"tokenHash":      "0000000000000000000000000000000000000000000000000000000000000000",
+					"title":          nil,
+					"description":    nil,
+					"createdAt":      1779982096276,
+					"resourceName":   "Filebrowser",
+					"resourceNiceId": "happy-go-lucky-illacme-plenipes",
+					"siteName":       nil,
+				},
+			},
+			"pagination": map[string]any{"total": 16, "limit": 1000, "offset": 0},
+		})
+	})
+
+	tokens, err := c.ListResourceAccessTokens(context.Background(), 13)
+	if err != nil {
+		t.Fatalf("ListResourceAccessTokens: %v", err)
+	}
+	if len(tokens) != 1 {
+		t.Fatalf("len(tokens) = %d, want 1", len(tokens))
+	}
+	got := tokens[0]
+	if got.TokenHash == "" || got.ResourceName != "Filebrowser" || got.ResourceNiceID != "happy-go-lucky-illacme-plenipes" {
+		t.Errorf("enrichment fields not surfaced: %+v", got)
+	}
+	if got.AccessToken != "" {
+		t.Errorf("bearer secret must NEVER appear in list response, got %q", got.AccessToken)
+	}
+	if got.SiteName != nil {
+		t.Errorf("siteName should decode to nil for non-site resources, got %v", got.SiteName)
+	}
+}
+
+func TestListOrgAccessTokens_PathAndEmpty(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/access-tokens" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"accessTokens": []any{},
+			"pagination":   map[string]any{"total": 0, "limit": 1000, "offset": 0},
+		})
+	})
+	tokens, err := c.ListOrgAccessTokens(context.Background())
+	if err != nil {
+		t.Fatalf("ListOrgAccessTokens: %v", err)
+	}
+	if len(tokens) != 0 {
+		t.Errorf("expected empty list, got %v", tokens)
+	}
+}
+
+func TestGetResourceAccessToken_ListHitAndMiss(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"accessTokens": []map[string]any{
+				{"accessTokenId": "abc", "resourceId": 1, "sessionLength": 1, "createdAt": 1},
+				{"accessTokenId": "def", "resourceId": 2, "sessionLength": 1, "createdAt": 1},
+			},
+			"pagination": map[string]any{"total": 2, "limit": 1000, "offset": 0},
+		})
+	})
+	got, err := c.GetResourceAccessToken(context.Background(), "def")
+	if err != nil || got.AccessTokenID != "def" {
+		t.Errorf("hit: got %+v err=%v", got, err)
+	}
+	_, err = c.GetResourceAccessToken(context.Background(), "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("miss: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDeleteResourceAccessToken_PathAndMethod(t *testing.T) {
+	hits := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "DELETE" || r.URL.Path != "/v1/access-token/abc123" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.DeleteResourceAccessToken(context.Background(), "abc123"); err != nil {
+		t.Fatalf("DeleteResourceAccessToken: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d", hits)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

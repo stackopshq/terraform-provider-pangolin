@@ -154,6 +154,7 @@ func (p *PangolinProvider) Resources(_ context.Context) []func() resource.Resour
 		resources.NewResourceHeaderAuthResource,
 		resources.NewInvitationResource,
 		resources.NewUserRoleResource,
+		resources.NewResourceAccessTokenResource,
 	}
 }
 
@@ -166,6 +167,7 @@ func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.Da
 		datasources.NewHTTPResourcesDataSource,
 		datasources.NewSiteResourcesDataSource,
 		datasources.NewAPIKeysDataSource,
+		datasources.NewAccessTokensDataSource,
 		datasources.NewIDPsDataSource,
 		datasources.NewRequestLogsDataSource,
 		datasources.NewLogsAnalyticsDataSource,
