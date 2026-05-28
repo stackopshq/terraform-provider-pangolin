@@ -2642,6 +2642,125 @@ func TestListSiteResourceClients_EmptyList(t *testing.T) {
 	}
 }
 
+// --- Site-resource set + bulk-assign tests ---
+
+func TestSetSiteResourceRoles_BodyAndPath(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/site-resource/12/roles" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetSiteResourceRoles(context.Background(), 12, []int{4, 5}); err != nil {
+		t.Fatalf("SetSiteResourceRoles: %v", err)
+	}
+	if string(gotBody["roleIds"]) != "[4,5]" {
+		t.Errorf("roleIds = %s, want [4,5]", gotBody["roleIds"])
+	}
+}
+
+func TestSetSiteResourceRoles_NilTreatedAsEmptyArray(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetSiteResourceRoles(context.Background(), 12, nil); err != nil {
+		t.Fatalf("SetSiteResourceRoles: %v", err)
+	}
+	if string(gotBody["roleIds"]) != "[]" {
+		t.Errorf("roleIds = %s, want []", gotBody["roleIds"])
+	}
+}
+
+func TestSetSiteResourceUsers_BodyAndPath(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/site-resource/12/users" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetSiteResourceUsers(context.Background(), 12, []string{"u-1", "u-2"}); err != nil {
+		t.Fatalf("SetSiteResourceUsers: %v", err)
+	}
+	if string(gotBody["userIds"]) != `["u-1","u-2"]` {
+		t.Errorf("userIds = %s", gotBody["userIds"])
+	}
+}
+
+func TestSetSiteResourceClients_BodyAndPath(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/site-resource/12/clients" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{})
+	})
+	if err := c.SetSiteResourceClients(context.Background(), 12, []int{7, 9}); err != nil {
+		t.Fatalf("SetSiteResourceClients: %v", err)
+	}
+	if string(gotBody["clientIds"]) != "[7,9]" {
+		t.Errorf("clientIds = %s, want [7,9]", gotBody["clientIds"])
+	}
+}
+
+func TestAddClientToSiteResources_DecodesCounts(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/client/7/site-resources" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{
+			"addedCount":      2,
+			"skippedCount":    1,
+			"siteResourceIds": []int{3, 4, 5},
+		})
+	})
+	got, err := c.AddClientToSiteResources(context.Background(), 7, []int{3, 4, 5})
+	if err != nil {
+		t.Fatalf("AddClientToSiteResources: %v", err)
+	}
+	if got.AddedCount != 2 || got.SkippedCount != 1 {
+		t.Errorf("counts = %+v", got)
+	}
+	if len(got.SiteResourceIDs) != 3 || got.SiteResourceIDs[2] != 5 {
+		t.Errorf("siteResourceIds = %v", got.SiteResourceIDs)
+	}
+	if string(gotBody["siteResourceIds"]) != "[3,4,5]" {
+		t.Errorf("body siteResourceIds = %s", gotBody["siteResourceIds"])
+	}
+}
+
+func TestAddClientToSiteResources_PropagatesConflict(t *testing.T) {
+	// Wire-shape captured live: when the client is already bound to
+	// every requested site-resource, the API returns HTTP 409 with
+	// `data: null`. The doRequest pipeline must surface this as an
+	// error so callers can decide whether to swallow it.
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusConflict, nil)
+	})
+	if _, err := c.AddClientToSiteResources(context.Background(), 7, []int{3}); err == nil {
+		t.Fatal("expected error on 409, got nil")
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

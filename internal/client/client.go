@@ -1725,6 +1725,81 @@ func (c *Client) ListSiteResourceClients(ctx context.Context, siteResourceID int
 	return wrapper.Clients, nil
 }
 
+// SetSiteResourceRoles replaces the non-admin role bindings of a
+// private site resource with the given set. Mirrors the resource-
+// level quirk (see [Client.SetResourceRoles]): the built-in Admin
+// role (id 1) is auto-attached at creation and the API rejects any
+// roleIds list that *includes* role 1 with `Admin role cannot be
+// assigned to site resources`. Callers should pass only the
+// additional roles to bind; Admin stays put.
+func (c *Client) SetSiteResourceRoles(ctx context.Context, siteResourceID int, roleIDs []int) error {
+	if roleIDs == nil {
+		roleIDs = []int{}
+	}
+	body := map[string]any{"roleIds": roleIDs}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/roles", siteResourceID), body)
+	return err
+}
+
+// SetSiteResourceUsers replaces the user bindings of a private site
+// resource with the given set. Pass an empty slice to clear all
+// per-user bindings (role-based access still applies).
+func (c *Client) SetSiteResourceUsers(ctx context.Context, siteResourceID int, userIDs []string) error {
+	if userIDs == nil {
+		userIDs = []string{}
+	}
+	body := map[string]any{"userIds": userIDs}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/users", siteResourceID), body)
+	return err
+}
+
+// SetSiteResourceClients replaces the OLM client bindings of a
+// private site resource with the given set. Pass an empty slice to
+// clear all client bindings.
+func (c *Client) SetSiteResourceClients(ctx context.Context, siteResourceID int, clientIDs []int) error {
+	if clientIDs == nil {
+		clientIDs = []int{}
+	}
+	body := map[string]any{"clientIds": clientIDs}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/site-resource/%d/clients", siteResourceID), body)
+	return err
+}
+
+// AddClientToSiteResourcesResponse is the upstream payload returned
+// when bulk-assigning an OLM client to several site resources at once.
+// `AddedCount + SkippedCount` equals the length of the input list; a
+// skipped entry means the client was already bound to that site
+// resource.
+type AddClientToSiteResourcesResponse struct {
+	AddedCount      int   `json:"addedCount"`
+	SkippedCount    int   `json:"skippedCount"`
+	SiteResourceIDs []int `json:"siteResourceIds"`
+}
+
+// AddClientToSiteResources bulk-assigns an OLM client to one or more
+// private site resources in a single call. Wire constraints observed
+// live on the enterprise tenant:
+//   - The input list must be non-empty; the API rejects `siteResourceIds: []`
+//     with HTTP 400 `Validation error: At least one siteResourceId is required`.
+//   - If the client is already bound to every requested site resource,
+//     the API responds with HTTP 409 `Client is already assigned to all
+//     specified site resources` (surfaced here as a generic error from
+//     [Client.doRequest]).
+//   - Partial overlap: `addedCount` reflects newly created bindings;
+//     `skippedCount` reflects ones that were already in place.
+func (c *Client) AddClientToSiteResources(ctx context.Context, clientID int, siteResourceIDs []int) (*AddClientToSiteResourcesResponse, error) {
+	body := map[string]any{"siteResourceIds": siteResourceIDs}
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/client/%d/site-resources", clientID), body)
+	if err != nil {
+		return nil, err
+	}
+	var out AddClientToSiteResourcesResponse
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse client/site-resources response: %w", err)
+	}
+	return &out, nil
+}
+
 // --- List operations ---
 
 // SitesResponse wraps the sites list response.
