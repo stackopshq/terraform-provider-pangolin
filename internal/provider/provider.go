@@ -179,6 +179,7 @@ func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.Da
 		datasources.NewDomainDNSRecordsDataSource,
 		datasources.NewSiteDataSource,
 		datasources.NewUserDataSource,
+		datasources.NewUserByIDDataSource,
 	}
 }
 

@@ -3514,6 +3514,98 @@ func TestListOrgs_PropagatesForbidden(t *testing.T) {
 	}
 }
 
+// --- Root single-user GET ---
+
+func TestGetUserByID_DecodesFullPayload(t *testing.T) {
+	// Real wire shape captured live with the server-admin token.
+	// Pins the userId key (NOT id), the new ServerAdmin field, and
+	// the nullable IDPName / IDPID for internal users.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/user/u-1" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"userId":                  "u-1",
+			"email":                   "alice@example.com",
+			"username":                "alice@example.com",
+			"name":                    nil,
+			"type":                    "internal",
+			"twoFactorEnabled":        false,
+			"twoFactorSetupRequested": false,
+			"emailVerified":           true,
+			"serverAdmin":             true,
+			"idpName":                 nil,
+			"idpId":                   nil,
+			"dateCreated":             "2026-04-02T10:58:42.649Z",
+		})
+	})
+
+	got, err := c.GetUserByID(context.Background(), "u-1")
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.UserID != "u-1" || got.Email != "alice@example.com" {
+		t.Errorf("scalars: %+v", got)
+	}
+	if !got.ServerAdmin || !got.EmailVerified {
+		t.Errorf("boolean flags wrong: serverAdmin=%v emailVerified=%v", got.ServerAdmin, got.EmailVerified)
+	}
+	if got.Name != nil || got.IDPName != nil || got.IDPID != nil {
+		t.Errorf("nullable fields should decode to nil for internal users: %+v", got)
+	}
+	if got.DateCreated == "" {
+		t.Errorf("dateCreated should round-trip the wire string")
+	}
+}
+
+func TestGetUserByID_IDPProvisionedUser(t *testing.T) {
+	// Same endpoint, but for an externally-provisioned user — the
+	// idpName / idpId fields are populated rather than null.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"userId":                  "u-2",
+			"email":                   "bob@auth.example.com",
+			"username":                "bob",
+			"name":                    "Bob the External",
+			"type":                    "oidc",
+			"twoFactorEnabled":        true,
+			"twoFactorSetupRequested": false,
+			"emailVerified":           true,
+			"serverAdmin":             false,
+			"idpName":                 "Authentik",
+			"idpId":                   1,
+			"dateCreated":             "2026-04-02T10:58:42.649Z",
+		})
+	})
+
+	got, err := c.GetUserByID(context.Background(), "u-2")
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.IDPName == nil || *got.IDPName != "Authentik" {
+		t.Errorf("idpName = %v", got.IDPName)
+	}
+	if got.IDPID == nil || *got.IDPID != 1 {
+		t.Errorf("idpId = %v", got.IDPID)
+	}
+	if got.Name == nil || *got.Name != "Bob the External" {
+		t.Errorf("name = %v", got.Name)
+	}
+	if got.ServerAdmin {
+		t.Errorf("serverAdmin should be false")
+	}
+}
+
+func TestGetUserByID_PropagatesForbidden(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusForbidden, nil)
+	})
+	if _, err := c.GetUserByID(context.Background(), "u-1"); err == nil {
+		t.Fatal("expected error on 403")
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

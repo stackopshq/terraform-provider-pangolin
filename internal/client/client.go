@@ -2211,6 +2211,52 @@ func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
 	return wrapper.Orgs, nil
 }
 
+// RootUserDetail is the wire shape of GET /user/{userId} — the root
+// (cross-org) single-user lookup. Distinct from [User] (per-org list
+// shape) in two ways: it uses `userId` instead of `id` as the JSON
+// key, and it surfaces fields not visible in the org-scoped variants:
+//
+//   - ServerAdmin — true for users with server-admin scope (the
+//     sentinel identifying a "root" account).
+//   - TwoFactorSetupRequested — the request-side flag flipped by
+//     [Client.SetUser2FAStatus]; the org-scoped User struct only
+//     carries TwoFactorEnabled (whether 2FA is actually set up).
+//   - IDPName / IDPID — nullable. Internal users have both nil;
+//     external IDP-provisioned users carry a name + numeric ID.
+//
+// Root-only — fails with HTTP 403 on a non-admin key.
+type RootUserDetail struct {
+	UserID                  string  `json:"userId"`
+	Email                   string  `json:"email"`
+	Username                string  `json:"username"`
+	Name                    *string `json:"name"`
+	Type                    string  `json:"type"`
+	TwoFactorEnabled        bool    `json:"twoFactorEnabled"`
+	TwoFactorSetupRequested bool    `json:"twoFactorSetupRequested"`
+	EmailVerified           bool    `json:"emailVerified"`
+	ServerAdmin             bool    `json:"serverAdmin"`
+	IDPName                 *string `json:"idpName"`
+	IDPID                   *int64  `json:"idpId"`
+	DateCreated             string  `json:"dateCreated"`
+}
+
+// GetUserByID retrieves the root (cross-org) detail of a user by ID.
+// Root-only — fails with HTTP 403 on a non-admin key. Distinct from
+// the org-scoped [Client.GetUser] (`GET /org/{org}/user/{id}`) by
+// the additional fields surfaced on [RootUserDetail] (ServerAdmin,
+// TwoFactorSetupRequested, EmailVerified, DateCreated, IDPName).
+func (c *Client) GetUserByID(ctx context.Context, userID string) (*RootUserDetail, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/user/%s", userID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var out RootUserDetail
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse root user detail: %w", err)
+	}
+	return &out, nil
+}
+
 // --- IDP ---
 
 // IDP represents a Pangolin Identity Provider.
