@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -96,11 +97,30 @@ func (r *ResourceUserResource) Create(ctx context.Context, req resource.CreateRe
 }
 
 func (r *ResourceUserResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	// The Pangolin API does not expose an endpoint to list users assigned to a resource.
-	// Preserve existing state as-is.
 	var state ResourceUserModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	users, err := r.client.ListResourceUsers(ctx, int(state.ResourceID.ValueInt64()))
+	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read resource users", err.Error())
+		return
+	}
+
+	wantUserID := state.UserID.ValueString()
+	for _, user := range users {
+		if user.UserID == wantUserID {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+			return
+		}
+	}
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *ResourceUserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {

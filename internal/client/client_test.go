@@ -3110,6 +3110,138 @@ func TestResetOrgBandwidth_PathAndMethod(t *testing.T) {
 	}
 }
 
+// --- Resource users sub-listing ---
+
+func TestListResourceUsers_DecodesFullShape(t *testing.T) {
+	// Real LIST payload captured live; same wire shape as
+	// SiteResourceUserEntry. Pins the nullable IDP fields to nil.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/resource/13/users" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"users": []map[string]any{
+				{
+					"userId":   "abc123",
+					"username": "noc@example.com",
+					"type":     "internal",
+					"idpName":  nil,
+					"idpId":    nil,
+					"email":    "noc@example.com",
+				},
+			},
+		})
+	})
+
+	users, err := c.ListResourceUsers(context.Background(), 13)
+	if err != nil {
+		t.Fatalf("ListResourceUsers: %v", err)
+	}
+	if len(users) != 1 || users[0].UserID != "abc123" || users[0].Type != "internal" {
+		t.Errorf("users = %+v", users)
+	}
+	if users[0].IDPName != nil || users[0].IDPID != nil {
+		t.Errorf("nullable IDP fields should decode to nil, got %+v", users[0])
+	}
+}
+
+func TestListResourceUsers_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"users": []any{}})
+	})
+	got, err := c.ListResourceUsers(context.Background(), 13)
+	if err != nil || len(got) != 0 {
+		t.Errorf("got %v err=%v", got, err)
+	}
+}
+
+func TestListResourceUsers_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.ListResourceUsers(context.Background(), 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// --- API key actions ---
+
+func TestListAPIKeyActions_DecodesWireShape(t *testing.T) {
+	// Real LIST payload captured live: list under `actions`, with a
+	// `pagination` block tacked on. Each entry is a slim
+	// `{actionId}` row.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/api-key/abc/actions" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"actions": []map[string]any{
+				{"actionId": "getOrg"},
+				{"actionId": "listSites"},
+			},
+			"pagination": map[string]any{"total": 2, "limit": 1000, "offset": 0},
+		})
+	})
+
+	got, err := c.ListAPIKeyActions(context.Background(), "abc")
+	if err != nil {
+		t.Fatalf("ListAPIKeyActions: %v", err)
+	}
+	if len(got) != 2 || got[0].ActionID != "getOrg" || got[1].ActionID != "listSites" {
+		t.Errorf("decoded = %+v", got)
+	}
+}
+
+func TestListAPIKeyActions_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"actions":    []any{},
+			"pagination": map[string]any{"total": 0, "limit": 1000, "offset": 0},
+		})
+	})
+	got, err := c.ListAPIKeyActions(context.Background(), "abc")
+	if err != nil || len(got) != 0 {
+		t.Errorf("got %+v err=%v", got, err)
+	}
+}
+
+func TestSetAPIKeyActions_BodyAndMultiItem(t *testing.T) {
+	// Pin the wire-shape contradiction documented inline: the
+	// OpenAPI says maxItems:1 but the server accepts (and replaces)
+	// a multi-element array. The body shape is the raw `actionIds`
+	// wrapper.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/org/test-org/api-key/abc/actions" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{})
+	})
+	if err := c.SetAPIKeyActions(context.Background(), "abc", []string{"getOrg", "listSites"}); err != nil {
+		t.Fatalf("SetAPIKeyActions: %v", err)
+	}
+	if string(gotBody["actionIds"]) != `["getOrg","listSites"]` {
+		t.Errorf("body actionIds = %s", gotBody["actionIds"])
+	}
+}
+
+func TestSetAPIKeyActions_PropagatesValidationError(t *testing.T) {
+	// Empty array and unknown IDs both produce 400 upstream; the
+	// caller receives a generic error and can read the message.
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusBadRequest, nil)
+	})
+	if err := c.SetAPIKeyActions(context.Background(), "abc", []string{"nonsense"}); err == nil {
+		t.Fatal("expected error on 400")
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
