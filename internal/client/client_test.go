@@ -3404,6 +3404,116 @@ func TestDeleteOrgIDP_PathAndMethod(t *testing.T) {
 	}
 }
 
+// --- 2FA toggle + multi-org list ---
+
+func TestSetUser2FAStatus_BodyAndResponseKeysDiffer(t *testing.T) {
+	// Pin the wire-shape asymmetry observed live: the request body
+	// uses `twoFactorSetupRequested` but the response key drops the
+	// "Setup" segment (`twoFactorRequested`). Tests should pin both
+	// sides so a future refactor noticing the inconsistency doesn't
+	// silently break consumers.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/user/u-1/2fa" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"userId":             "u-1",
+			"twoFactorRequested": true,
+		})
+	})
+
+	got, err := c.SetUser2FAStatus(context.Background(), "u-1", true)
+	if err != nil {
+		t.Fatalf("SetUser2FAStatus: %v", err)
+	}
+	if got.UserID != "u-1" || !got.TwoFactorRequested {
+		t.Errorf("decoded = %+v", got)
+	}
+	if string(gotBody["twoFactorSetupRequested"]) != "true" {
+		t.Errorf("body shape — expected twoFactorSetupRequested=true, got %s", gotBody["twoFactorSetupRequested"])
+	}
+	if _, ok := gotBody["twoFactorRequested"]; ok {
+		t.Error("body must not carry the response-side key twoFactorRequested")
+	}
+}
+
+func TestSetUser2FAStatus_PropagatesForbidden(t *testing.T) {
+	// Root-only endpoint — a non-admin key receives 403. Caller
+	// should see the error pass through.
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusForbidden, nil)
+	})
+	if _, err := c.SetUser2FAStatus(context.Background(), "u-1", false); err == nil {
+		t.Fatal("expected error on 403")
+	}
+}
+
+func TestListOrgs_DecodesFullOrgShape(t *testing.T) {
+	// Real /orgs payload captured live (server-admin token). The
+	// items reuse [Org] — pin the nullable security fields and the
+	// SSH CA strings (kept fake here so gitleaks stays happy).
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/orgs" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"orgs": []map[string]any{
+				{
+					"orgId":                              "stackops",
+					"name":                               "StackOps",
+					"subnet":                             "100.90.128.0/24",
+					"utilitySubnet":                      "100.96.128.0/24",
+					"createdAt":                          "2026-04-02T10:59:04.888Z",
+					"requireTwoFactor":                   nil,
+					"maxSessionLengthHours":              nil,
+					"passwordExpiryDays":                 nil,
+					"settingsLogRetentionDaysRequest":    7,
+					"settingsLogRetentionDaysAccess":     0,
+					"settingsLogRetentionDaysAction":     0,
+					"settingsLogRetentionDaysConnection": 0,
+					"sshCaPrivateKey":                    "FAKE-CA-PRIVATE",
+					"sshCaPublicKey":                     "ssh-ed25519 FAKE-CA-PUBLIC pangolin-ssh-ca-fake",
+					"isBillingOrg":                       nil,
+					"billingOrgId":                       nil,
+				},
+			},
+			"pagination": map[string]any{"total": 1, "limit": 1000, "offset": 0},
+		})
+	})
+
+	got, err := c.ListOrgs(context.Background())
+	if err != nil {
+		t.Fatalf("ListOrgs: %v", err)
+	}
+	if len(got) != 1 || got[0].OrgID != "stackops" {
+		t.Fatalf("decoded = %+v", got)
+	}
+	if got[0].RequireTwoFactor != nil {
+		t.Errorf("requireTwoFactor should decode to nil, got %v", got[0].RequireTwoFactor)
+	}
+	if got[0].SettingsLogRetentionDaysRequest != 7 {
+		t.Errorf("log retention = %d, want 7", got[0].SettingsLogRetentionDaysRequest)
+	}
+	if got[0].SSHCaPrivateKey == "" || got[0].SSHCaPublicKey == "" {
+		t.Errorf("SSH CA strings should decode through")
+	}
+}
+
+func TestListOrgs_PropagatesForbidden(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusForbidden, nil)
+	})
+	if _, err := c.ListOrgs(context.Background()); err == nil {
+		t.Fatal("expected error on 403")
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

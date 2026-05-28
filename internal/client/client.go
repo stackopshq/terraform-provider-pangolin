@@ -2162,6 +2162,55 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	return err
 }
 
+// TwoFAStatus is the trimmed response of POST /user/{id}/2fa.
+// The wire key on the response (`twoFactorRequested`) differs from
+// the request key (`twoFactorSetupRequested`) — kept distinct so
+// the caller sees what the server actually emitted.
+type TwoFAStatus struct {
+	UserID             string `json:"userId"`
+	TwoFactorRequested bool   `json:"twoFactorRequested"`
+}
+
+// SetUser2FAStatus flips the user's 2FA setup flag. Passing `true`
+// marks the user as needing to set up 2FA on next login; passing
+// `false` clears the request. The endpoint is root-only — fails
+// with HTTP 403 `Key does not have root access` on a non-admin key.
+//
+// Companion broken endpoint (documented in repo memory): PUT
+// /org/{org}/user/{id}/client (create OLM client + bind to user)
+// returns 404 HTML on the current enterprise build; the route is
+// not wired even with a root key.
+func (c *Client) SetUser2FAStatus(ctx context.Context, userID string, requested bool) (*TwoFAStatus, error) {
+	body := map[string]any{"twoFactorSetupRequested": requested}
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/user/%s/2fa", userID), body)
+	if err != nil {
+		return nil, err
+	}
+	var out TwoFAStatus
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse 2FA response: %w", err)
+	}
+	return &out, nil
+}
+
+// ListOrgs returns every organization visible to the calling key.
+// Root-only — fails with HTTP 403 on a non-admin key. The response
+// items reuse the existing [Org] struct shape (full payload incl.
+// SSH CA private key, billing fields, log retention settings).
+func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
+	resp, err := c.doRequest(ctx, "GET", "/orgs", nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Orgs []Org `json:"orgs"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse orgs list: %w", err)
+	}
+	return wrapper.Orgs, nil
+}
+
 // --- IDP ---
 
 // IDP represents a Pangolin Identity Provider.
