@@ -180,6 +180,7 @@ func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.Da
 		datasources.NewSiteDataSource,
 		datasources.NewUserDataSource,
 		datasources.NewUserByIDDataSource,
+		datasources.NewOrgsDataSource,
 	}
 }
 

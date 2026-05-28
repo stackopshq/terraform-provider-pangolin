@@ -133,3 +133,4 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_user` | Single user lookup by username + idp_id |
 | `pangolin_user_by_id` | Single user lookup by user_id (root-only; exposes `server_admin`, `email_verified`, `two_factor_setup_requested`) |
 | `pangolin_access_tokens` | List all resource access tokens in the organization |
+| `pangolin_orgs` | List all organizations visible to the calling key (root-only) |
