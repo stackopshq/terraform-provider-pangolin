@@ -3110,6 +3110,62 @@ func TestResetOrgBandwidth_PathAndMethod(t *testing.T) {
 	}
 }
 
+// --- Resource users sub-listing ---
+
+func TestListResourceUsers_DecodesFullShape(t *testing.T) {
+	// Real LIST payload captured live; same wire shape as
+	// SiteResourceUserEntry. Pins the nullable IDP fields to nil.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/resource/13/users" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"users": []map[string]any{
+				{
+					"userId":   "abc123",
+					"username": "noc@example.com",
+					"type":     "internal",
+					"idpName":  nil,
+					"idpId":    nil,
+					"email":    "noc@example.com",
+				},
+			},
+		})
+	})
+
+	users, err := c.ListResourceUsers(context.Background(), 13)
+	if err != nil {
+		t.Fatalf("ListResourceUsers: %v", err)
+	}
+	if len(users) != 1 || users[0].UserID != "abc123" || users[0].Type != "internal" {
+		t.Errorf("users = %+v", users)
+	}
+	if users[0].IDPName != nil || users[0].IDPID != nil {
+		t.Errorf("nullable IDP fields should decode to nil, got %+v", users[0])
+	}
+}
+
+func TestListResourceUsers_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"users": []any{}})
+	})
+	got, err := c.ListResourceUsers(context.Background(), 13)
+	if err != nil || len(got) != 0 {
+		t.Errorf("got %v err=%v", got, err)
+	}
+}
+
+func TestListResourceUsers_NotFound(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.ListResourceUsers(context.Background(), 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

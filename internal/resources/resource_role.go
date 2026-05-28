@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -90,11 +91,30 @@ func (r *ResourceRoleResource) Create(ctx context.Context, req resource.CreateRe
 }
 
 func (r *ResourceRoleResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	// The Pangolin API does not expose an endpoint to list roles assigned to a resource.
-	// Preserve existing state as-is.
 	var state ResourceRoleModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	roles, err := r.client.ListResourceRoles(ctx, int(state.ResourceID.ValueInt64()))
+	if err != nil {
+		if errors.Is(err, client.ErrNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Failed to read resource roles", err.Error())
+		return
+	}
+
+	wantRoleID := state.RoleID.ValueInt64()
+	for _, role := range roles {
+		if int64(role.RoleID) == wantRoleID {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+			return
+		}
+	}
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *ResourceRoleResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {

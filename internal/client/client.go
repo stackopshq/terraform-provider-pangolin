@@ -646,6 +646,37 @@ func (c *Client) ListResourceRoles(ctx context.Context, resourceID int) ([]Resou
 	return wrapper.Roles, nil
 }
 
+// ResourceUserEntry is one entry in the user list returned by
+// GET /resource/{id}/users. Same wire shape as
+// [SiteResourceUserEntry] — kept separate for clarity of domain.
+type ResourceUserEntry struct {
+	UserID   string  `json:"userId"`
+	Username string  `json:"username"`
+	Type     string  `json:"type"`
+	IDPName  *string `json:"idpName"`
+	IDPID    *int64  `json:"idpId"`
+	Email    string  `json:"email"`
+}
+
+// ListResourceUsers returns the users currently bound to an HTTP
+// resource. Response shape is `{users: [...]}`. Used by the
+// resource_user Read to do real drift detection — the OpenAPI
+// quirk is that this endpoint exists and works fine, despite an
+// earlier (now stale) comment in the provider saying otherwise.
+func (c *Client) ListResourceUsers(ctx context.Context, resourceID int) ([]ResourceUserEntry, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/users", resourceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Users []ResourceUserEntry `json:"users"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse resource users: %w", err)
+	}
+	return wrapper.Users, nil
+}
+
 // CreateTargetRequest is the payload for creating a target.
 //
 // All hc* fields and routing extras are optional. Pointer types let
