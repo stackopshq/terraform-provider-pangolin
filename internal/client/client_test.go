@@ -3242,6 +3242,168 @@ func TestSetAPIKeyActions_PropagatesValidationError(t *testing.T) {
 	}
 }
 
+// --- Org-scoped IDP CRUD ---
+
+func TestCreateOrgIDP_PathAndResponse(t *testing.T) {
+	// Real CREATE response captured live: returns the slim
+	// `{idpId, redirectUrl}` shape; the full IDP must be re-fetched
+	// via GetOrgIDP.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PUT" || r.URL.Path != "/v1/org/test-org/idp/oidc" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{
+			"idpId":       2,
+			"redirectUrl": "https://pangolin.example.com/auth/idp/2/oidc/callback",
+		})
+	})
+
+	got, err := c.CreateOrgIDP(context.Background(), "test-org", &CreateIDPRequest{
+		Name:           "probe",
+		ClientID:       "probe-cid",
+		ClientSecret:   "FAKE-CLIENT-SECRET",
+		AuthURL:        "https://example.com/auth",
+		TokenURL:       "https://example.com/token",
+		IdentifierPath: "sub",
+		Scopes:         "openid email",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrgIDP: %v", err)
+	}
+	if got.IDPId != 2 || got.RedirectURL == "" {
+		t.Errorf("decoded = %+v", got)
+	}
+	if string(gotBody["clientId"]) != `"probe-cid"` {
+		t.Errorf("body clientId = %s", gotBody["clientId"])
+	}
+}
+
+func TestListOrgIDPs_DecodesSlimRowShape(t *testing.T) {
+	// The slim row shape captured live: orgId + name + type + variant
+	// + tags. Distinct from the system-wide list (no orgCount /
+	// autoProvision / defaultRoleMapping / defaultOrgMapping).
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/idp" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"idps": []map[string]any{
+				{
+					"idpId":   2,
+					"orgId":   "test-org",
+					"name":    "probe",
+					"type":    "oidc",
+					"variant": "oidc",
+					"tags":    nil,
+				},
+			},
+			"pagination": map[string]any{"total": "2", "limit": 1000, "offset": 0},
+		})
+	})
+	got, err := c.ListOrgIDPs(context.Background(), "test-org")
+	if err != nil {
+		t.Fatalf("ListOrgIDPs: %v", err)
+	}
+	if len(got) != 1 || got[0].IDPId != 2 || got[0].OrgID != "test-org" || got[0].Name != "probe" {
+		t.Errorf("decoded = %+v", got)
+	}
+}
+
+func TestGetOrgIDP_DecodesThreeBlockPayload(t *testing.T) {
+	// The single GET returns three blocks: idp + idpOidcConfig +
+	// idpOrg. Pin the idpOrg shape with nullable role/org mappings —
+	// they decode to nil when unset.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/idp/2" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"idp": map[string]any{
+				"idpId":              2,
+				"name":               "probe",
+				"type":               "oidc",
+				"defaultRoleMapping": nil,
+				"defaultOrgMapping":  nil,
+				"autoProvision":      false,
+				"tags":               nil,
+			},
+			"idpOidcConfig": map[string]any{
+				"idpOauthConfigId": 2,
+				"idpId":            2,
+				"variant":          "oidc",
+				"clientId":         "probe-cid",
+				"clientSecret":     "FAKE-SECRET",
+				"authUrl":          "https://example.com/auth",
+				"tokenUrl":         "https://example.com/token",
+				"identifierPath":   "sub",
+				"emailPath":        "email",
+				"namePath":         "name",
+				"scopes":           "openid email",
+			},
+			"idpOrg": map[string]any{
+				"idpId":       2,
+				"orgId":       "test-org",
+				"roleMapping": nil,
+				"orgMapping":  nil,
+			},
+		})
+	})
+
+	got, err := c.GetOrgIDP(context.Background(), "test-org", 2)
+	if err != nil {
+		t.Fatalf("GetOrgIDP: %v", err)
+	}
+	if got.IDP.IDPId != 2 || got.IDPOidcConfig.ClientID != "probe-cid" {
+		t.Errorf("blocks decode wrong: %+v", got)
+	}
+	if got.IDPOrg.OrgID != "test-org" {
+		t.Errorf("idpOrg block: %+v", got.IDPOrg)
+	}
+	if got.IDPOrg.RoleMapping != nil || got.IDPOrg.OrgMapping != nil {
+		t.Errorf("nullable mappings should be nil, got role=%v org=%v", got.IDPOrg.RoleMapping, got.IDPOrg.OrgMapping)
+	}
+}
+
+func TestUpdateOrgIDP_PathAndBody(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/org/test-org/idp/2/oidc" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"idpId": 2})
+	})
+	if err := c.UpdateOrgIDP(context.Background(), "test-org", 2, &UpdateIDPRequest{Name: "renamed"}); err != nil {
+		t.Fatalf("UpdateOrgIDP: %v", err)
+	}
+	if string(gotBody["name"]) != `"renamed"` {
+		t.Errorf("body name = %s", gotBody["name"])
+	}
+}
+
+func TestDeleteOrgIDP_PathAndMethod(t *testing.T) {
+	hits := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "DELETE" || r.URL.Path != "/v1/org/test-org/idp/2" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.DeleteOrgIDP(context.Background(), "test-org", 2); err != nil {
+		t.Fatalf("DeleteOrgIDP: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d", hits)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

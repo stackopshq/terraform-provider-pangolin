@@ -2325,6 +2325,119 @@ func (c *Client) DeleteIDPOrgPolicy(ctx context.Context, idpID int, orgID string
 	return err
 }
 
+// --- Org-scoped IDP CRUD ---
+//
+// These are the 5 routes under `/org/{orgId}/idp*` — distinct from the
+// system-wide `/idp*` routes already covered above. The org-scoped
+// variants auto-bind the IDP to the calling org at creation time, so
+// they replace the two-step `pangolin_idp` + `pangolin_idp_org`
+// workflow with a single resource. Probed live on the enterprise
+// tenant:
+//
+//   - PUT  /org/{org}/idp/oidc     → CreateOrgIDP (auto-bind)
+//   - GET  /org/{org}/idp          → ListOrgIDPs (org-scoped slim list)
+//   - GET  /org/{org}/idp/{id}     → GetOrgIDP (with `idpOrg` mapping block)
+//   - POST /org/{org}/idp/{id}/oidc → UpdateOrgIDP
+//   - DELETE /org/{org}/idp/{id}   → DeleteOrgIDP
+//
+// The list endpoint emits a slim row shape (no orgCount / autoProvision
+// — see [OrgIDPListItem]). Single GET wraps three blocks together —
+// the org-binding row lives in `idpOrg`.
+
+// OrgIDPListItem is the slim row returned by the org-scoped list.
+// Differs from [IDP] (system-wide list) by carrying the binding `orgId`
+// and dropping the `orgCount` / `autoProvision` / `defaultRoleMapping`
+// / `defaultOrgMapping` fields.
+type OrgIDPListItem struct {
+	IDPId   int    `json:"idpId"`
+	OrgID   string `json:"orgId"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Variant string `json:"variant,omitempty"`
+	Tags    string `json:"tags"`
+}
+
+// OrgIDPDetail wraps the three blocks returned by the org-scoped
+// single GET. `IDPOrg` carries the per-org binding settings
+// (`roleMapping`, `orgMapping`) that the system-wide GET puts in a
+// separate `idp_org_policy` flow.
+type OrgIDPDetail struct {
+	IDP           IDP           `json:"idp"`
+	IDPOidcConfig IDPOidcConfig `json:"idpOidcConfig"`
+	IDPOrg        OrgIDPBindRow `json:"idpOrg"`
+}
+
+// OrgIDPBindRow is the org-binding metadata embedded in the
+// single-GET response. Mirrors [IDPOrgPolicy] but lives inside the
+// detail payload rather than as a standalone row.
+type OrgIDPBindRow struct {
+	IDPId       int     `json:"idpId"`
+	OrgID       string  `json:"orgId"`
+	RoleMapping *string `json:"roleMapping"`
+	OrgMapping  *string `json:"orgMapping"`
+}
+
+// CreateOrgIDP creates an OIDC IDP auto-bound to the given org. The
+// request body has the same shape as [CreateIDPRequest] — the only
+// difference is the path. Response mirrors [CreateIDPResponse]
+// (`{idpId, redirectUrl}`).
+func (c *Client) CreateOrgIDP(ctx context.Context, orgID string, req *CreateIDPRequest) (*CreateIDPResponse, error) {
+	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/idp/oidc", orgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var result CreateIDPResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse org IDP create response: %w", err)
+	}
+	return &result, nil
+}
+
+// ListOrgIDPs returns the IDPs bound to the given org. Empty list
+// means none of the system-wide IDPs are bound to this org.
+func (c *Client) ListOrgIDPs(ctx context.Context, orgID string) ([]OrgIDPListItem, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/idp", orgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		IDPs []OrgIDPListItem `json:"idps"`
+	}
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse org IDPs list: %w", err)
+	}
+	return result.IDPs, nil
+}
+
+// GetOrgIDP retrieves the full IDP detail (incl. OIDC config and the
+// per-org binding row) for an IDP bound to the given org.
+func (c *Client) GetOrgIDP(ctx context.Context, orgID string, idpID int) (*OrgIDPDetail, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/idp/%d", orgID, idpID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var result OrgIDPDetail
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse org IDP detail: %w", err)
+	}
+	return &result, nil
+}
+
+// UpdateOrgIDP updates the OIDC config of an org-scoped IDP. Same
+// body shape as [UpdateIDPRequest]; response is the trimmed
+// `{idpId}` only — fetch with [Client.GetOrgIDP] if the full payload
+// is needed.
+func (c *Client) UpdateOrgIDP(ctx context.Context, orgID string, idpID int, req *UpdateIDPRequest) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/idp/%d/oidc", orgID, idpID), req)
+	return err
+}
+
+// DeleteOrgIDP unbinds and deletes an IDP from the given org.
+func (c *Client) DeleteOrgIDP(ctx context.Context, orgID string, idpID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s/idp/%d", orgID, idpID), nil)
+	return err
+}
+
 // GetIDPOrgPolicy retrieves the IDP policy for a specific org (via list + filter).
 func (c *Client) GetIDPOrgPolicy(ctx context.Context, idpID int, orgID string) (*IDPOrgPolicy, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/idp/%d/org", idpID), nil)
