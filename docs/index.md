@@ -108,6 +108,7 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_invitation` | Pending organization invitation |
 | `pangolin_user_role` | Additional (cumulative) role binding on a user |
 | `pangolin_resource_access_token` | Bearer access token bound to an HTTP resource |
+| `pangolin_api_key_actions` | Set of actions (permissions) granted to an API key |
 
 ## Data Sources
 

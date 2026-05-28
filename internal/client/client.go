@@ -1460,6 +1460,56 @@ func (c *Client) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 	return err
 }
 
+// APIKeyAction is one row of the action list bound to an API key.
+// The wire shape is intentionally minimal — a single `actionId`
+// per row, which is a server-defined camelCase operation name
+// (e.g. `getOrg`, `listSites`, `createResource`). The catalog is
+// closed and not introspectable from the spec; the OpenAPI
+// `operationId` field is empty for every route in the live spec.
+type APIKeyAction struct {
+	ActionID string `json:"actionId"`
+}
+
+// ListAPIKeyActions returns the actions currently bound to an API
+// key, in upstream insertion order. Response shape is
+// `{actions: [...], pagination: {...}}`; the pagination block
+// surfaces a `total` count and a `limit` of 1000 by default which is
+// generous enough to ignore.
+func (c *Client) ListAPIKeyActions(ctx context.Context, apiKeyID string) ([]APIKeyAction, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/api-key/%s/actions", c.OrgID, apiKeyID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Actions []APIKeyAction `json:"actions"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse api key actions: %w", err)
+	}
+	return wrapper.Actions, nil
+}
+
+// SetAPIKeyActions replaces the set of actions bound to an API key
+// with the given list. Live constraints observed on the enterprise
+// tenant (the OpenAPI advertises a different schema; the spec is
+// wrong):
+//   - The input list must be non-empty. Empty arrays are rejected
+//     with HTTP 400 `Validation error: Invalid input: expected
+//     string, received undefined at "actionIds[0]"`. To "clear" the
+//     actions on a key, delete the key instead.
+//   - OpenAPI says `maxItems: 1` but the server happily accepts a
+//     multi-element array and replaces the full set in one call.
+//   - The action IDs are not validated against the OpenAPI routes —
+//     they form a closed server-side enum (camelCase operation
+//     names like `getOrg`, `listSites`). Unknown IDs return HTTP 400
+//     `One or more actions do not exist`; surface as a plain error
+//     so callers can read the message.
+func (c *Client) SetAPIKeyActions(ctx context.Context, apiKeyID string, actionIDs []string) error {
+	body := map[string]any{"actionIds": actionIDs}
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/api-key/%s/actions", c.OrgID, apiKeyID), body)
+	return err
+}
+
 // --- OLM Clients ---
 
 // ClientDefaults represents the response from pick-client-defaults.
