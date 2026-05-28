@@ -1856,6 +1856,36 @@ func (c *Client) ListSiteResources(ctx context.Context) ([]SiteResource, error) 
 	return siteResourcesResp.SiteResources, nil
 }
 
+// ListSiteResourcesForSite returns the private site resources attached
+// to a specific site. The upstream payload leaks the SQL join shape —
+// each item is a struct of `{siteNetworks, networks, siteResources}`
+// where the inner `siteResources` key is the actual SiteResource entity.
+// This helper unwraps and returns a clean `[]SiteResource`.
+//
+// Marginal value vs the org-wide [Client.ListSiteResources] for most
+// callers — the same filtering is achievable in HCL via `for x in
+// data.pangolin_site_resources.all.site_resources : x if x.site_id == N`.
+// Exposed mainly to round out coverage of the API surface.
+func (c *Client) ListSiteResourcesForSite(ctx context.Context, siteID int) ([]SiteResource, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/site/%d/resources", c.OrgID, siteID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		SiteResources []struct {
+			SiteResources SiteResource `json:"siteResources"`
+		} `json:"siteResources"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse per-site resources: %w", err)
+	}
+	out := make([]SiteResource, 0, len(wrapper.SiteResources))
+	for _, row := range wrapper.SiteResources {
+		out = append(out, row.SiteResources)
+	}
+	return out, nil
+}
+
 // --- Organizations ---
 
 // Org represents a Pangolin organization.
@@ -1957,6 +1987,16 @@ func (c *Client) UpdateOrg(ctx context.Context, orgID string, req *UpdateOrgRequ
 // DeleteOrg deletes an organization by ID.
 func (c *Client) DeleteOrg(ctx context.Context, orgID string) error {
 	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s", orgID), nil)
+	return err
+}
+
+// ResetOrgBandwidth wipes the bandwidth counters tracked per site for
+// an organization. The endpoint is fire-and-forget (response body is
+// `data: {}`); intended for admin / billing operations and exposed
+// here to round out organization-level coverage. Not surfaced as a
+// Terraform resource — the action is imperative, not declarative.
+func (c *Client) ResetOrgBandwidth(ctx context.Context, orgID string) error {
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/reset-bandwidth", orgID), map[string]any{})
 	return err
 }
 
@@ -2256,6 +2296,45 @@ func (c *Client) GetDomain(ctx context.Context, orgID, domainID string) (*Domain
 		return nil, fmt.Errorf("failed to parse domain: %w", err)
 	}
 	return &domain, nil
+}
+
+// PatchDomainRequest is the body for the narrow PATCH endpoint.
+// The OpenAPI does not advertise a request schema; probed live, the
+// only two accepted keys are `certResolver` (string, nullable) and
+// `preferWildcardCert` (bool). Sending any other key — including
+// `baseDomain` / `type` / `verified` — fails the validator with
+// `Unrecognized key: "..."` (HTTP 400). Pointer types preserve the
+// distinction between "leave unchanged" (nil — omitted from the
+// body) and "set to null/false" (non-nil).
+type PatchDomainRequest struct {
+	CertResolver       *string `json:"certResolver,omitempty"`
+	PreferWildcardCert *bool   `json:"preferWildcardCert,omitempty"`
+}
+
+// PatchDomainResponse is the trimmed payload returned by the PATCH
+// endpoint. The API echoes only the two updatable fields plus the
+// domain ID, not the full Domain entity.
+type PatchDomainResponse struct {
+	DomainID           string  `json:"domainId"`
+	CertResolver       *string `json:"certResolver"`
+	PreferWildcardCert bool    `json:"preferWildcardCert"`
+}
+
+// PatchDomain updates the cert-resolver settings on a domain. The
+// upstream endpoint accepts only `certResolver` and
+// `preferWildcardCert`; everything else is rejected with a 400. Use
+// [Client.GetDomain] after the call if the full updated Domain
+// payload is needed — the PATCH response is intentionally narrow.
+func (c *Client) PatchDomain(ctx context.Context, orgID, domainID string, req *PatchDomainRequest) (*PatchDomainResponse, error) {
+	resp, err := c.doRequest(ctx, "PATCH", fmt.Sprintf("/org/%s/domain/%s", orgID, domainID), req)
+	if err != nil {
+		return nil, err
+	}
+	var out PatchDomainResponse
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse PatchDomain response: %w", err)
+	}
+	return &out, nil
 }
 
 // ListDomainDNSRecords retrieves the DNS records configured for a

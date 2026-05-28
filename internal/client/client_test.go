@@ -2959,6 +2959,157 @@ func TestDeleteResourceAccessToken_PathAndMethod(t *testing.T) {
 	}
 }
 
+// --- Per-site SR listing / domain PATCH / org reset-bandwidth ---
+
+func TestListSiteResourcesForSite_UnwrapsJoinShape(t *testing.T) {
+	// Real wire shape captured live: each row of the outer
+	// `siteResources` array is itself a struct of three joined
+	// tables. The inner `siteResources` key holds the actual entity
+	// — the unwrapping logic is what we're pinning here.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/site/5/resources" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"siteResources": []map[string]any{
+				{
+					"siteNetworks": map[string]any{"siteId": 5, "networkId": 5},
+					"networks":     map[string]any{"networkId": 5, "scope": "resource"},
+					"siteResources": map[string]any{
+						"siteResourceId": 7,
+						"name":           "demo",
+						"mode":           "cidr",
+						"destination":    "10.0.0.0/24",
+					},
+				},
+				{
+					"siteResources": map[string]any{
+						"siteResourceId": 8,
+						"name":           "demo2",
+						"mode":           "cidr",
+						"destination":    "10.0.1.0/24",
+					},
+				},
+			},
+		})
+	})
+
+	got, err := c.ListSiteResourcesForSite(context.Background(), 5)
+	if err != nil {
+		t.Fatalf("ListSiteResourcesForSite: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].SiteResourceID != 7 || got[0].Name != "demo" {
+		t.Errorf("first entry not unwrapped: %+v", got[0])
+	}
+	if got[1].SiteResourceID != 8 {
+		t.Errorf("second entry: %+v", got[1])
+	}
+}
+
+func TestListSiteResourcesForSite_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"siteResources": []any{}})
+	})
+	got, err := c.ListSiteResourcesForSite(context.Background(), 5)
+	if err != nil || len(got) != 0 {
+		t.Errorf("got %v err=%v", got, err)
+	}
+}
+
+func TestPatchDomain_BodyAndResponse(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" || r.URL.Path != "/v1/org/test-org/domain/dom-1" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"domainId":           "dom-1",
+			"certResolver":       nil,
+			"preferWildcardCert": false,
+		})
+	})
+
+	resolver := "letsencrypt"
+	wildcard := true
+	got, err := c.PatchDomain(context.Background(), "test-org", "dom-1", &PatchDomainRequest{
+		CertResolver:       &resolver,
+		PreferWildcardCert: &wildcard,
+	})
+	if err != nil {
+		t.Fatalf("PatchDomain: %v", err)
+	}
+	if got.DomainID != "dom-1" || got.CertResolver != nil || got.PreferWildcardCert {
+		t.Errorf("decoded response: %+v", got)
+	}
+	if string(gotBody["certResolver"]) != `"letsencrypt"` {
+		t.Errorf("certResolver body = %s", gotBody["certResolver"])
+	}
+	if string(gotBody["preferWildcardCert"]) != "true" {
+		t.Errorf("preferWildcardCert body = %s", gotBody["preferWildcardCert"])
+	}
+}
+
+func TestPatchDomain_OmitsUnsetFields(t *testing.T) {
+	// The pointer-with-omitempty pattern must preserve the distinction
+	// between "not in body" and "explicit null/false" — sending
+	// `preferWildcardCert: false` when the field was supposed to be
+	// untouched would silently flip the upstream value.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"domainId": "dom-1", "certResolver": nil, "preferWildcardCert": false,
+		})
+	})
+
+	resolver := "letsencrypt"
+	if _, err := c.PatchDomain(context.Background(), "test-org", "dom-1", &PatchDomainRequest{
+		CertResolver: &resolver,
+	}); err != nil {
+		t.Fatalf("PatchDomain: %v", err)
+	}
+	if _, ok := gotBody["preferWildcardCert"]; ok {
+		t.Errorf("preferWildcardCert should be omitted when nil, got %s", gotBody["preferWildcardCert"])
+	}
+}
+
+func TestPatchDomain_RejectsUnknownKey(t *testing.T) {
+	// Live behavior: the API surfaces unknown keys as 400. Caller
+	// receives a generic error from doRequest, which suffices.
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusBadRequest, nil)
+	})
+	if _, err := c.PatchDomain(context.Background(), "test-org", "dom-1", &PatchDomainRequest{}); err == nil {
+		t.Fatal("expected error on 400")
+	}
+}
+
+func TestResetOrgBandwidth_PathAndMethod(t *testing.T) {
+	hits := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != "POST" || r.URL.Path != "/v1/org/test-org/reset-bandwidth" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{})
+	})
+	if err := c.ResetOrgBandwidth(context.Background(), "test-org"); err != nil {
+		t.Fatalf("ResetOrgBandwidth: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("hits = %d", hits)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
