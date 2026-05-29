@@ -3606,6 +3606,160 @@ func TestGetUserByID_PropagatesForbidden(t *testing.T) {
 	}
 }
 
+// --- User devices list (shape inferred from sibling /clients endpoint) ---
+
+func TestListUserDevices_EmptyPage(t *testing.T) {
+	// The only payload the tenant has ever returned for this endpoint:
+	// empty devices, pagination at {total:0, page:1, pageSize:20}.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/user-devices" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"devices": []any{},
+			"pagination": map[string]any{
+				"total": 0, "page": 1, "pageSize": 20,
+			},
+		})
+	})
+	got, err := c.ListUserDevices(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListUserDevices: %v", err)
+	}
+	if got.Pagination.Total != 0 || got.Pagination.Page != 1 || got.Pagination.PageSize != 20 {
+		t.Errorf("pagination = %+v", got.Pagination)
+	}
+	if len(got.Devices) != 0 {
+		t.Errorf("devices should be empty, got %+v", got.Devices)
+	}
+}
+
+func TestListUserDevices_DecodesItemShapeInferredFromClientsEndpoint(t *testing.T) {
+	// Item shape pinned from the live /org/{org}/clients payload —
+	// same Pangolin "Client" entity per the OpenAPI tag and the
+	// "Clients retrieved successfully" message. If the upstream ever
+	// changes the user-devices items shape, this fixture catches it.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"devices": []map[string]any{
+				{
+					"clientId":      42,
+					"orgId":         "test-org",
+					"name":          "alice-laptop",
+					"pubKey":        "FAKE-WIREGUARD-PUBKEY",
+					"subnet":        "100.90.128.5/32",
+					"megabytesIn":   123.4,
+					"megabytesOut":  56.7,
+					"orgName":       "Test Org",
+					"type":          "newt",
+					"online":        true,
+					"olmVersion":    nil,
+					"userId":        "u-1",
+					"username":      "alice",
+					"userEmail":     "alice@example.com",
+					"niceId":        "happy-fox-42",
+					"agent":         "macos",
+					"approvalState": "active",
+					"olmArchived":   false,
+					"archived":      false,
+					"blocked":       false,
+				},
+			},
+			"pagination": map[string]any{
+				"total": 1, "page": 1, "pageSize": 20,
+			},
+		})
+	})
+
+	got, err := c.ListUserDevices(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListUserDevices: %v", err)
+	}
+	if len(got.Devices) != 1 {
+		t.Fatalf("len(devices) = %d, want 1", len(got.Devices))
+	}
+	dev := got.Devices[0]
+	if dev.ClientID != 42 || dev.Name != "alice-laptop" || !dev.Online {
+		t.Errorf("scalars: %+v", dev)
+	}
+	if dev.PubKey == nil || *dev.PubKey != "FAKE-WIREGUARD-PUBKEY" {
+		t.Errorf("pubKey should be populated, got %v", dev.PubKey)
+	}
+	if dev.MegabytesIn == nil || *dev.MegabytesIn != 123.4 {
+		t.Errorf("megabytesIn = %v", dev.MegabytesIn)
+	}
+	if dev.OLMVersion != nil {
+		t.Errorf("olmVersion should be nil for non-OLM agents, got %v", *dev.OLMVersion)
+	}
+	if dev.UserID == nil || *dev.UserID != "u-1" {
+		t.Errorf("userId = %v", dev.UserID)
+	}
+}
+
+func TestListUserDevices_EncodesFilterQueryParams(t *testing.T) {
+	// Pins every filter param: integer paging, scalar filters, bool
+	// flag, CSV-joined status array. The wire shape is observable
+	// even when devices is empty — the params are the contract.
+	var gotQuery string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"devices":    []any{},
+			"pagination": map[string]any{"total": 0, "page": 2, "pageSize": 5},
+		})
+	})
+
+	online := true
+	opts := &ListUserDevicesOptions{
+		PageSize: 5,
+		Page:     2,
+		Query:    "alice",
+		SortBy:   "megabytesIn",
+		Order:    "desc",
+		Online:   &online,
+		Agent:    "macos",
+		Status:   []string{"active", "pending"},
+	}
+	if _, err := c.ListUserDevices(context.Background(), opts); err != nil {
+		t.Fatalf("ListUserDevices: %v", err)
+	}
+
+	want := map[string]string{
+		"pageSize": "5",
+		"page":     "2",
+		"query":    "alice",
+		"sort_by":  "megabytesIn",
+		"order":    "desc",
+		"online":   "true",
+		"agent":    "macos",
+		"status":   "active,pending",
+	}
+	for k, v := range want {
+		got, err := url.QueryUnescape(extractParam(gotQuery, k))
+		if err != nil {
+			t.Fatalf("unescape %q: %v", k, err)
+		}
+		if got != v {
+			t.Errorf("query[%s] = %q, want %q", k, got, v)
+		}
+	}
+}
+
+func TestListUserDevices_NilOptionsOmitsQueryString(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Errorf("raw query should be empty when opts nil, got %q", r.URL.RawQuery)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"devices":    []any{},
+			"pagination": map[string]any{"total": 0, "page": 1, "pageSize": 20},
+		})
+	})
+	if _, err := c.ListUserDevices(context.Background(), nil); err != nil {
+		t.Fatalf("ListUserDevices: %v", err)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
