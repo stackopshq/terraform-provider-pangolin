@@ -13,13 +13,30 @@ Manages a Pangolin private site resource (VPN-accessible endpoint).
 ## Example Usage
 
 ```terraform
-resource "pangolin_site_resource" "example" {
-  site_id     = pangolin_site.example.id
-  name        = "internal-db"
-  mode        = "host"
-  destination = "db.internal"
-  alias       = "db.local"
+# L4 tunnel (cidr / host modes) — requires alias + port ranges.
+resource "pangolin_site_resource" "internal_db" {
+  site_id        = pangolin_site.example.id
+  name           = "internal-db"
+  mode           = "host"
+  destination    = "db.internal"
+  alias          = "db.local"
   tcp_port_range = "5432"
+}
+
+# L7 HTTP proxy (http mode) — requires domain_id + subdomain + scheme + destination_port.
+resource "pangolin_site_resource" "app_proxy" {
+  site_id          = pangolin_site.example.id
+  name             = "app-proxy"
+  mode             = "http"
+  destination      = "10.0.0.42"
+  domain_id        = data.pangolin_domains.all.domains[0].id
+  subdomain        = "app"
+  scheme           = "http"
+  destination_port = 8080
+}
+
+output "app_full_domain" {
+  value = pangolin_site_resource.app_proxy.full_domain
 }
 ```
 
@@ -28,17 +45,25 @@ resource "pangolin_site_resource" "example" {
 
 ### Required
 
-- `alias` (String) The internal DNS alias (e.g. 'myservice.internal'). Required by the Pangolin API.
-- `destination` (String) The destination (hostname for 'host' mode, CIDR for 'cidr' mode).
-- `mode` (String) The mode: 'host' or 'cidr'.
+- `destination` (String) The destination: hostname (`host` mode), CIDR (`cidr` mode), or backend IP / hostname (`http` mode).
+- `mode` (String) The mode: `host`, `cidr`, or `http`.
+
+`cidr` / `host` modes are L4 tunnels: the resource requires `alias` and uses `tcp_port_range` / `udp_port_range` for traffic shaping.
+
+`http` mode is an L7 HTTP proxy: the resource requires `domain_id`, `subdomain`, `scheme` (`http` / `https`) and `destination_port`. The server auto-assigns `tcp_port_range = "443,80"`, sets `disable_icmp = true`, and leaves `alias` null.
 - `name` (String) The name of the private resource.
 - `site_id` (Number) The site ID this resource belongs to.
 
 ### Optional
 
+- `alias` (String) The internal DNS alias (e.g. `myservice.internal`). Required for `cidr` / `host` modes; ignored / null for `http` mode.
 - `auth_daemon_mode` (String) Auth daemon mode: 'site' or 'remote'. Defaults to 'site'.
-- `disable_icmp` (Boolean) Whether to disable ICMP. Defaults to false.
-- `tcp_port_range` (String) TCP port range string. '*' for all, '' for none, or specific ports/ranges (e.g. '80,443,8080-8090').
+- `destination_port` (Number) Backend destination port. Required for `mode = http`; ignored for `cidr` / `host`.
+- `disable_icmp` (Boolean) Whether to disable ICMP. The server defaults to `false` for `cidr` / `host` modes and `true` for `mode = http`; leaving this unset lets the server pick.
+- `domain_id` (String) ID of the parent domain (use the `pangolin_domains` data source to discover). Required for `mode = http`; ignored for `cidr` / `host`.
+- `scheme` (String) Protocol scheme of the upstream backend. Required for `mode = http`; ignored for `cidr` / `host`. One of `http`, `https`.
+- `subdomain` (String) Subdomain to host the proxy at — combined with `domain_id` to produce `full_domain`. Required for `mode = http`; ignored for `cidr` / `host`.
+- `tcp_port_range` (String) TCP port range string. `*` for all, `` for none, or specific ports/ranges (e.g. `80,443,8080-8090`). For `mode = http` the server auto-assigns `"443,80"` and ignores any value set here.
 - `udp_port_range` (String) UDP port range string. '*' for all, '' for none, or specific ports/ranges.
 
 ### Read-Only
@@ -46,17 +71,13 @@ resource "pangolin_site_resource" "example" {
 - `alias_address` (String) The resolved alias address, when applicable. Null otherwise.
 - `auth_daemon_port` (Number) The auth daemon port (computed by the API).
 - `default_network_id` (Number) The default network ID, when set by the org configuration. Null when unset.
-- `destination_port` (Number) The destination port behind the proxy. Only set for HTTP-mode resources; null otherwise.
-- `domain_id` (String) The associated domain ID, when applicable. Null otherwise.
 - `enabled` (Boolean) Whether the resource is enabled. Read-only here; the API returns `true` on creation. Use a future toggle endpoint to disable.
 - `full_domain` (String) The full FQDN of the resource. Null otherwise.
 - `id` (Number) The numeric ID of the site resource.
 - `network_id` (Number) The numeric network ID the resource is bound to.
 - `nice_id` (String) The human-readable ID.
-- `proxy_port` (Number) The proxy-facing port. Only set for HTTP-mode resources; null otherwise.
-- `scheme` (String) The protocol scheme (e.g. `http`, `https`). Only set for HTTP-mode resources; null otherwise.
+- `proxy_port` (Number) The proxy-facing port (server-assigned, read-only). The Pangolin API does NOT accept this as a create input — passing it returns `Validation error: Unrecognized key: "proxyPort"`.
 - `ssl` (Boolean) Whether SSL is terminated by the proxy in front of this resource.
-- `subdomain` (String) The subdomain configured on this resource. Null otherwise.
 
 ## Import
 

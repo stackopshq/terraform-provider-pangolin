@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -100,34 +99,43 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"mode": schema.StringAttribute{
-				Description: "The mode: 'host' or 'cidr'.",
-				Required:    true,
+				Description: "The mode: `host`, `cidr`, or `http`.\n\n" +
+					"`cidr` / `host` modes are L4 tunnels: the resource requires `alias` " +
+					"and uses `tcp_port_range` / `udp_port_range` for traffic shaping.\n\n" +
+					"`http` mode is an L7 HTTP proxy: the resource requires `domain_id`, " +
+					"`subdomain`, `scheme` (`http` / `https`) and `destination_port`. The " +
+					"server auto-assigns `tcp_port_range = \"443,80\"`, sets `disable_icmp = " +
+					"true`, and leaves `alias` null.",
+				Required: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 				Validators: []validator.String{
-					stringvalidator.LengthAtLeast(1),
+					stringvalidator.OneOf("host", "cidr", "http"),
 				},
 			},
 			"destination": schema.StringAttribute{
-				Description: "The destination (hostname for 'host' mode, CIDR for 'cidr' mode).",
+				Description: "The destination: hostname (`host` mode), CIDR (`cidr` mode), or backend IP / hostname (`http` mode).",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 				},
 			},
 			"alias": schema.StringAttribute{
-				Description: "The internal DNS alias (e.g. 'myservice.internal'). Required by the Pangolin API.",
-				Required:    true,
-				Validators: []validator.String{
-					stringvalidator.LengthAtLeast(1),
+				Description: "The internal DNS alias (e.g. `myservice.internal`). Required for `cidr` / `host` modes; ignored / null for `http` mode.",
+				Optional:    true,
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"tcp_port_range": schema.StringAttribute{
-				Description: "TCP port range string. '*' for all, '' for none, or specific ports/ranges (e.g. '80,443,8080-8090').",
+				Description: "TCP port range string. `*` for all, `` for none, or specific ports/ranges (e.g. `80,443,8080-8090`). For `mode = http` the server auto-assigns `\"443,80\"` and ignores any value set here.",
 				Optional:    true,
 				Computed:    true,
-				Default:     stringdefault.StaticString("*"),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"udp_port_range": schema.StringAttribute{
 				Description: "UDP port range string. '*' for all, '' for none, or specific ports/ranges.",
@@ -138,10 +146,12 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"disable_icmp": schema.BoolAttribute{
-				Description: "Whether to disable ICMP. Defaults to false.",
+				Description: "Whether to disable ICMP. The server defaults to `false` for `cidr` / `host` modes and `true` for `mode = http`; leaving this unset lets the server pick.",
 				Optional:    true,
 				Computed:    true,
-				Default:     booldefault.StaticBool(false),
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"auth_daemon_mode": schema.StringAttribute{
 				Description: "Auth daemon mode: 'site' or 'remote'. Defaults to 'site'.",
@@ -185,21 +195,26 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"scheme": schema.StringAttribute{
-				Description: "The protocol scheme (e.g. `http`, `https`). Only set for HTTP-mode resources; null otherwise.",
+				Description: "Protocol scheme of the upstream backend. Required for `mode = http`; ignored for `cidr` / `host`. One of `http`, `https`.",
+				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("http", "https"),
+				},
 			},
 			"proxy_port": schema.Int64Attribute{
-				Description: "The proxy-facing port. Only set for HTTP-mode resources; null otherwise.",
+				Description: "The proxy-facing port (server-assigned, read-only). The Pangolin API does NOT accept this as a create input — passing it returns `Validation error: Unrecognized key: \"proxyPort\"`.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
 			"destination_port": schema.Int64Attribute{
-				Description: "The destination port behind the proxy. Only set for HTTP-mode resources; null otherwise.",
+				Description: "Backend destination port. Required for `mode = http`; ignored for `cidr` / `host`.",
+				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
@@ -213,14 +228,16 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"domain_id": schema.StringAttribute{
-				Description: "The associated domain ID, when applicable. Null otherwise.",
+				Description: "ID of the parent domain (use the `pangolin_domains` data source to discover). Required for `mode = http`; ignored for `cidr` / `host`.",
+				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"subdomain": schema.StringAttribute{
-				Description: "The subdomain configured on this resource. Null otherwise.",
+				Description: "Subdomain to host the proxy at — combined with `domain_id` to produce `full_domain`. Required for `mode = http`; ignored for `cidr` / `host`.",
+				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -257,18 +274,22 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 	}
 
 	siteRes, err := r.client.CreateSiteResource(ctx, &client.CreateSiteResourceRequest{
-		Name:           plan.Name.ValueString(),
-		SiteID:         int(plan.SiteID.ValueInt64()),
-		Mode:           plan.Mode.ValueString(),
-		Destination:    plan.Destination.ValueString(),
-		Alias:          plan.Alias.ValueString(),
-		TCPPortRange:   plan.TCPPortRange.ValueString(),
-		UDPPortRange:   plan.UDPPortRange.ValueString(),
-		DisableICMP:    plan.DisableICMP.ValueBool(),
-		AuthDaemonMode: plan.AuthDaemonMode.ValueString(),
-		RoleIDs:        []int{},
-		UserIDs:        []string{},
-		ClientIDs:      []int{},
+		Name:            plan.Name.ValueString(),
+		SiteID:          int(plan.SiteID.ValueInt64()),
+		Mode:            plan.Mode.ValueString(),
+		Destination:     plan.Destination.ValueString(),
+		Alias:           plan.Alias.ValueString(),
+		TCPPortRange:    plan.TCPPortRange.ValueString(),
+		UDPPortRange:    plan.UDPPortRange.ValueString(),
+		DisableICMP:     plan.DisableICMP.ValueBool(),
+		AuthDaemonMode:  plan.AuthDaemonMode.ValueString(),
+		DomainID:        plan.DomainID.ValueString(),
+		Subdomain:       plan.Subdomain.ValueString(),
+		Scheme:          plan.Scheme.ValueString(),
+		DestinationPort: int(plan.DestinationPort.ValueInt64()),
+		RoleIDs:         []int{},
+		UserIDs:         []string{},
+		ClientIDs:       []int{},
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create site resource", err.Error())
@@ -311,17 +332,21 @@ func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateReq
 	}
 
 	siteRes, err := r.client.UpdateSiteResource(ctx, int(plan.ID.ValueInt64()), &client.UpdateSiteResourceRequest{
-		Name:           plan.Name.ValueString(),
-		SiteID:         int(plan.SiteID.ValueInt64()),
-		Destination:    plan.Destination.ValueString(),
-		Alias:          plan.Alias.ValueString(),
-		TCPPortRange:   plan.TCPPortRange.ValueString(),
-		UDPPortRange:   plan.UDPPortRange.ValueString(),
-		DisableICMP:    plan.DisableICMP.ValueBool(),
-		AuthDaemonMode: plan.AuthDaemonMode.ValueString(),
-		RoleIDs:        []int{},
-		UserIDs:        []string{},
-		ClientIDs:      []int{},
+		Name:            plan.Name.ValueString(),
+		SiteID:          int(plan.SiteID.ValueInt64()),
+		Destination:     plan.Destination.ValueString(),
+		Alias:           plan.Alias.ValueString(),
+		TCPPortRange:    plan.TCPPortRange.ValueString(),
+		UDPPortRange:    plan.UDPPortRange.ValueString(),
+		DisableICMP:     plan.DisableICMP.ValueBool(),
+		AuthDaemonMode:  plan.AuthDaemonMode.ValueString(),
+		DomainID:        plan.DomainID.ValueString(),
+		Subdomain:       plan.Subdomain.ValueString(),
+		Scheme:          plan.Scheme.ValueString(),
+		DestinationPort: int(plan.DestinationPort.ValueInt64()),
+		RoleIDs:         []int{},
+		UserIDs:         []string{},
+		ClientIDs:       []int{},
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update site resource", err.Error())
