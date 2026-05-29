@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &AccessTokensDataSource{}
@@ -106,25 +107,15 @@ func (d *AccessTokensDataSource) Read(ctx context.Context, _ datasource.ReadRequ
 			ResourceID:     types.Int64Value(int64(t.ResourceID)),
 			ResourceName:   types.StringValue(t.ResourceName),
 			ResourceNiceID: types.StringValue(t.ResourceNiceID),
-			SiteName:       nullStringFromPtr(t.SiteName),
-			Title:          nullStringFromPtr(t.Title),
-			Description:    nullStringFromPtr(t.Description),
+			SiteName:       tfconv.StringFromPtr(t.SiteName),
+			Title:          tfconv.StringFromPtr(t.Title),
+			Description:    tfconv.StringFromPtr(t.Description),
 			SessionLength:  types.Int64Value(t.SessionLength),
-			ExpiresAt:      nullInt64FromInt64Ptr(t.ExpiresAt),
+			ExpiresAt:      tfconv.Int64FromInt64Ptr(t.ExpiresAt),
 			CreatedAt:      types.Int64Value(t.CreatedAt),
 			TokenHash:      types.StringValue(t.TokenHash),
 		})
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-}
-
-// nullInt64FromInt64Ptr converts *int64 from the wire to types.Int64.
-// Kept local to this file; differs from nullInt64FromIntPtr in
-// site_resources.go which accepts *int.
-func nullInt64FromInt64Ptr(p *int64) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(*p)
 }

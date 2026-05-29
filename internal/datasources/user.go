@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &UserDataSource{}
@@ -99,8 +100,8 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 
 	cfg.ID = types.StringValue(user.UserID)
 	cfg.OrgID = types.StringValue(user.OrgID)
-	cfg.Email = nullableString(user.Email)
-	cfg.Name = nullableString(user.Name)
+	cfg.Email = tfconv.StringFromPtr(user.Email)
+	cfg.Name = tfconv.StringFromPtr(user.Name)
 	cfg.Type = types.StringValue(user.Type)
 	cfg.IsOwner = types.BoolValue(user.IsOwner)
 	cfg.TwoFactorEnabled = types.BoolValue(user.TwoFactorEnabled)

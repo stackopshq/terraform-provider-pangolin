@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var (
@@ -578,50 +579,26 @@ func targetToModel(t *client.Target, prior TargetResourceModel) TargetResourceMo
 		Method:               types.StringValue(t.Method),
 		Enabled:              types.BoolValue(t.Enabled),
 		HCEnabled:            types.BoolValue(t.HCEnabled),
-		HCPath:               nullableString(t.HCPath),
-		HCScheme:             nullableString(t.HCScheme),
-		HCMode:               nullableString(t.HCMode),
-		HCHostname:           nullableString(t.HCHostname),
-		HCPort:               nullableIntFromIntPtr(t.HCPort),
-		HCInterval:           nullableIntFromIntPtr(t.HCInterval),
-		HCUnhealthyInterval:  nullableIntFromIntPtr(t.HCUnhealthyInterval),
-		HCTimeout:            nullableIntFromIntPtr(t.HCTimeout),
+		HCPath:               tfconv.StringFromPtr(t.HCPath),
+		HCScheme:             tfconv.StringFromPtr(t.HCScheme),
+		HCMode:               tfconv.StringFromPtr(t.HCMode),
+		HCHostname:           tfconv.StringFromPtr(t.HCHostname),
+		HCPort:               tfconv.Int64FromIntPtr(t.HCPort),
+		HCInterval:           tfconv.Int64FromIntPtr(t.HCInterval),
+		HCUnhealthyInterval:  tfconv.Int64FromIntPtr(t.HCUnhealthyInterval),
+		HCTimeout:            tfconv.Int64FromIntPtr(t.HCTimeout),
 		HCHeaders:            hcHeaders,
-		HCFollowRedirects:    nullableBool(t.HCFollowRedirects),
-		HCMethod:             nullableString(t.HCMethod),
-		HCStatus:             nullableIntFromIntPtr(t.HCStatus),
-		HCTLSServerName:      nullableString(t.HCTLSServerName),
-		HCHealthyThreshold:   nullableIntFromIntPtr(t.HCHealthyThreshold),
-		HCUnhealthyThreshold: nullableIntFromIntPtr(t.HCUnhealthyThreshold),
+		HCFollowRedirects:    tfconv.BoolFromPtr(t.HCFollowRedirects),
+		HCMethod:             tfconv.StringFromPtr(t.HCMethod),
+		HCStatus:             tfconv.Int64FromIntPtr(t.HCStatus),
+		HCTLSServerName:      tfconv.StringFromPtr(t.HCTLSServerName),
+		HCHealthyThreshold:   tfconv.Int64FromIntPtr(t.HCHealthyThreshold),
+		HCUnhealthyThreshold: tfconv.Int64FromIntPtr(t.HCUnhealthyThreshold),
 		HCHealth:             types.StringValue(t.HCHealth),
-		Path:                 nullableString(t.Path),
-		PathMatchType:        nullableString(t.PathMatchType),
-		RewritePath:          nullableString(t.RewritePath),
-		RewritePathType:      nullableString(t.RewritePathType),
-		Priority:             nullableIntFromIntPtr(t.Priority),
+		Path:                 tfconv.StringFromPtr(t.Path),
+		PathMatchType:        tfconv.StringFromPtr(t.PathMatchType),
+		RewritePath:          tfconv.StringFromPtr(t.RewritePath),
+		RewritePathType:      tfconv.StringFromPtr(t.RewritePathType),
+		Priority:             tfconv.Int64FromIntPtr(t.Priority),
 	}
-}
-
-// Small local helpers (these duplicate the datasource helpers but
-// live here to keep the resource self-contained; both packages
-// have their own type system around types.*).
-func nullableString(p *string) types.String {
-	if p == nil {
-		return types.StringNull()
-	}
-	return types.StringValue(*p)
-}
-
-func nullableBool(p *bool) types.Bool {
-	if p == nil {
-		return types.BoolNull()
-	}
-	return types.BoolValue(*p)
-}
-
-func nullableIntFromIntPtr(p *int) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(int64(*p))
 }

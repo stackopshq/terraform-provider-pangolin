@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &SiteResourcesDataSource{}
@@ -132,14 +133,14 @@ func (d *SiteResourcesDataSource) Read(ctx context.Context, _ datasource.ReadReq
 			Enabled:          types.BoolValue(sr.Enabled),
 			SSL:              types.BoolValue(sr.SSL),
 			NetworkID:        types.Int64Value(int64(sr.NetworkID)),
-			DefaultNetworkID: nullInt64FromIntPtr(sr.DefaultNetworkID),
-			Scheme:           nullStringFromPtr(sr.Scheme),
-			ProxyPort:        nullInt64FromIntPtr(sr.ProxyPort),
-			DestinationPort:  nullInt64FromIntPtr(sr.DestinationPort),
-			AliasAddress:     nullStringFromPtr(sr.AliasAddress),
-			DomainID:         nullStringFromPtr(sr.DomainID),
-			Subdomain:        nullStringFromPtr(sr.Subdomain),
-			FullDomain:       nullStringFromPtr(sr.FullDomain),
+			DefaultNetworkID: tfconv.Int64FromIntPtr(sr.DefaultNetworkID),
+			Scheme:           tfconv.StringFromPtr(sr.Scheme),
+			ProxyPort:        tfconv.Int64FromIntPtr(sr.ProxyPort),
+			DestinationPort:  tfconv.Int64FromIntPtr(sr.DestinationPort),
+			AliasAddress:     tfconv.StringFromPtr(sr.AliasAddress),
+			DomainID:         tfconv.StringFromPtr(sr.DomainID),
+			Subdomain:        tfconv.StringFromPtr(sr.Subdomain),
+			FullDomain:       tfconv.StringFromPtr(sr.FullDomain),
 		}
 		if len(sr.SiteIDs) > 0 {
 			item.SiteID = types.Int64Value(int64(sr.SiteIDs[0]))
@@ -150,18 +151,4 @@ func (d *SiteResourcesDataSource) Read(ctx context.Context, _ datasource.ReadReq
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-}
-
-func nullStringFromPtr(p *string) types.String {
-	if p == nil {
-		return types.StringNull()
-	}
-	return types.StringValue(*p)
-}
-
-func nullInt64FromIntPtr(p *int) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(int64(*p))
 }

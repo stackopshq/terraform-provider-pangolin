@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &OrgsDataSource{}
@@ -118,9 +119,9 @@ func (d *OrgsDataSource) Read(ctx context.Context, _ datasource.ReadRequest, res
 			Subnet:                             types.StringValue(o.Subnet),
 			UtilitySubnet:                      types.StringValue(o.UtilitySubnet),
 			CreatedAt:                          types.StringValue(o.CreatedAt),
-			RequireTwoFactor:                   boolPtrToTF(o.RequireTwoFactor),
-			MaxSessionLengthHours:              intPtrToTF64(o.MaxSessionLengthHours),
-			PasswordExpiryDays:                 intPtrToTF64(o.PasswordExpiryDays),
+			RequireTwoFactor:                   tfconv.BoolFromPtr(o.RequireTwoFactor),
+			MaxSessionLengthHours:              tfconv.Int64FromIntPtr(o.MaxSessionLengthHours),
+			PasswordExpiryDays:                 tfconv.Int64FromIntPtr(o.PasswordExpiryDays),
 			SettingsLogRetentionDaysRequest:    types.Int64Value(int64(o.SettingsLogRetentionDaysRequest)),
 			SettingsLogRetentionDaysAccess:     types.Int64Value(int64(o.SettingsLogRetentionDaysAccess)),
 			SettingsLogRetentionDaysAction:     types.Int64Value(int64(o.SettingsLogRetentionDaysAction)),
@@ -133,18 +134,4 @@ func (d *OrgsDataSource) Read(ctx context.Context, _ datasource.ReadRequest, res
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-}
-
-func boolPtrToTF(p *bool) types.Bool {
-	if p == nil {
-		return types.BoolNull()
-	}
-	return types.BoolValue(*p)
-}
-
-func intPtrToTF64(p *int) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(int64(*p))
 }

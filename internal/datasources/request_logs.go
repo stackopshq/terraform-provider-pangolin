@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &RequestLogsDataSource{}
@@ -284,14 +285,14 @@ func (d *RequestLogsDataSource) Read(ctx context.Context, req datasource.ReadReq
 			OrgID:              types.StringValue(e.OrgID),
 			Action:             types.BoolValue(e.Action),
 			Reason:             types.Int64Value(e.Reason),
-			ActorType:          nullableString(e.ActorType),
-			Actor:              nullableString(e.Actor),
-			ActorID:            nullableString(e.ActorID),
+			ActorType:          tfconv.StringFromPtr(e.ActorType),
+			Actor:              tfconv.StringFromPtr(e.Actor),
+			ActorID:            tfconv.StringFromPtr(e.ActorID),
 			ResourceID:         types.Int64Value(e.ResourceID),
-			SiteResourceID:     nullableInt64(e.SiteResourceID),
+			SiteResourceID:     tfconv.Int64FromInt64Ptr(e.SiteResourceID),
 			IP:                 types.StringValue(e.IP),
 			Location:           types.StringValue(e.Location),
-			UserAgent:          nullableString(e.UserAgent),
+			UserAgent:          tfconv.StringFromPtr(e.UserAgent),
 			Metadata:           rawJSONToString(e.Metadata),
 			Headers:            rawJSONToString(e.Headers),
 			Query:              rawJSONToString(e.Query),
@@ -323,20 +324,6 @@ func (d *RequestLogsDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &cfg)...)
-}
-
-func nullableString(p *string) types.String {
-	if p == nil {
-		return types.StringNull()
-	}
-	return types.StringValue(*p)
-}
-
-func nullableInt64(p *int64) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(*p)
 }
 
 // rawJSONToString surfaces a nullable JSON sub-object as a string for
