@@ -1588,6 +1588,137 @@ func (c *Client) ListOLMClients(ctx context.Context) ([]OLMClient, error) {
 	return clientsResp.Clients, nil
 }
 
+// UserDevice is the wire shape of an entry returned by
+// GET /org/{org}/user-devices.
+//
+// The Pangolin server has never populated `devices: []` on this
+// tenant (no end-user device registered yet), so the items shape is
+// inferred from the sibling GET /org/{org}/clients endpoint that
+// shares the "Clients retrieved successfully" message and the same
+// `Client` OpenAPI tag. The 20 scalar fields below all appeared on
+// live Client rows; nullable upstream fields use pointer types.
+//
+// One field omitted on purpose: `sites: []` is empty in the only
+// live sample we've seen. Its element shape is unknown — could be
+// `[]string` (nice IDs), `[]int` (numeric IDs), or `[]SiteRef`. Add
+// it in a follow-up PR once a real value is observable, per the
+// repo's "always probe before typing" rule.
+type UserDevice struct {
+	ClientID      int      `json:"clientId"`
+	OrgID         string   `json:"orgId"`
+	Name          string   `json:"name"`
+	PubKey        *string  `json:"pubKey"`
+	Subnet        string   `json:"subnet"`
+	MegabytesIn   *float64 `json:"megabytesIn"`
+	MegabytesOut  *float64 `json:"megabytesOut"`
+	OrgName       string   `json:"orgName"`
+	Type          string   `json:"type"`
+	Online        bool     `json:"online"`
+	OLMVersion    *string  `json:"olmVersion"`
+	UserID        *string  `json:"userId"`
+	Username      *string  `json:"username"`
+	UserEmail     *string  `json:"userEmail"`
+	NiceID        string   `json:"niceId"`
+	Agent         *string  `json:"agent"`
+	ApprovalState *string  `json:"approvalState"`
+	OLMArchived   bool     `json:"olmArchived"`
+	Archived      bool     `json:"archived"`
+	Blocked       bool     `json:"blocked"`
+}
+
+// UserDevicesPage wraps the list endpoint's pagination payload. The
+// `Total`, `Page`, `PageSize` triplet differs from the org-scoped
+// site-resources / api-keys lists, which use `total / limit /
+// offset`. The framework reads `total` as an int (not a stringified
+// int as on /org/{org}/idp).
+type UserDevicesPage struct {
+	Devices    []UserDevice `json:"devices"`
+	Pagination struct {
+		Total    int `json:"total"`
+		Page     int `json:"page"`
+		PageSize int `json:"pageSize"`
+	} `json:"pagination"`
+}
+
+// ListUserDevicesOptions controls the upstream filter / sort / paging
+// behavior of GET /org/{org}/user-devices. Empty zero values map to
+// "not specified" on the wire — the server then applies its defaults
+// (pageSize=20, page=1, status=[active,pending], order=asc).
+type ListUserDevicesOptions struct {
+	PageSize int
+	Page     int
+	Query    string
+
+	// SortBy is "megabytesIn" or "megabytesOut". Anything else is
+	// passed through and the server will 400.
+	SortBy string
+
+	// Order is "asc" or "desc".
+	Order string
+
+	// Online filters by online status when non-nil.
+	Online *bool
+
+	// Agent filters by device agent. One of "windows", "android",
+	// "cli", "olm", "macos", "ios", "ipados", "unknown".
+	Agent string
+
+	// Status filters by device approval / lifecycle status. Each
+	// entry is one of "active", "pending", "denied", "blocked",
+	// "archived". Comma-joined on the wire — the upstream parses
+	// the CSV.
+	Status []string
+}
+
+// ListUserDevices returns the user-bound device list (page +
+// pagination block). Distinct from [Client.ListOLMClients]: this
+// endpoint lists clients with a user binding (phones, laptops,
+// browsers — see the `agent` enum), while ListOLMClients lists
+// org-level OLM clients with no user association.
+func (c *Client) ListUserDevices(ctx context.Context, opts *ListUserDevicesOptions) (*UserDevicesPage, error) {
+	path := fmt.Sprintf("/org/%s/user-devices", c.OrgID)
+	if opts != nil {
+		params := url.Values{}
+		if opts.PageSize > 0 {
+			params.Set("pageSize", strconv.Itoa(opts.PageSize))
+		}
+		if opts.Page > 0 {
+			params.Set("page", strconv.Itoa(opts.Page))
+		}
+		if opts.Query != "" {
+			params.Set("query", opts.Query)
+		}
+		if opts.SortBy != "" {
+			params.Set("sort_by", opts.SortBy)
+		}
+		if opts.Order != "" {
+			params.Set("order", opts.Order)
+		}
+		if opts.Online != nil {
+			params.Set("online", strconv.FormatBool(*opts.Online))
+		}
+		if opts.Agent != "" {
+			params.Set("agent", opts.Agent)
+		}
+		if len(opts.Status) > 0 {
+			params.Set("status", strings.Join(opts.Status, ","))
+		}
+		if enc := params.Encode(); enc != "" {
+			path += "?" + enc
+		}
+	}
+
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var page UserDevicesPage
+	if err := json.Unmarshal(resp.Data, &page); err != nil {
+		return nil, fmt.Errorf("failed to parse user devices page: %w", err)
+	}
+	return &page, nil
+}
+
 // GetOLMClient retrieves an OLM client by ID.
 func (c *Client) GetOLMClient(ctx context.Context, clientID int) (*OLMClient, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/client/%d", clientID), nil)
