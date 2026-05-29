@@ -854,6 +854,21 @@ type SiteResource struct {
 }
 
 // CreateSiteResourceRequest is the payload for creating a private site resource.
+//
+// Mode-specific fields:
+//
+//   - `cidr` / `host`: needs `Alias` + `TCPPortRange` / `UDPPortRange`.
+//     The HTTP-only fields below are ignored.
+//   - `http`: needs `DomainID`, `Subdomain`, `Scheme` (http|https) and
+//     `DestinationPort`. The server rejects `mode = "http"` without
+//     scheme+destinationPort set with HTTP 400 "HTTP mode requires
+//     scheme (http or https) and a valid destination port". `Alias`
+//     is null in this mode; `TCPPortRange` / `UDPPortRange` are
+//     auto-filled by the server (`"443,80"` and `""` respectively).
+//
+// `proxyPort` is NOT a valid create input despite appearing on the
+// wire response — the server fills it itself (`null` in every
+// observation so far).
 type CreateSiteResourceRequest struct {
 	Name           string   `json:"name"`
 	SiteID         int      `json:"siteId"`
@@ -867,6 +882,12 @@ type CreateSiteResourceRequest struct {
 	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
 	ClientIDs      []int    `json:"clientIds"`
+
+	// HTTP-mode-only fields.
+	DomainID        string `json:"domainId,omitempty"`
+	Subdomain       string `json:"subdomain,omitempty"`
+	Scheme          string `json:"scheme,omitempty"`
+	DestinationPort int    `json:"destinationPort,omitempty"`
 }
 
 // CreateSiteResource creates a new private site resource.
@@ -1299,6 +1320,13 @@ type UpdateSiteResourceRequest struct {
 	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
 	ClientIDs      []int    `json:"clientIds"`
+
+	// HTTP-mode-only fields. Required when the underlying resource
+	// is in `http` mode; ignored for `cidr` / `host`.
+	DomainID        string `json:"domainId,omitempty"`
+	Subdomain       string `json:"subdomain,omitempty"`
+	Scheme          string `json:"scheme,omitempty"`
+	DestinationPort int    `json:"destinationPort,omitempty"`
 }
 
 // UpdateSiteResource updates a private site resource by ID.

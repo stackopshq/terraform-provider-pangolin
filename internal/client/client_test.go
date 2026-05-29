@@ -3890,6 +3890,86 @@ func TestListBlueprints_EmptyList(t *testing.T) {
 	}
 }
 
+// --- site-resource mode=http body shape ---
+
+func TestCreateSiteResource_HTTPModeBodyShape(t *testing.T) {
+	// Pin the request body for an http-mode create. The validator
+	// rejects `mode = "http"` without scheme + destinationPort
+	// (live error: "HTTP mode requires scheme (http or https) and a
+	// valid destination port"). Tests the four http-only fields ride
+	// in the same struct via omitempty without confusing cidr callers.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{
+			"siteResourceId": 8,
+			"mode":           "http",
+			"scheme":         "http",
+			"domainId":       "dom-1",
+			"subdomain":      "tfprobe",
+			"fullDomain":     "tfprobe.example.com",
+		})
+	})
+
+	if _, err := c.CreateSiteResource(context.Background(), &CreateSiteResourceRequest{
+		Name: "http-thing", SiteID: 5, Mode: "http",
+		Destination:     "10.0.0.1",
+		DomainID:        "dom-1",
+		Subdomain:       "tfprobe",
+		Scheme:          "http",
+		DestinationPort: 8080,
+		RoleIDs:         []int{}, UserIDs: []string{}, ClientIDs: []int{},
+	}); err != nil {
+		t.Fatalf("CreateSiteResource: %v", err)
+	}
+
+	if string(gotBody["mode"]) != `"http"` {
+		t.Errorf("mode = %s", gotBody["mode"])
+	}
+	if string(gotBody["scheme"]) != `"http"` || string(gotBody["destinationPort"]) != "8080" {
+		t.Errorf("http-only fields wrong: scheme=%s destinationPort=%s", gotBody["scheme"], gotBody["destinationPort"])
+	}
+	if string(gotBody["domainId"]) != `"dom-1"` || string(gotBody["subdomain"]) != `"tfprobe"` {
+		t.Errorf("domain/subdomain wrong: %s / %s", gotBody["domainId"], gotBody["subdomain"])
+	}
+	// The body must NOT carry `proxyPort` — the server rejects it as
+	// an unrecognized key on create.
+	if _, ok := gotBody["proxyPort"]; ok {
+		t.Errorf("proxyPort must NOT appear in create body, got %s", gotBody["proxyPort"])
+	}
+}
+
+func TestCreateSiteResource_CIDRModeOmitsHTTPFields(t *testing.T) {
+	// Same struct, cidr inputs — confirms the four http-only fields
+	// drop out via omitempty so the cidr code path is untouched.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{
+			"siteResourceId": 9, "mode": "cidr",
+		})
+	})
+
+	if _, err := c.CreateSiteResource(context.Background(), &CreateSiteResourceRequest{
+		Name: "cidr-thing", SiteID: 5, Mode: "cidr",
+		Destination: "10.0.0.0/24",
+		Alias:       "cidr.internal",
+		RoleIDs:     []int{}, UserIDs: []string{}, ClientIDs: []int{},
+	}); err != nil {
+		t.Fatalf("CreateSiteResource: %v", err)
+	}
+
+	for _, k := range []string{"scheme", "destinationPort", "domainId", "subdomain"} {
+		if _, present := gotBody[k]; present {
+			t.Errorf("http-only key %q must be omitted in cidr body, got %s", k, gotBody[k])
+		}
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
