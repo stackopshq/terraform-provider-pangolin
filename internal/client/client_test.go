@@ -3760,6 +3760,136 @@ func TestListUserDevices_NilOptionsOmitsQueryString(t *testing.T) {
 	}
 }
 
+// --- Blueprint coverage ---
+
+func TestApplyBlueprint_PathBodyAndNullData(t *testing.T) {
+	// Real wire behavior: the server returns 201 with `data: null`
+	// — the freshly-minted blueprint ID is NOT echoed back. Apply is
+	// fire-and-forget; callers must list afterwards if they need the
+	// new ID. The body is the raw base64 string in a `blueprint`
+	// wrapper.
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PUT" || r.URL.Path != "/v1/org/test-org/blueprint" {
+			t.Errorf("method/path = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		writeEnvelope(t, w, http.StatusCreated, nil)
+	})
+	if err := c.ApplyBlueprint(context.Background(), "eyJyZXNvdXJjZXMiOnt9fQ=="); err != nil {
+		t.Fatalf("ApplyBlueprint: %v", err)
+	}
+	if string(gotBody["blueprint"]) != `"eyJyZXNvdXJjZXMiOnt9fQ=="` {
+		t.Errorf("body blueprint = %s", gotBody["blueprint"])
+	}
+}
+
+func TestApplyBlueprint_PropagatesValidationError(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusBadRequest, nil)
+	})
+	if err := c.ApplyBlueprint(context.Background(), "bad"); err == nil {
+		t.Fatal("expected error on 400")
+	}
+}
+
+func TestGetBlueprint_DecodesDetailShape(t *testing.T) {
+	// Real wire shape captured live: list-row fields + `message` +
+	// `contents`. `createdAt` is in epoch seconds (not ms — Pangolin
+	// is inconsistent here vs other endpoints; the test pins that).
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/blueprint/42" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"blueprintId": 42,
+			"name":        "linear-general-elver",
+			"source":      "API",
+			"succeeded":   true,
+			"orgId":       "test-org",
+			"createdAt":   1780053358,
+			"message":     "Blueprint applied successfully",
+			"contents":    "{}\n",
+		})
+	})
+
+	got, err := c.GetBlueprint(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetBlueprint: %v", err)
+	}
+	if got.BlueprintID != 42 || got.Name != "linear-general-elver" {
+		t.Errorf("slim fields: %+v", got)
+	}
+	if got.Source != "API" || !got.Succeeded {
+		t.Errorf("source/succeeded: %+v", got)
+	}
+	if got.CreatedAt != 1780053358 {
+		t.Errorf("createdAt should be epoch seconds 1780053358, got %d", got.CreatedAt)
+	}
+	if got.Message != "Blueprint applied successfully" || got.Contents != "{}\n" {
+		t.Errorf("detail fields: %+v", got)
+	}
+}
+
+func TestListBlueprints_DecodesSlimRows(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/blueprints" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"blueprints": []map[string]any{
+				{
+					"blueprintId": 13,
+					"name":        "productive-defenseless-toothpick",
+					"source":      "API",
+					"succeeded":   true,
+					"orgId":       "test-org",
+					"createdAt":   1780053435,
+				},
+				{
+					"blueprintId": 14,
+					"name":        "hoarse-old-fashioned-recovery",
+					"source":      "UI",
+					"succeeded":   false,
+					"orgId":       "test-org",
+					"createdAt":   1780053436,
+				},
+			},
+			"pagination": map[string]any{"total": "2", "limit": 1000, "offset": 0},
+		})
+	})
+
+	got, err := c.ListBlueprints(context.Background())
+	if err != nil {
+		t.Fatalf("ListBlueprints: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	if got[0].Source != "API" || got[1].Source != "UI" {
+		t.Errorf("source variants: %+v", got)
+	}
+	if got[1].Succeeded {
+		t.Errorf("failed apply should decode as succeeded=false, got %+v", got[1])
+	}
+}
+
+func TestListBlueprints_EmptyList(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"blueprints": []any{},
+			"pagination": map[string]any{"total": "0", "limit": 1000, "offset": 0},
+		})
+	})
+	got, err := c.ListBlueprints(context.Background())
+	if err != nil || len(got) != 0 {
+		t.Errorf("got %+v err=%v", got, err)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

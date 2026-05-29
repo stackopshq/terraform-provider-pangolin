@@ -2388,6 +2388,99 @@ func (c *Client) GetUserByID(ctx context.Context, userID string) (*RootUserDetai
 	return &out, nil
 }
 
+// --- Blueprint ---
+//
+// Blueprints are an append-only audit log of declarative "apply"
+// payloads — each PUT records a new entry with an auto-generated
+// pet-name (`productive-defenseless-toothpick`, `linear-general-elver`,
+// …) and never overwrites prior ones. There is no DELETE endpoint;
+// once applied, a blueprint persists. Because of this, the package
+// exposes Apply + Get + List as plain client methods but no
+// Terraform resource — the PUT semantics don't fit declarative state
+// (every Create would mint a new audit record on every plan).
+
+// Blueprint is the slim row shape returned by
+// GET /org/{org}/blueprints. `CreatedAt` is epoch **seconds** here —
+// distinct from the millisecond timestamps used on every other
+// Pangolin list endpoint (`/access-tokens`, `/api-keys`, …).
+type Blueprint struct {
+	BlueprintID int    `json:"blueprintId"`
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	Succeeded   bool   `json:"succeeded"`
+	OrgID       string `json:"orgId"`
+	CreatedAt   int64  `json:"createdAt"`
+}
+
+// BlueprintDetail extends [Blueprint] with the per-entry fields only
+// exposed by the single GET: `Message` (the server's apply outcome
+// text) and `Contents` (the decoded JSON payload that was applied,
+// base64-stripped).
+type BlueprintDetail struct {
+	Blueprint
+	Message  string `json:"message"`
+	Contents string `json:"contents"`
+}
+
+// ApplyBlueprintRequest is the wire body for PUT /org/{org}/blueprint.
+// The `Blueprint` field is a base64-encoded JSON document — the
+// server decodes, parses, and dispatches it through the same code
+// path the Pangolin UI uses for "apply blueprint".
+type ApplyBlueprintRequest struct {
+	Blueprint string `json:"blueprint"`
+}
+
+// ApplyBlueprint applies a base64-encoded JSON document to the org.
+// The blueprint mints a new audit record regardless of whether
+// anything actually changes upstream — repeated identical applies
+// pile up new entries; there is no idempotency guarantee.
+//
+// The server returns 201 with `data: null` on success; the freshly
+// created blueprint's numeric ID is NOT echoed back. Callers needing
+// to identify the new entry should list afterwards and pick the
+// highest `BlueprintID`.
+//
+// Empty / malformed JSON payloads return HTTP 400 with descriptive
+// validation error messages — surfaced as a plain error by
+// [Client.doRequest].
+func (c *Client) ApplyBlueprint(ctx context.Context, base64JSON string) error {
+	body := ApplyBlueprintRequest{Blueprint: base64JSON}
+	_, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/blueprint", c.OrgID), body)
+	return err
+}
+
+// GetBlueprint retrieves a single blueprint audit record by ID,
+// including the raw `Contents` (decoded JSON payload that was
+// applied) and the server's apply `Message`.
+func (c *Client) GetBlueprint(ctx context.Context, blueprintID int) (*BlueprintDetail, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/blueprint/%d", c.OrgID, blueprintID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var out BlueprintDetail
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse blueprint: %w", err)
+	}
+	return &out, nil
+}
+
+// ListBlueprints returns every blueprint audit record for the org,
+// in upstream order (not necessarily sorted by ID — observed live as
+// approximately insertion order but with some interleaving).
+func (c *Client) ListBlueprints(ctx context.Context) ([]Blueprint, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/blueprints", c.OrgID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Blueprints []Blueprint `json:"blueprints"`
+	}
+	if err := json.Unmarshal(resp.Data, &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse blueprints list: %w", err)
+	}
+	return wrapper.Blueprints, nil
+}
+
 // --- IDP ---
 
 // IDP represents a Pangolin Identity Provider.
