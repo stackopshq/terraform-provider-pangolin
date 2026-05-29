@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var (
@@ -395,12 +396,12 @@ func hydrateSiteResourceState(state *SitePrivateResourceModel, siteRes *client.S
 		state.SiteID = types.Int64Value(int64(siteRes.SiteIDs[0]))
 	}
 
-	state.Scheme = nullableString(siteRes.Scheme)
-	state.AliasAddress = nullableString(siteRes.AliasAddress)
-	state.DomainID = nullableString(siteRes.DomainID)
-	state.Subdomain = nullableString(siteRes.Subdomain)
-	state.FullDomain = nullableString(siteRes.FullDomain)
-	state.ProxyPort = nullableIntFromIntPtr(siteRes.ProxyPort)
-	state.DestinationPort = nullableIntFromIntPtr(siteRes.DestinationPort)
-	state.DefaultNetworkID = nullableIntFromIntPtr(siteRes.DefaultNetworkID)
+	state.Scheme = tfconv.StringFromPtr(siteRes.Scheme)
+	state.AliasAddress = tfconv.StringFromPtr(siteRes.AliasAddress)
+	state.DomainID = tfconv.StringFromPtr(siteRes.DomainID)
+	state.Subdomain = tfconv.StringFromPtr(siteRes.Subdomain)
+	state.FullDomain = tfconv.StringFromPtr(siteRes.FullDomain)
+	state.ProxyPort = tfconv.Int64FromIntPtr(siteRes.ProxyPort)
+	state.DestinationPort = tfconv.Int64FromIntPtr(siteRes.DestinationPort)
+	state.DefaultNetworkID = tfconv.Int64FromIntPtr(siteRes.DefaultNetworkID)
 }

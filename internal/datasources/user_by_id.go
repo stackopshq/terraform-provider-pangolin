@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &UserByIDDataSource{}
@@ -105,14 +106,14 @@ func (d *UserByIDDataSource) Read(ctx context.Context, req datasource.ReadReques
 		UserID:                  types.StringValue(user.UserID),
 		Email:                   types.StringValue(user.Email),
 		Username:                types.StringValue(user.Username),
-		Name:                    nullStringFromPtr(user.Name),
+		Name:                    tfconv.StringFromPtr(user.Name),
 		Type:                    types.StringValue(user.Type),
 		TwoFactorEnabled:        types.BoolValue(user.TwoFactorEnabled),
 		TwoFactorSetupRequested: types.BoolValue(user.TwoFactorSetupRequested),
 		EmailVerified:           types.BoolValue(user.EmailVerified),
 		ServerAdmin:             types.BoolValue(user.ServerAdmin),
-		IDPName:                 nullStringFromPtr(user.IDPName),
-		IDPID:                   nullInt64FromInt64Ptr(user.IDPID),
+		IDPName:                 tfconv.StringFromPtr(user.IDPName),
+		IDPID:                   tfconv.Int64FromInt64Ptr(user.IDPID),
 		DateCreated:             types.StringValue(user.DateCreated),
 	}
 

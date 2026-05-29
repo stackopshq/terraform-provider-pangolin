@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &DomainsDataSource{}
@@ -101,10 +102,10 @@ func (d *DomainsDataSource) Read(ctx context.Context, _ datasource.ReadRequest, 
 			Failed:             types.BoolValue(domain.Failed),
 			Tries:              types.Int64Value(int64(domain.Tries)),
 			ConfigManaged:      types.BoolValue(domain.ConfigManaged),
-			CertResolver:       nullableString(domain.CertResolver),
-			CustomCertResolver: nullableString(domain.CustomCertResolver),
+			CertResolver:       tfconv.StringFromPtr(domain.CertResolver),
+			CustomCertResolver: tfconv.StringFromPtr(domain.CustomCertResolver),
 			PreferWildcardCert: types.BoolValue(domain.PreferWildcardCert),
-			ErrorMessage:       nullableString(domain.ErrorMessage),
+			ErrorMessage:       tfconv.StringFromPtr(domain.ErrorMessage),
 		})
 	}
 

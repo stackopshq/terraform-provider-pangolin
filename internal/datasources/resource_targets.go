@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &ResourceTargetsDataSource{}
@@ -179,46 +180,31 @@ func (d *ResourceTargetsDataSource) Read(ctx context.Context, req datasource.Rea
 			SiteType:             types.StringValue(t.SiteType),
 			SiteName:             types.StringValue(t.SiteName),
 			HCEnabled:            types.BoolValue(t.HCEnabled),
-			HCPath:               nullableString(t.HCPath),
-			HCScheme:             nullableString(t.HCScheme),
-			HCMode:               nullableString(t.HCMode),
-			HCHostname:           nullableString(t.HCHostname),
-			HCPort:               nullableIntFromIntPtr(t.HCPort),
-			HCInterval:           nullableIntFromIntPtr(t.HCInterval),
-			HCUnhealthyInterval:  nullableIntFromIntPtr(t.HCUnhealthyInterval),
-			HCTimeout:            nullableIntFromIntPtr(t.HCTimeout),
+			HCPath:               tfconv.StringFromPtr(t.HCPath),
+			HCScheme:             tfconv.StringFromPtr(t.HCScheme),
+			HCMode:               tfconv.StringFromPtr(t.HCMode),
+			HCHostname:           tfconv.StringFromPtr(t.HCHostname),
+			HCPort:               tfconv.Int64FromIntPtr(t.HCPort),
+			HCInterval:           tfconv.Int64FromIntPtr(t.HCInterval),
+			HCUnhealthyInterval:  tfconv.Int64FromIntPtr(t.HCUnhealthyInterval),
+			HCTimeout:            tfconv.Int64FromIntPtr(t.HCTimeout),
 			HCHeaders:            decodeTargetHCHeaders(t.HCHeadersRaw),
-			HCFollowRedirects:    nullableBool(t.HCFollowRedirects),
-			HCMethod:             nullableString(t.HCMethod),
-			HCStatus:             nullableIntFromIntPtr(t.HCStatus),
+			HCFollowRedirects:    tfconv.BoolFromPtr(t.HCFollowRedirects),
+			HCMethod:             tfconv.StringFromPtr(t.HCMethod),
+			HCStatus:             tfconv.Int64FromIntPtr(t.HCStatus),
 			HCHealth:             types.StringValue(t.HCHealth),
-			HCTLSServerName:      nullableString(t.HCTLSServerName),
-			HCHealthyThreshold:   nullableIntFromIntPtr(t.HCHealthyThreshold),
-			HCUnhealthyThreshold: nullableIntFromIntPtr(t.HCUnhealthyThreshold),
-			Path:                 nullableString(t.Path),
-			PathMatchType:        nullableString(t.PathMatchType),
-			RewritePath:          nullableString(t.RewritePath),
-			RewritePathType:      nullableString(t.RewritePathType),
-			Priority:             nullableIntFromIntPtr(t.Priority),
+			HCTLSServerName:      tfconv.StringFromPtr(t.HCTLSServerName),
+			HCHealthyThreshold:   tfconv.Int64FromIntPtr(t.HCHealthyThreshold),
+			HCUnhealthyThreshold: tfconv.Int64FromIntPtr(t.HCUnhealthyThreshold),
+			Path:                 tfconv.StringFromPtr(t.Path),
+			PathMatchType:        tfconv.StringFromPtr(t.PathMatchType),
+			RewritePath:          tfconv.StringFromPtr(t.RewritePath),
+			RewritePathType:      tfconv.StringFromPtr(t.RewritePathType),
+			Priority:             tfconv.Int64FromIntPtr(t.Priority),
 		}
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &cfg)...)
-}
-
-func nullableBool(p *bool) types.Bool {
-	if p == nil {
-		return types.BoolNull()
-	}
-	return types.BoolValue(*p)
-}
-
-// nullableIntFromIntPtr handles a *int (not *int64) returned by the API.
-func nullableIntFromIntPtr(p *int) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(int64(*p))
 }
 
 // decodeTargetHCHeaders parses the JSON-string-encoded hcHeaders

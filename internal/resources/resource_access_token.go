@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var (
@@ -183,9 +184,9 @@ func (r *ResourceAccessTokenResource) Create(ctx context.Context, req resource.C
 	plan.Token = types.StringValue(tok.AccessToken)
 	// tokenHash is not surfaced by the CREATE response.
 	plan.TokenHash = types.StringValue("")
-	plan.Title = nullableStringFromPtr(tok.Title)
-	plan.Description = nullableStringFromPtr(tok.Description)
-	plan.ExpiresAt = nullableInt64FromInt64Ptr(tok.ExpiresAt)
+	plan.Title = tfconv.StringFromPtr(tok.Title)
+	plan.Description = tfconv.StringFromPtr(tok.Description)
+	plan.ExpiresAt = tfconv.Int64FromInt64Ptr(tok.ExpiresAt)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -211,9 +212,9 @@ func (r *ResourceAccessTokenResource) Read(ctx context.Context, req resource.Rea
 	state.SessionLength = types.Int64Value(tok.SessionLength)
 	state.CreatedAt = types.Int64Value(tok.CreatedAt)
 	state.TokenHash = types.StringValue(tok.TokenHash)
-	state.Title = nullableStringFromPtr(tok.Title)
-	state.Description = nullableStringFromPtr(tok.Description)
-	state.ExpiresAt = nullableInt64FromInt64Ptr(tok.ExpiresAt)
+	state.Title = tfconv.StringFromPtr(tok.Title)
+	state.Description = tfconv.StringFromPtr(tok.Description)
+	state.ExpiresAt = tfconv.Int64FromInt64Ptr(tok.ExpiresAt)
 	// token (bearer secret) is preserved from existing state — the list endpoint never exposes it.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -249,31 +250,13 @@ func (r *ResourceAccessTokenResource) ImportState(ctx context.Context, req resou
 	resp.Diagnostics.Append(resp.State.Set(ctx, &ResourceAccessTokenModel{
 		ID:              types.StringValue(tok.AccessTokenID),
 		ResourceID:      types.Int64Value(int64(tok.ResourceID)),
-		Title:           nullableStringFromPtr(tok.Title),
-		Description:     nullableStringFromPtr(tok.Description),
+		Title:           tfconv.StringFromPtr(tok.Title),
+		Description:     tfconv.StringFromPtr(tok.Description),
 		ValidForSeconds: types.Int64Null(),
 		SessionLength:   types.Int64Value(tok.SessionLength),
-		ExpiresAt:       nullableInt64FromInt64Ptr(tok.ExpiresAt),
+		ExpiresAt:       tfconv.Int64FromInt64Ptr(tok.ExpiresAt),
 		CreatedAt:       types.Int64Value(tok.CreatedAt),
 		TokenHash:       types.StringValue(tok.TokenHash),
 		Token:           types.StringValue(""), // not recoverable after creation
 	})...)
-}
-
-// nullableStringFromPtr converts *string from the wire to types.String,
-// mapping nil to null. Kept local to this file to avoid clashing with
-// the similarly-named helpers already used by site_resource / target.
-func nullableStringFromPtr(p *string) types.String {
-	if p == nil {
-		return types.StringNull()
-	}
-	return types.StringValue(*p)
-}
-
-// nullableInt64FromInt64Ptr converts *int64 from the wire to types.Int64.
-func nullableInt64FromInt64Ptr(p *int64) types.Int64 {
-	if p == nil {
-		return types.Int64Null()
-	}
-	return types.Int64Value(*p)
 }

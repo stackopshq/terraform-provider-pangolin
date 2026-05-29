@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var (
@@ -377,6 +378,6 @@ func hydrateOrgIDPState(state *OrgIDPResourceModel, detail *client.OrgIDPDetail)
 	state.EmailPath = types.StringValue(detail.IDPOidcConfig.EmailPath)
 	state.NamePath = types.StringValue(detail.IDPOidcConfig.NamePath)
 	state.Scopes = types.StringValue(detail.IDPOidcConfig.Scopes)
-	state.RoleMapping = nullableStringFromPtr(detail.IDPOrg.RoleMapping)
-	state.OrgMapping = nullableStringFromPtr(detail.IDPOrg.OrgMapping)
+	state.RoleMapping = tfconv.StringFromPtr(detail.IDPOrg.RoleMapping)
+	state.OrgMapping = tfconv.StringFromPtr(detail.IDPOrg.OrgMapping)
 }

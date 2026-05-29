@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
+	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
 var _ datasource.DataSource = &SiteDataSource{}
@@ -115,7 +116,7 @@ func (d *SiteDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	cfg.Online = types.BoolValue(site.Online)
 	cfg.Address = types.StringValue(site.Address)
 	cfg.DockerSocketEnabled = types.BoolValue(site.DockerSocketEnabled)
-	cfg.ExitNodeID = nullableIntFromIntPtr(site.ExitNodeID)
+	cfg.ExitNodeID = tfconv.Int64FromIntPtr(site.ExitNodeID)
 	cfg.PubKey = types.StringValue(site.PubKey)
 	cfg.Subnet = types.StringValue(site.Subnet)
 	cfg.MegabytesIn = types.Float64Value(site.MegabytesIn)
