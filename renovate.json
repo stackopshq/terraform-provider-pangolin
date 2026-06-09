@@ -1,0 +1,104 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScope(deps)"
+  ],
+  "timezone": "Europe/Zurich",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "rebaseWhen": "behind-base-branch",
+  "configMigration": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ],
+    "schedule": []
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on the first day of the month"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Group all gomod minor / patch bumps into one weekly PR.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "go modules (minor + patch)"
+    },
+    {
+      "description": "Keep gomod major bumps as separate PRs — they often need code changes.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "addLabels": [
+        "breaking-change"
+      ]
+    },
+    {
+      "description": "Group GitHub Actions bumps into one weekly PR.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
+      "groupName": "github actions (minor + patch)"
+    },
+    {
+      "description": "Pin GitHub Actions to a digest so a tag move can't silently change CI behavior.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Bump Go toolchain via go.mod's `go` directive in patch+minor only — major Go versions need a manual review.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepNames": [
+        "go"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "terraform-plugin-framework is the load-bearing dependency for every resource / data source — never silent-merge.",
+      "matchPackageNames": [
+        "github.com/hashicorp/terraform-plugin-framework",
+        "github.com/hashicorp/terraform-plugin-framework-validators",
+        "github.com/hashicorp/terraform-plugin-docs"
+      ],
+      "groupName": "terraform-plugin-framework",
+      "automerge": false,
+      "addLabels": [
+        "framework-bump"
+      ]
+    }
+  ]
+}
