@@ -46,6 +46,7 @@ resource "pangolin_client" "retired" {
 
 - `id` (Number) The numeric ID of the client.
 - `nice_id` (String) The human-readable ID of the client.
+- `olm_id` (String) The OLM ID the client authenticates with (paired with `secret`).
 - `online` (Boolean) Whether the client is currently online.
 - `secret` (String, Sensitive) The client secret. Only available at creation time; stored in state.
 
