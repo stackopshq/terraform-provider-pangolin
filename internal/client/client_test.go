@@ -3970,6 +3970,119 @@ func TestCreateSiteResource_CIDRModeOmitsHTTPFields(t *testing.T) {
 	}
 }
 
+// --- Resource.sso tolerant decode (Pangolin 1.19 wire quirk, issue #50) ---
+
+func TestResource_UnmarshalJSON_SSOAsBool(t *testing.T) {
+	// Backward-compat path: Pangolin builds where `sso` is a plain
+	// bool — decode both `true` and `false` cleanly.
+	for _, tc := range []struct {
+		raw  string
+		want bool
+	}{
+		{`{"resourceId":1,"sso":true}`, true},
+		{`{"resourceId":1,"sso":false}`, false},
+	} {
+		var r Resource
+		if err := json.Unmarshal([]byte(tc.raw), &r); err != nil {
+			t.Fatalf("unmarshal %s: %v", tc.raw, err)
+		}
+		if r.SSO != tc.want {
+			t.Errorf("%s: sso = %v, want %v", tc.raw, r.SSO, tc.want)
+		}
+		if r.ResourceID != 1 {
+			t.Errorf("%s: resourceId = %d, want 1", tc.raw, r.ResourceID)
+		}
+	}
+}
+
+func TestResource_UnmarshalJSON_SSOAsNumber(t *testing.T) {
+	// Pangolin 1.19+ wire quirk (issue #50): some server builds emit
+	// `sso` as a JSON number instead of a bool. Zero → false,
+	// non-zero → true, preserving the Go-side bool typing so the TF
+	// resource layer stays unchanged.
+	for _, tc := range []struct {
+		raw  string
+		want bool
+	}{
+		{`{"resourceId":1,"sso":0}`, false},
+		{`{"resourceId":1,"sso":1}`, true},
+		{`{"resourceId":1,"sso":2}`, true}, // any non-zero
+	} {
+		var r Resource
+		if err := json.Unmarshal([]byte(tc.raw), &r); err != nil {
+			t.Fatalf("unmarshal %s: %v", tc.raw, err)
+		}
+		if r.SSO != tc.want {
+			t.Errorf("%s: sso = %v, want %v", tc.raw, r.SSO, tc.want)
+		}
+	}
+}
+
+func TestResource_UnmarshalJSON_SSOAbsentOrNull(t *testing.T) {
+	// Absent or `null` sso must not error — leaves the default
+	// (false) in place.
+	for _, raw := range []string{
+		`{"resourceId":1}`,
+		`{"resourceId":1,"sso":null}`,
+	} {
+		var r Resource
+		if err := json.Unmarshal([]byte(raw), &r); err != nil {
+			t.Fatalf("unmarshal %s: %v", raw, err)
+		}
+		if r.SSO {
+			t.Errorf("%s: sso = true, want false (default)", raw)
+		}
+	}
+}
+
+func TestResource_UnmarshalJSON_SSOInvalidType(t *testing.T) {
+	// A string in the sso slot is neither bool nor int — must
+	// surface as a clear decode error rather than silently falling
+	// back to zero.
+	var r Resource
+	err := json.Unmarshal([]byte(`{"resourceId":1,"sso":"maybe"}`), &r)
+	if err == nil {
+		t.Fatal("expected error decoding string sso, got nil")
+	}
+	if !strings.Contains(err.Error(), "resource.sso") {
+		t.Errorf("error should reference resource.sso, got: %v", err)
+	}
+}
+
+func TestResource_UnmarshalJSON_OtherFieldsUnaffected(t *testing.T) {
+	// Custom UnmarshalJSON must not break the decoding of any
+	// non-sso field. Pin every scalar plus the nullable pointer.
+	raw := `{
+		"resourceId": 42,
+		"niceId": "cheerful-otter-99",
+		"name": "hello",
+		"subdomain": "hi",
+		"fullDomain": "hi.example.com",
+		"domainId": "dom-1",
+		"sso": 1,
+		"ssl": true,
+		"enabled": true,
+		"blockAccess": false,
+		"emailWhitelistEnabled": true,
+		"applyRules": true,
+		"stickySession": false,
+		"tlsServerName": "backend.internal"
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.ResourceID != 42 || r.Name != "hello" || r.NiceID != "cheerful-otter-99" {
+		t.Errorf("scalars wrong: %+v", r)
+	}
+	if !r.SSO || !r.SSL || !r.Enabled || r.BlockAccess || !r.EmailWhitelistEnabled || !r.ApplyRules || r.StickySession {
+		t.Errorf("bool fields wrong: %+v", r)
+	}
+	if r.TLSServerName == nil || *r.TLSServerName != "backend.internal" {
+		t.Errorf("tlsServerName not decoded: %+v", r.TLSServerName)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {

@@ -451,6 +451,39 @@ type Resource struct {
 	TLSServerName         *string `json:"tlsServerName"`
 }
 
+// UnmarshalJSON tolerates the Pangolin 1.19+ wire quirk where `sso`
+// is emitted as a JSON number (0/1) on some server builds instead of
+// a plain bool. Same 1.19 tag on the release; the sub-build patch
+// level determines which shape you get, so the client accepts both
+// and normalises to bool (see issue #50).
+//
+// Zero → false, non-zero → true. Older builds emit bool directly and
+// pass through unchanged.
+func (r *Resource) UnmarshalJSON(data []byte) error {
+	type resourceAlias Resource
+	aux := struct {
+		SSO json.RawMessage `json:"sso"`
+		*resourceAlias
+	}{resourceAlias: (*resourceAlias)(r)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(aux.SSO) == 0 || string(aux.SSO) == "null" {
+		return nil
+	}
+	var b bool
+	if err := json.Unmarshal(aux.SSO, &b); err == nil {
+		r.SSO = b
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(aux.SSO, &n); err != nil {
+		return fmt.Errorf("resource.sso: cannot decode %s as bool or int", aux.SSO)
+	}
+	r.SSO = n != 0
+	return nil
+}
+
 // CreateResourceRequest is the payload for creating an HTTP resource.
 type CreateResourceRequest struct {
 	Name      string  `json:"name"`
