@@ -1564,6 +1564,7 @@ func (c *Client) GetClientDefaults(ctx context.Context) (*ClientDefaults, error)
 type OLMClient struct {
 	ClientID int    `json:"clientId"`
 	NiceID   string `json:"niceId"`
+	OlmID    string `json:"olmId"`
 	Name     string `json:"name"`
 	Online   bool   `json:"online"`
 	Archived bool   `json:"archived"`

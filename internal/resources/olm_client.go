@@ -33,6 +33,7 @@ type OLMClientResource struct {
 type OLMClientResourceModel struct {
 	ID       types.Int64  `tfsdk:"id"`
 	NiceID   types.String `tfsdk:"nice_id"`
+	OlmID    types.String `tfsdk:"olm_id"`
 	Name     types.String `tfsdk:"name"`
 	Online   types.Bool   `tfsdk:"online"`
 	Archived types.Bool   `tfsdk:"archived"`
@@ -62,6 +63,13 @@ func (r *OLMClientResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"nice_id": schema.StringAttribute{
 				Description: "The human-readable ID of the client.",
+				Computed:    true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"olm_id": schema.StringAttribute{
+				Description: "The OLM ID the client authenticates with (paired with `secret`).",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -153,6 +161,7 @@ func (r *OLMClientResource) Create(ctx context.Context, req resource.CreateReque
 	plan.Online = types.BoolValue(olmClient.Online)
 	plan.Archived = types.BoolValue(plan.Archived.ValueBool())
 	plan.Blocked = types.BoolValue(plan.Blocked.ValueBool())
+	plan.OlmID = types.StringValue(defaults.OlmID)
 	// The secret is the olmSecret used during creation (not returned by the API).
 	plan.Secret = types.StringValue(defaults.OlmSecret)
 
@@ -181,6 +190,7 @@ func (r *OLMClientResource) Read(ctx context.Context, req resource.ReadRequest, 
 	state.Online = types.BoolValue(olmClient.Online)
 	state.Archived = types.BoolValue(olmClient.Archived)
 	state.Blocked = types.BoolValue(olmClient.Blocked)
+	state.OlmID = types.StringValue(olmClient.OlmID)
 	// Secret is not returned by Get; preserve existing state value.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -216,6 +226,9 @@ func (r *OLMClientResource) Update(ctx context.Context, req resource.UpdateReque
 	plan.Online = types.BoolValue(olmClient.Online)
 	plan.Archived = types.BoolValue(plan.Archived.ValueBool())
 	plan.Blocked = types.BoolValue(plan.Blocked.ValueBool())
+
+	// olmId is immutable, so its current value is whatever is already in state.
+	plan.OlmID = state.OlmID
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -280,6 +293,7 @@ func (r *OLMClientResource) ImportState(ctx context.Context, req resource.Import
 	resp.Diagnostics.Append(resp.State.Set(ctx, &OLMClientResourceModel{
 		ID:       types.Int64Value(int64(olmClient.ClientID)),
 		NiceID:   types.StringValue(olmClient.NiceID),
+		OlmID:    types.StringValue(olmClient.OlmID),
 		Name:     types.StringValue(olmClient.Name),
 		Online:   types.BoolValue(olmClient.Online),
 		Archived: types.BoolValue(olmClient.Archived),
