@@ -23,3 +23,15 @@ resource "pangolin_site_resource" "app_proxy" {
 output "app_full_domain" {
   value = pangolin_site_resource.app_proxy.full_domain
 }
+
+# SSH-backed site resource (Pangolin 1.19+) — L4 tunnel with PAM push
+# notification MFA.
+resource "pangolin_site_resource" "ssh_bastion" {
+  site_id        = pangolin_site.example.id
+  name           = "ssh-bastion"
+  mode           = "host"
+  destination    = "bastion.internal"
+  alias          = "bastion.local"
+  tcp_port_range = "22"
+  pam_mode       = "push"
+}
