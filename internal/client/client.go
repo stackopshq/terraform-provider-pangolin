@@ -433,14 +433,44 @@ func (c *Client) ListDomains(ctx context.Context) ([]Domain, error) {
 
 // --- Resources (HTTP public) ---
 
+// ResourceHeader is one `{name, value}` request-header injection
+// entry on a resource. Present on the wire on 1.19+.
+type ResourceHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 // Resource represents a Pangolin HTTP resource.
+//
+// Pangolin 1.19 dropped the legacy `http bool` + `protocol` split in
+// favor of a unified `mode` enum (http/ssh/rdp/vnc/tcp/udp) and
+// added a large number of new fields around PAM, auth daemon,
+// maintenance mode, proxy-protocol and resource-policy backing.
+// Older server builds still emit the pre-1.19 fields; every 1.19+
+// addition is `omitempty` in the request struct and safely absent
+// on the response.
 type Resource struct {
-	ResourceID            int     `json:"resourceId"`
-	NiceID                string  `json:"niceId"`
-	Name                  string  `json:"name"`
-	Subdomain             string  `json:"subdomain"`
-	FullDomain            string  `json:"fullDomain"`
-	DomainID              string  `json:"domainId"`
+	// Identity
+	ResourceID   int    `json:"resourceId"`
+	ResourceGuid string `json:"resourceGuid,omitempty"`
+	OrgID        string `json:"orgId,omitempty"`
+	NiceID       string `json:"niceId"`
+	Name         string `json:"name"`
+	Subdomain    string `json:"subdomain"`
+	FullDomain   string `json:"fullDomain"`
+	DomainID     string `json:"domainId"`
+	Wildcard     bool   `json:"wildcard,omitempty"`
+	Health       string `json:"health,omitempty"`
+
+	// Mode / L7 vs L4 (1.19)
+	Mode           string `json:"mode,omitempty"`
+	ProxyPort      *int   `json:"proxyPort,omitempty"`
+	PamMode        string `json:"pamMode,omitempty"`
+	AuthDaemonMode string `json:"authDaemonMode,omitempty"`
+	AuthDaemonPort *int   `json:"authDaemonPort,omitempty"`
+
+	// Access-control legacy inline fields — kept for backwards
+	// compatibility on servers that still populate them directly.
 	SSO                   bool    `json:"sso"`
 	SSL                   bool    `json:"ssl"`
 	Enabled               bool    `json:"enabled"`
@@ -449,6 +479,32 @@ type Resource struct {
 	ApplyRules            bool    `json:"applyRules"`
 	StickySession         bool    `json:"stickySession"`
 	TLSServerName         *string `json:"tlsServerName"`
+
+	// 1.19 additions — routing / auth
+	SetHostHeader *string          `json:"setHostHeader,omitempty"`
+	EnableProxy   *bool            `json:"enableProxy,omitempty"`
+	Headers       []ResourceHeader `json:"headers,omitempty"`
+	SkipToIdpID   *int             `json:"skipToIdpId,omitempty"`
+	PostAuthPath  *string          `json:"postAuthPath,omitempty"`
+
+	// 1.19 additions — proxy-protocol
+	ProxyProtocol        *bool `json:"proxyProtocol,omitempty"`
+	ProxyProtocolVersion *int  `json:"proxyProtocolVersion,omitempty"`
+
+	// 1.19 additions — maintenance mode
+	MaintenanceModeEnabled   *bool   `json:"maintenanceModeEnabled,omitempty"`
+	MaintenanceModeType      string  `json:"maintenanceModeType,omitempty"`
+	MaintenanceTitle         *string `json:"maintenanceTitle,omitempty"`
+	MaintenanceMessage       *string `json:"maintenanceMessage,omitempty"`
+	MaintenanceEstimatedTime *string `json:"maintenanceEstimatedTime,omitempty"`
+
+	// 1.19 additions — resource-policy backing (read-only; the CRUD
+	// routes require a resource-policy-scoped API key and are not
+	// exposed here). `DefaultResourcePolicyID` is auto-assigned by
+	// the server on create; `ResourcePolicyID` is the shared policy
+	// when the user attaches one.
+	ResourcePolicyID        *int `json:"resourcePolicyId,omitempty"`
+	DefaultResourcePolicyID *int `json:"defaultResourcePolicyId,omitempty"`
 }
 
 // UnmarshalJSON tolerates the Pangolin 1.19+ wire quirk where `sso`
@@ -484,13 +540,31 @@ func (r *Resource) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// CreateResourceRequest is the payload for creating an HTTP resource.
+// CreateResourceRequest is the payload for creating a Pangolin
+// resource. Pre-1.19 you only had `http bool` + `protocol` + a
+// domain/subdomain pair; 1.19+ added `mode` (http|tcp|udp) and
+// `proxyPort` for the L4 modes.
+//
+// PAM / auth-daemon knobs (`pamMode`, `authDaemonMode`,
+// `authDaemonPort`) are **not** accepted at Create — the server
+// returns 400 "Unrecognized keys". They belong on the follow-up
+// UpdateResource call, which is what the resource layer does after
+// Create returns.
+//
+// `Subdomain` and `DomainID` use omitempty so an L4 resource
+// creation payload does not carry the empty-string placeholders
+// the server rejects with "Unrecognized keys: subdomain, domainId".
 type CreateResourceRequest struct {
 	Name      string  `json:"name"`
 	HTTP      bool    `json:"http"`
-	Subdomain *string `json:"subdomain"`
-	DomainID  string  `json:"domainId"`
+	Subdomain *string `json:"subdomain,omitempty"`
+	DomainID  string  `json:"domainId,omitempty"`
 	Protocol  string  `json:"protocol"`
+
+	// 1.19+ mode + edge listener port. Sent omitempty so older
+	// server builds keep receiving the pre-1.19 payload unchanged.
+	Mode      string `json:"mode,omitempty"`
+	ProxyPort *int   `json:"proxyPort,omitempty"`
 }
 
 // CreateResource creates a new HTTP resource.
@@ -862,6 +936,7 @@ type SiteResource struct {
 	DisableICMP    bool   `json:"disableIcmp"`
 	AuthDaemonPort int    `json:"authDaemonPort"`
 	AuthDaemonMode string `json:"authDaemonMode"`
+	PamMode        string `json:"pamMode,omitempty"`
 	Enabled        bool   `json:"enabled"`
 	SSL            bool   `json:"ssl"`
 	NetworkID      int    `json:"networkId"`
@@ -912,6 +987,7 @@ type CreateSiteResourceRequest struct {
 	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
+	PamMode        string   `json:"pamMode,omitempty"`
 	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
 	ClientIDs      []int    `json:"clientIds"`
@@ -978,11 +1054,16 @@ type Role struct {
 	OrgID                 string `json:"orgId,omitempty"`
 	OrgName               string `json:"orgName,omitempty"`
 	RequireDeviceApproval bool   `json:"requireDeviceApproval"`
-	AllowSSH              bool   `json:"allowSsh"`
-	SSHSudoMode           string `json:"sshSudoMode,omitempty"`
-	SSHSudoCommandsRaw    string `json:"sshSudoCommands,omitempty"`
-	SSHCreateHomeDir      bool   `json:"sshCreateHomeDir"`
-	SSHUnixGroupsRaw      string `json:"sshUnixGroups,omitempty"`
+	// AllowSSH is a *bool so callers can distinguish "server did not
+	// emit the field" (nil — the 1.19+ Read response no longer surfaces
+	// allowSsh) from an explicit false. The Update/Create requests
+	// keep pointer semantics too, so nil round-trips as "leave alone"
+	// on the wire.
+	AllowSSH           *bool  `json:"allowSsh,omitempty"`
+	SSHSudoMode        string `json:"sshSudoMode,omitempty"`
+	SSHSudoCommandsRaw string `json:"sshSudoCommands,omitempty"`
+	SSHCreateHomeDir   bool   `json:"sshCreateHomeDir"`
+	SSHUnixGroupsRaw   string `json:"sshUnixGroups,omitempty"`
 }
 
 // ParseSSHList decodes one of the JSON-serialized list fields
@@ -1313,7 +1394,10 @@ func (c *Client) UpdateSite(ctx context.Context, siteID int, req *UpdateSiteRequ
 	return &site, nil
 }
 
-// UpdateResourceRequest is the payload for updating an HTTP resource.
+// UpdateResourceRequest is the payload for updating a Pangolin
+// resource. Every field is optional — the server only touches the
+// keys that are present in the payload. Pre-1.19 servers ignore the
+// 1.19-only fields, so it's safe to always send `omitempty`.
 type UpdateResourceRequest struct {
 	Name                  string  `json:"name"`
 	Subdomain             *string `json:"subdomain,omitempty"`
@@ -1325,6 +1409,29 @@ type UpdateResourceRequest struct {
 	ApplyRules            *bool   `json:"applyRules,omitempty"`
 	StickySession         *bool   `json:"stickySession,omitempty"`
 	TLSServerName         *string `json:"tlsServerName,omitempty"`
+
+	// 1.19+ additions — routing / auth. `enableProxy`,
+	// `proxyProtocol` and `proxyProtocolVersion` were probed on the
+	// live 1.19 ent server: POST /resource/{id} answers with
+	// `Unrecognized key`. They stay on the wire struct (Read
+	// surfaces them) but not on the write payload.
+	SetHostHeader *string           `json:"setHostHeader,omitempty"`
+	Headers       *[]ResourceHeader `json:"headers,omitempty"`
+	SkipToIdpID   *int              `json:"skipToIdpId,omitempty"`
+	PostAuthPath  *string           `json:"postAuthPath,omitempty"`
+
+	// 1.19+ additions — maintenance mode
+	MaintenanceModeEnabled   *bool   `json:"maintenanceModeEnabled,omitempty"`
+	MaintenanceModeType      string  `json:"maintenanceModeType,omitempty"`
+	MaintenanceTitle         *string `json:"maintenanceTitle,omitempty"`
+	MaintenanceMessage       *string `json:"maintenanceMessage,omitempty"`
+	MaintenanceEstimatedTime *string `json:"maintenanceEstimatedTime,omitempty"`
+
+	// 1.19+ additions — PAM / auth-daemon (mode is create-only,
+	// so it is not exposed on Update).
+	PamMode        string `json:"pamMode,omitempty"`
+	AuthDaemonMode string `json:"authDaemonMode,omitempty"`
+	AuthDaemonPort *int   `json:"authDaemonPort,omitempty"`
 }
 
 // UpdateResource updates an HTTP resource by ID.
@@ -1350,6 +1457,7 @@ type UpdateSiteResourceRequest struct {
 	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
+	PamMode        string   `json:"pamMode,omitempty"`
 	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
 	ClientIDs      []int    `json:"clientIds"`
@@ -1404,16 +1512,44 @@ func (c *Client) CreateRole(ctx context.Context, req *CreateRoleRequest) (*Role,
 	return &role, nil
 }
 
-// GetRoleByID retrieves a role by ID (via list + filter, no individual Get endpoint).
-func (c *Client) GetRoleByID(ctx context.Context, roleID int) (*Role, error) {
-	roles, err := c.ListRoles(ctx)
+// GetRole retrieves a role by ID via the direct GET /role/{id}
+// endpoint that Pangolin 1.19+ exposes. On older servers (or when
+// the route is not wired) the caller should fall back to
+// GetRoleByID, which handles that automatically.
+func (c *Client) GetRole(ctx context.Context, roleID int) (*Role, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/role/%d", roleID), nil)
 	if err != nil {
 		return nil, err
 	}
-	for _, role := range roles {
-		if role.RoleID == roleID {
-			r := role
-			return &r, nil
+	var role Role
+	if err := json.Unmarshal(resp.Data, &role); err != nil {
+		return nil, fmt.Errorf("failed to parse role: %w", err)
+	}
+	return &role, nil
+}
+
+// GetRoleByID retrieves a role by ID. It prefers the direct
+// GET /role/{id} endpoint introduced in Pangolin 1.19; if the
+// server returns 404 (route not wired on older builds) it falls
+// back to the historical list+filter path via ListRoles. This
+// keeps the client backwards-compatible without paying the extra
+// round-trip on 1.19+ deployments.
+func (c *Client) GetRoleByID(ctx context.Context, roleID int) (*Role, error) {
+	role, err := c.GetRole(ctx, roleID)
+	if err == nil {
+		return role, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	roles, listErr := c.ListRoles(ctx)
+	if listErr != nil {
+		return nil, listErr
+	}
+	for _, r := range roles {
+		if r.RoleID == roleID {
+			out := r
+			return &out, nil
 		}
 	}
 	return nil, fmt.Errorf("role %d: %w", roleID, ErrNotFound)

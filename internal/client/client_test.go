@@ -2171,41 +2171,50 @@ func TestParseSSHList(t *testing.T) {
 	}
 }
 
-func TestGetRoleByID_SSHBastionFields(t *testing.T) {
+// TestGetRoleByID_FallbackViaList pins the pre-1.19 codepath:
+// GET /role/{id} 404s, and the client falls back to /org/{}/roles
+// list+filter. Every field must round-trip through the list handler.
+func TestGetRoleByID_FallbackViaList(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/org/test-org/roles" {
-			t.Errorf("path = %q", r.URL.Path)
+		switch r.URL.Path {
+		case "/v1/role/40632", "/v1/role/40633":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"data":null,"success":false,"error":true,"message":"Not found","status":404}`))
+			return
+		case "/v1/org/test-org/roles":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{
+				"roles": []map[string]any{
+					{
+						"roleId":                40632,
+						"orgId":                 "test-org",
+						"orgName":               "Test Org",
+						"isAdmin":               true,
+						"name":                  "Admin",
+						"description":           "Admin role",
+						"requireDeviceApproval": true,
+						"allowSsh":              true,
+						"sshSudoMode":           "full",
+						"sshSudoCommands":       `["sudo","wheel"]`,
+						"sshCreateHomeDir":      true,
+						"sshUnixGroups":         `["docker","kvm"]`,
+					},
+					{
+						"roleId":                40633,
+						"isAdmin":               nil,
+						"name":                  "Member",
+						"description":           "View only",
+						"requireDeviceApproval": false,
+						"allowSsh":              false,
+						"sshSudoMode":           "none",
+						"sshSudoCommands":       "[]",
+						"sshCreateHomeDir":      true,
+						"sshUnixGroups":         "[]",
+					},
+				},
+			})
+			return
 		}
-		writeEnvelope(t, w, http.StatusOK, map[string]any{
-			"roles": []map[string]any{
-				{
-					"roleId":                40632,
-					"orgId":                 "test-org",
-					"orgName":               "Test Org",
-					"isAdmin":               true,
-					"name":                  "Admin",
-					"description":           "Admin role",
-					"requireDeviceApproval": true,
-					"allowSsh":              true,
-					"sshSudoMode":           "full",
-					"sshSudoCommands":       `["sudo","wheel"]`,
-					"sshCreateHomeDir":      true,
-					"sshUnixGroups":         `["docker","kvm"]`,
-				},
-				{
-					"roleId":                40633,
-					"isAdmin":               nil,
-					"name":                  "Member",
-					"description":           "View only",
-					"requireDeviceApproval": false,
-					"allowSsh":              false,
-					"sshSudoMode":           "none",
-					"sshSudoCommands":       "[]",
-					"sshCreateHomeDir":      true,
-					"sshUnixGroups":         "[]",
-				},
-			},
-		})
+		t.Errorf("unexpected path = %q", r.URL.Path)
 	})
 
 	role, err := c.GetRoleByID(context.Background(), 40632)
@@ -2215,7 +2224,7 @@ func TestGetRoleByID_SSHBastionFields(t *testing.T) {
 	if role.IsAdmin == nil || !*role.IsAdmin {
 		t.Errorf("IsAdmin = %v, want *true", role.IsAdmin)
 	}
-	if !role.AllowSSH || role.SSHSudoMode != "full" {
+	if role.AllowSSH == nil || !*role.AllowSSH || role.SSHSudoMode != "full" {
 		t.Errorf("ssh top-level wrong: %+v", role)
 	}
 	if role.SSHSudoCommandsRaw != `["sudo","wheel"]` {
@@ -2233,6 +2242,102 @@ func TestGetRoleByID_SSHBastionFields(t *testing.T) {
 	}
 	if member.IsAdmin != nil {
 		t.Errorf("IsAdmin = %v, want nil", member.IsAdmin)
+	}
+}
+
+// TestGetRole_DirectHit pins the 1.19+ codepath: GET /role/{id}
+// answers with the role directly, and the client parses every
+// scalar without a fallback round-trip.
+func TestGetRole_DirectHit(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/role/40632" {
+			t.Errorf("path = %q, want /v1/role/40632", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId":                40632,
+			"orgId":                 "test-org",
+			"orgName":               "Test Org",
+			"isAdmin":               true,
+			"name":                  "Admin",
+			"description":           "Admin role",
+			"requireDeviceApproval": true,
+			"allowSsh":              true,
+			"sshSudoMode":           "full",
+			"sshSudoCommands":       `["sudo"]`,
+			"sshCreateHomeDir":      true,
+			"sshUnixGroups":         `["wheel"]`,
+		})
+	})
+
+	role, err := c.GetRole(context.Background(), 40632)
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if role.RoleID != 40632 || role.Name != "Admin" {
+		t.Errorf("scalars wrong: %+v", role)
+	}
+	if role.AllowSSH == nil || !*role.AllowSSH || role.SSHSudoMode != "full" {
+		t.Errorf("ssh top-level wrong: %+v", role)
+	}
+}
+
+// TestGetRole_AllowSSHOmittedFromRead pins the Pangolin 1.19 quirk
+// where the Read response no longer surfaces `allowSsh`. The
+// client-side struct must decode it as nil rather than defaulting
+// to a false that would clobber the user's plan on next apply.
+func TestGetRole_AllowSSHOmittedFromRead(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId":                1,
+			"orgId":                 "test-org",
+			"isAdmin":               true,
+			"name":                  "Admin",
+			"description":           "Admin",
+			"requireDeviceApproval": false,
+			// note: no "allowSsh" key
+			"sshSudoMode":      "full",
+			"sshSudoCommands":  "[]",
+			"sshCreateHomeDir": true,
+			"sshUnixGroups":    "[]",
+		})
+	})
+	role, err := c.GetRole(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if role.AllowSSH != nil {
+		t.Errorf("AllowSSH should stay nil when the server omits the key, got %v", *role.AllowSSH)
+	}
+}
+
+// TestGetRoleByID_DirectHitFast verifies that when GET /role/{id}
+// works on 1.19+, GetRoleByID does NOT round-trip through the
+// list endpoint at all — a hit on the list handler here would
+// mean an unnecessary API call in production.
+func TestGetRoleByID_DirectHitFast(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/org/test-org/roles" {
+			t.Errorf("unexpected fallback to list endpoint")
+		}
+		if r.URL.Path != "/v1/role/77" {
+			t.Errorf("path = %q, want /v1/role/77", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId":                77,
+			"name":                  "cached",
+			"description":           "",
+			"requireDeviceApproval": false,
+			"allowSsh":              false,
+			"sshCreateHomeDir":      false,
+		})
+	})
+
+	role, err := c.GetRoleByID(context.Background(), 77)
+	if err != nil {
+		t.Fatalf("GetRoleByID: %v", err)
+	}
+	if role.RoleID != 77 || role.Name != "cached" {
+		t.Errorf("scalars wrong: %+v", role)
 	}
 }
 
@@ -4080,6 +4185,148 @@ func TestResource_UnmarshalJSON_OtherFieldsUnaffected(t *testing.T) {
 	}
 	if r.TLSServerName == nil || *r.TLSServerName != "backend.internal" {
 		t.Errorf("tlsServerName not decoded: %+v", r.TLSServerName)
+	}
+}
+
+// TestResource_DecodesPre119WireShape pins the historical pre-1.19
+// payload — every 1.19-only field must default to its zero value
+// without failing to decode.
+func TestResource_DecodesPre119WireShape(t *testing.T) {
+	raw := `{
+		"resourceId": 7,
+		"niceId": "old-shape",
+		"name": "legacy",
+		"subdomain": "web",
+		"fullDomain": "web.example.com",
+		"domainId": "dom-1",
+		"sso": true,
+		"ssl": true,
+		"enabled": true,
+		"blockAccess": false,
+		"emailWhitelistEnabled": false,
+		"applyRules": false,
+		"stickySession": false,
+		"tlsServerName": null
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.Mode != "" || r.PamMode != "" || r.AuthDaemonMode != "" {
+		t.Errorf("1.19 string fields should default to zero on pre-1.19 wire: %+v", r)
+	}
+	if r.AuthDaemonPort != nil || r.EnableProxy != nil || r.ProxyProtocol != nil {
+		t.Errorf("1.19 pointer fields should default to nil on pre-1.19 wire: %+v", r)
+	}
+	if r.MaintenanceModeEnabled != nil || r.SkipToIdpID != nil {
+		t.Errorf("1.19 pointer fields should default to nil on pre-1.19 wire: %+v", r)
+	}
+	if len(r.Headers) != 0 {
+		t.Errorf("headers should be empty on pre-1.19 wire, got %+v", r.Headers)
+	}
+}
+
+// TestResource_DecodesPost119WireShape pins the 1.19+ payload
+// captured from a live SSH-mode resource (see memory
+// pangolin-broken-endpoints / 2026-07 audit). Every added field
+// must decode to its expected value.
+func TestResource_DecodesPost119WireShape(t *testing.T) {
+	raw := `{
+		"resourceId": 22,
+		"resourceGuid": "guid-abc",
+		"orgId": "acme",
+		"niceId": "ssh-jumpbox",
+		"name": "SSH jumpbox",
+		"subdomain": "",
+		"fullDomain": "",
+		"domainId": "",
+		"wildcard": false,
+		"health": "ok",
+		"mode": "ssh",
+		"proxyPort": 2222,
+		"pamMode": "push",
+		"authDaemonMode": "sidecar",
+		"authDaemonPort": 8443,
+		"sso": 1,
+		"ssl": true,
+		"enabled": true,
+		"blockAccess": false,
+		"emailWhitelistEnabled": false,
+		"applyRules": false,
+		"stickySession": false,
+		"tlsServerName": null,
+		"setHostHeader": "internal.example.com",
+		"enableProxy": true,
+		"headers": [
+			{"name": "X-Fwd-User", "value": "$user"},
+			{"name": "X-Trace", "value": "on"}
+		],
+		"skipToIdpId": 3,
+		"postAuthPath": "/dashboard",
+		"proxyProtocol": true,
+		"proxyProtocolVersion": 2,
+		"maintenanceModeEnabled": false,
+		"maintenanceModeType": "planned",
+		"maintenanceTitle": null,
+		"maintenanceMessage": null,
+		"maintenanceEstimatedTime": null,
+		"resourcePolicyId": 11,
+		"defaultResourcePolicyId": 7
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.ResourceID != 22 || r.ResourceGuid != "guid-abc" || r.OrgID != "acme" || r.Health != "ok" {
+		t.Errorf("identity fields wrong: %+v", r)
+	}
+	if r.Mode != "ssh" || r.PamMode != "push" || r.AuthDaemonMode != "sidecar" {
+		t.Errorf("mode / auth-daemon strings wrong: mode=%q pam=%q ad=%q", r.Mode, r.PamMode, r.AuthDaemonMode)
+	}
+	if r.ProxyPort == nil || *r.ProxyPort != 2222 {
+		t.Errorf("proxyPort wrong: %+v", r.ProxyPort)
+	}
+	if r.AuthDaemonPort == nil || *r.AuthDaemonPort != 8443 {
+		t.Errorf("authDaemonPort wrong: %+v", r.AuthDaemonPort)
+	}
+	if !r.SSO {
+		t.Errorf("sso=1 should decode to true, got %v", r.SSO)
+	}
+	if r.SetHostHeader == nil || *r.SetHostHeader != "internal.example.com" {
+		t.Errorf("setHostHeader wrong: %+v", r.SetHostHeader)
+	}
+	if r.EnableProxy == nil || !*r.EnableProxy {
+		t.Errorf("enableProxy wrong: %+v", r.EnableProxy)
+	}
+	if len(r.Headers) != 2 || r.Headers[0].Name != "X-Fwd-User" || r.Headers[1].Value != "on" {
+		t.Errorf("headers wrong: %+v", r.Headers)
+	}
+	if r.SkipToIdpID == nil || *r.SkipToIdpID != 3 {
+		t.Errorf("skipToIdpId wrong: %+v", r.SkipToIdpID)
+	}
+	if r.PostAuthPath == nil || *r.PostAuthPath != "/dashboard" {
+		t.Errorf("postAuthPath wrong: %+v", r.PostAuthPath)
+	}
+	if r.ProxyProtocol == nil || !*r.ProxyProtocol {
+		t.Errorf("proxyProtocol wrong: %+v", r.ProxyProtocol)
+	}
+	if r.ProxyProtocolVersion == nil || *r.ProxyProtocolVersion != 2 {
+		t.Errorf("proxyProtocolVersion wrong: %+v", r.ProxyProtocolVersion)
+	}
+	if r.MaintenanceModeEnabled == nil || *r.MaintenanceModeEnabled {
+		t.Errorf("maintenanceModeEnabled wrong: %+v", r.MaintenanceModeEnabled)
+	}
+	if r.MaintenanceModeType != "planned" {
+		t.Errorf("maintenanceModeType wrong: %q", r.MaintenanceModeType)
+	}
+	if r.MaintenanceTitle != nil || r.MaintenanceMessage != nil || r.MaintenanceEstimatedTime != nil {
+		t.Errorf("nullable maintenance strings wrong: %+v %+v %+v", r.MaintenanceTitle, r.MaintenanceMessage, r.MaintenanceEstimatedTime)
+	}
+	if r.ResourcePolicyID == nil || *r.ResourcePolicyID != 11 {
+		t.Errorf("resourcePolicyId wrong: %+v", r.ResourcePolicyID)
+	}
+	if r.DefaultResourcePolicyID == nil || *r.DefaultResourcePolicyID != 7 {
+		t.Errorf("defaultResourcePolicyId wrong: %+v", r.DefaultResourcePolicyID)
 	}
 }
 

@@ -44,6 +44,7 @@ type SitePrivateResourceModel struct {
 	DisableICMP      types.Bool   `tfsdk:"disable_icmp"`
 	AuthDaemonMode   types.String `tfsdk:"auth_daemon_mode"`
 	AuthDaemonPort   types.Int64  `tfsdk:"auth_daemon_port"`
+	PamMode          types.String `tfsdk:"pam_mode"`
 	Enabled          types.Bool   `tfsdk:"enabled"`
 	SSL              types.Bool   `tfsdk:"ssl"`
 	NetworkID        types.Int64  `tfsdk:"network_id"`
@@ -166,6 +167,18 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 					int64planmodifier.UseStateForUnknown(),
 				},
 			},
+			"pam_mode": schema.StringAttribute{
+				Description: "PAM (Pluggable Authentication Module) mode for SSH-backed site resources. " +
+					"One of `passthrough` or `push`. 1.19+ only — pre-1.19 servers leave this null.",
+				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("passthrough", "push"),
+				},
+			},
 			"enabled": schema.BoolAttribute{
 				Description: "Whether the resource is enabled. Read-only here; the API returns `true` on creation. Use a future toggle endpoint to disable.",
 				Computed:    true,
@@ -283,6 +296,7 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 		UDPPortRange:    plan.UDPPortRange.ValueString(),
 		DisableICMP:     plan.DisableICMP.ValueBool(),
 		AuthDaemonMode:  plan.AuthDaemonMode.ValueString(),
+		PamMode:         plan.PamMode.ValueString(),
 		DomainID:        plan.DomainID.ValueString(),
 		Subdomain:       plan.Subdomain.ValueString(),
 		Scheme:          plan.Scheme.ValueString(),
@@ -340,6 +354,7 @@ func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateReq
 		UDPPortRange:    plan.UDPPortRange.ValueString(),
 		DisableICMP:     plan.DisableICMP.ValueBool(),
 		AuthDaemonMode:  plan.AuthDaemonMode.ValueString(),
+		PamMode:         plan.PamMode.ValueString(),
 		DomainID:        plan.DomainID.ValueString(),
 		Subdomain:       plan.Subdomain.ValueString(),
 		Scheme:          plan.Scheme.ValueString(),
@@ -413,6 +428,11 @@ func hydrateSiteResourceState(state *SitePrivateResourceModel, siteRes *client.S
 	state.DisableICMP = types.BoolValue(siteRes.DisableICMP)
 	state.AuthDaemonMode = types.StringValue(siteRes.AuthDaemonMode)
 	state.AuthDaemonPort = types.Int64Value(int64(siteRes.AuthDaemonPort))
+	if siteRes.PamMode != "" {
+		state.PamMode = types.StringValue(siteRes.PamMode)
+	} else {
+		state.PamMode = types.StringNull()
+	}
 	state.Enabled = types.BoolValue(siteRes.Enabled)
 	state.SSL = types.BoolValue(siteRes.SSL)
 	state.NetworkID = types.Int64Value(int64(siteRes.NetworkID))

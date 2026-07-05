@@ -3,24 +3,96 @@
 page_title: "pangolin_resource Resource - pangolin"
 subcategory: ""
 description: |-
-  Manages a Pangolin HTTP resource (public reverse proxy endpoint).
+  Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes. The mode attribute picks the transport: http (reverse-proxy the historical default), tcp or udp (raw L4). HTTP resources are addressed by domain_id + subdomain; L4 resources are addressed by proxy_port on the Pangolin edge.
+  **Note:** the 1.19+ attributes (`mode`, `pam_mode`, `auth_daemon_*`, `set_host_header`, `enable_proxy`, `headers`, `proxy_protocol*`, `maintenance_*`, `post_auth_path`, `skip_to_idp_id`, `resource_guid`, `health`, `resource_policy_id`, `default_resource_policy_id`) are only meaningful on Pangolin >= 1.19. On older servers they either fall back to the server default or stay absent from the wire (Optional+Computed keeps state consistent).
+  **Note:** SSH / RDP / VNC bastions are `mode = "tcp"` resources with `pam_mode` and `auth_daemon_*` set. The Pangolin server does not yet accept `ssh`/`rdp`/`vnc` as literal `mode` values.
 ---
 
 # pangolin_resource (Resource)
 
-Manages a Pangolin HTTP resource (public reverse proxy endpoint).
+Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes. The `mode` attribute picks the transport: `http` (reverse-proxy the historical default), `tcp` or `udp` (raw L4). HTTP resources are addressed by `domain_id` + `subdomain`; L4 resources are addressed by `proxy_port` on the Pangolin edge.
+
+> **Note:** the 1.19+ attributes (`mode`, `pam_mode`, `auth_daemon_*`, `set_host_header`, `enable_proxy`, `headers`, `proxy_protocol*`, `maintenance_*`, `post_auth_path`, `skip_to_idp_id`, `resource_guid`, `health`, `resource_policy_id`, `default_resource_policy_id`) are only meaningful on Pangolin >= 1.19. On older servers they either fall back to the server default or stay absent from the wire (Optional+Computed keeps state consistent).
+
+> **Note:** SSH / RDP / VNC bastions are `mode = "tcp"` resources with `pam_mode` and `auth_daemon_*` set. The Pangolin server does not yet accept `ssh`/`rdp`/`vnc` as literal `mode` values.
 
 ## Example Usage
 
 ```terraform
 data "pangolin_domains" "all" {}
 
-resource "pangolin_resource" "example" {
+# ---------------------------------------------------------------------
+# HTTP resource — the historical Pangolin default. Reverse-proxied by
+# the Pangolin edge and gated on a subdomain of a managed domain.
+# ---------------------------------------------------------------------
+resource "pangolin_resource" "web" {
   name      = "my-app"
   subdomain = "app"
   domain_id = data.pangolin_domains.all.domains[0].domain_id
   protocol  = "tcp"
   sso       = false # public access, no Pangolin authentication
+}
+
+# HTTP resource with 1.19+ options: injected headers, host-header
+# override, PROXY-protocol upstream, post-auth landing page.
+resource "pangolin_resource" "web_advanced" {
+  name      = "internal-app"
+  subdomain = "internal"
+  domain_id = data.pangolin_domains.all.domains[0].domain_id
+  mode      = "http"
+  sso       = true
+
+  set_host_header        = "backend.internal"
+  enable_proxy           = true
+  proxy_protocol         = true
+  proxy_protocol_version = 2
+  post_auth_path         = "/dashboard"
+
+  headers = [
+    { name = "X-Forwarded-User", value = "$user" },
+    { name = "X-Env", value = "prod" },
+  ]
+}
+
+# ---------------------------------------------------------------------
+# SSH bastion — a `mode = "tcp"` resource fronted by the Pangolin
+# auth-daemon on the edge. `pam_mode = "push"` triggers a
+# push-notification MFA flow on ssh login.
+# ---------------------------------------------------------------------
+resource "pangolin_resource" "ssh_bastion" {
+  name       = "ssh-jumpbox"
+  mode       = "tcp"
+  proxy_port = 2222
+  pam_mode   = "push"
+  sso        = true
+}
+
+# ---------------------------------------------------------------------
+# RDP resource. Same shape as SSH — Windows RDP is just L4 TCP with a
+# well-known destination port.
+# ---------------------------------------------------------------------
+resource "pangolin_resource" "rdp_desktop" {
+  name       = "win-workstation"
+  mode       = "tcp"
+  proxy_port = 3389
+  sso        = true
+}
+
+# ---------------------------------------------------------------------
+# Maintenance-mode toggle. Any resource can be flipped into a
+# maintenance page without touching the upstream config.
+# ---------------------------------------------------------------------
+resource "pangolin_resource" "under_maintenance" {
+  name      = "docs"
+  subdomain = "docs"
+  domain_id = data.pangolin_domains.all.domains[0].domain_id
+  mode      = "http"
+
+  maintenance_mode_enabled   = true
+  maintenance_mode_type      = "planned"
+  maintenance_title          = "Docs are getting a facelift"
+  maintenance_message        = "We'll be back in ~15 minutes."
+  maintenance_estimated_time = "2026-07-05T14:00:00Z"
 }
 ```
 
@@ -29,27 +101,59 @@ resource "pangolin_resource" "example" {
 
 ### Required
 
-- `domain_id` (String) The domain ID to attach this resource to.
 - `name` (String) The name of the resource.
 
 ### Optional
 
 - `apply_rules` (Boolean) Enable evaluation of access rules on this resource.
+- `auth_daemon_mode` (String) Auth-daemon deployment mode for L4 resources. Typical values: `sidecar`, `remote`.
+- `auth_daemon_port` (Number) TCP port the auth daemon listens on when `auth_daemon_mode` is set.
 - `block_access` (Boolean) Block all access to the resource.
+- `domain_id` (String) The domain ID to attach this resource to. Required when `mode = "http"`, leave unset for L4 modes.
 - `email_whitelist_enabled` (Boolean) Enable the email whitelist on this resource.
 - `enabled` (Boolean) Enable or disable the resource.
-- `protocol` (String) The protocol (tcp or udp). Defaults to tcp.
+- `headers` (Attributes List) Static request headers injected on the upstream request — list of `{name, value}` objects. Leave unset to keep the server default (no injection). Cannot be marked Computed because the Go slice model type in the plugin framework does not carry an "unknown" sentinel. (see [below for nested schema](#nestedatt--headers))
+- `maintenance_estimated_time` (String) Free-form estimated end-of-maintenance timestamp / duration (surfaced on the maintenance page).
+- `maintenance_message` (String) Maintenance page body message.
+- `maintenance_mode_enabled` (Boolean) Serve a maintenance page (or reject the L4 connection) instead of proxying.
+- `maintenance_mode_type` (String) Maintenance type — free-form label surfaced on the maintenance page.
+- `maintenance_title` (String) Maintenance page title.
+- `mode` (String) The resource mode. One of `http` (reverse proxy, default), `tcp` or `udp` (raw L4). Changing this attribute forces replacement.
+
+> **Note:** SSH / RDP / VNC bastion modes are configured by starting from `mode = "tcp"` and layering `pam_mode` / `auth_daemon_mode` / `auth_daemon_port`. The Pangolin server does **not** accept `"ssh"` / `"rdp"` / `"vnc"` as literal mode values yet (spec-ahead-of-server pattern in 1.19).
+- `pam_mode` (String) PAM (Pluggable Authentication Module) mode for SSH resources. One of `passthrough` or `push`. Only meaningful for `mode = "ssh"`.
+- `post_auth_path` (String) Landing path after a successful login (e.g. `/dashboard`).
+- `protocol` (String) The L4 protocol (tcp or udp). Only meaningful for the `ssh` / `rdp` / `vnc` / `tcp` / `udp` L4 modes; ignored for `http`. Defaults to `tcp`.
+- `proxy_port` (Number) The proxy port that the Pangolin edge listens on for this L4 resource. Required for `ssh` / `rdp` / `vnc` / `tcp` / `udp` modes; ignored for `http`. Changing this attribute forces replacement.
+- `set_host_header` (String) Override the upstream `Host` header. Only meaningful for `mode = "http"`. Set to null to keep the incoming host.
+- `skip_to_idp_id` (Number) Bypass the Pangolin login page and jump straight to the given IdP.
 - `ssl` (Boolean) Enable SSL towards the backend.
 - `sso` (Boolean) Enable Pangolin SSO authentication on this resource. Set to false to make the resource publicly accessible.
 - `sticky_session` (Boolean) Enable sticky sessions (persistent sessions) on this resource.
-- `subdomain` (String) The subdomain for the resource. Set to null to use the base domain.
+- `subdomain` (String) The subdomain for the resource. Only used when `mode = "http"`; ignored for L4 modes. Set to null to use the base domain.
 - `tls_server_name` (String) TLS server name for the backend. Set to null to clear.
 
 ### Read-Only
 
-- `full_domain` (String) The full domain of the resource (computed).
+- `default_resource_policy_id` (Number) ID of the auto-created default resource-policy backing this resource (1.19+). Read-only.
+- `enable_proxy` (Boolean) Whether the upstream HTTP proxy layer (headers, path rewriting, buffering) is on. Read-only in the current provider: the server-side POST endpoint refuses this key with `Unrecognized key: "enableProxy"`. Configure it out-of-band and Terraform will surface the effective value.
+- `full_domain` (String) The full domain of the resource (computed). Empty for L4 modes.
+- `health` (String) Server-reported aggregate health status (1.19+).
 - `id` (Number) The numeric ID of the resource.
 - `nice_id` (String) The human-readable ID of the resource.
+- `proxy_protocol` (Boolean) Whether PROXY-protocol encapsulation is on for the upstream L4 socket. Read-only in the current provider — the server-side POST endpoint refuses this key.
+- `proxy_protocol_version` (Number) PROXY-protocol version (1 or 2). Read-only in the current provider — the server-side POST endpoint refuses this key.
+- `resource_guid` (String) Server-assigned globally unique identifier (1.19+).
+- `resource_policy_id` (Number) ID of the shared resource-policy this resource is attached to (1.19+). Read-only: the resource-policy CRUD endpoints require an API key scoped to resource policies and are not exposed via this provider.
+- `wildcard` (Boolean) Whether the resource matches a wildcard subdomain (1.19+).
+
+<a id="nestedatt--headers"></a>
+### Nested Schema for `headers`
+
+Required:
+
+- `name` (String) Header name.
+- `value` (String) Header value.
 
 ## Import
 
