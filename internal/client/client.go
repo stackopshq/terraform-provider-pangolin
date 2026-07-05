@@ -931,6 +931,7 @@ type SiteResource struct {
 	DisableICMP    bool   `json:"disableIcmp"`
 	AuthDaemonPort int    `json:"authDaemonPort"`
 	AuthDaemonMode string `json:"authDaemonMode"`
+	PamMode        string `json:"pamMode,omitempty"`
 	Enabled        bool   `json:"enabled"`
 	SSL            bool   `json:"ssl"`
 	NetworkID      int    `json:"networkId"`
@@ -981,6 +982,7 @@ type CreateSiteResourceRequest struct {
 	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
+	PamMode        string   `json:"pamMode,omitempty"`
 	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
 	ClientIDs      []int    `json:"clientIds"`
@@ -1446,6 +1448,7 @@ type UpdateSiteResourceRequest struct {
 	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
+	PamMode        string   `json:"pamMode,omitempty"`
 	RoleIDs        []int    `json:"roleIds"`
 	UserIDs        []string `json:"userIds"`
 	ClientIDs      []int    `json:"clientIds"`
