@@ -4083,6 +4083,148 @@ func TestResource_UnmarshalJSON_OtherFieldsUnaffected(t *testing.T) {
 	}
 }
 
+// TestResource_DecodesPre119WireShape pins the historical pre-1.19
+// payload — every 1.19-only field must default to its zero value
+// without failing to decode.
+func TestResource_DecodesPre119WireShape(t *testing.T) {
+	raw := `{
+		"resourceId": 7,
+		"niceId": "old-shape",
+		"name": "legacy",
+		"subdomain": "web",
+		"fullDomain": "web.example.com",
+		"domainId": "dom-1",
+		"sso": true,
+		"ssl": true,
+		"enabled": true,
+		"blockAccess": false,
+		"emailWhitelistEnabled": false,
+		"applyRules": false,
+		"stickySession": false,
+		"tlsServerName": null
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.Mode != "" || r.PamMode != "" || r.AuthDaemonMode != "" {
+		t.Errorf("1.19 string fields should default to zero on pre-1.19 wire: %+v", r)
+	}
+	if r.AuthDaemonPort != nil || r.EnableProxy != nil || r.ProxyProtocol != nil {
+		t.Errorf("1.19 pointer fields should default to nil on pre-1.19 wire: %+v", r)
+	}
+	if r.MaintenanceModeEnabled != nil || r.SkipToIdpID != nil {
+		t.Errorf("1.19 pointer fields should default to nil on pre-1.19 wire: %+v", r)
+	}
+	if len(r.Headers) != 0 {
+		t.Errorf("headers should be empty on pre-1.19 wire, got %+v", r.Headers)
+	}
+}
+
+// TestResource_DecodesPost119WireShape pins the 1.19+ payload
+// captured from a live SSH-mode resource (see memory
+// pangolin-broken-endpoints / 2026-07 audit). Every added field
+// must decode to its expected value.
+func TestResource_DecodesPost119WireShape(t *testing.T) {
+	raw := `{
+		"resourceId": 22,
+		"resourceGuid": "guid-abc",
+		"orgId": "acme",
+		"niceId": "ssh-jumpbox",
+		"name": "SSH jumpbox",
+		"subdomain": "",
+		"fullDomain": "",
+		"domainId": "",
+		"wildcard": false,
+		"health": "ok",
+		"mode": "ssh",
+		"proxyPort": 2222,
+		"pamMode": "push",
+		"authDaemonMode": "sidecar",
+		"authDaemonPort": 8443,
+		"sso": 1,
+		"ssl": true,
+		"enabled": true,
+		"blockAccess": false,
+		"emailWhitelistEnabled": false,
+		"applyRules": false,
+		"stickySession": false,
+		"tlsServerName": null,
+		"setHostHeader": "internal.example.com",
+		"enableProxy": true,
+		"headers": [
+			{"name": "X-Fwd-User", "value": "$user"},
+			{"name": "X-Trace", "value": "on"}
+		],
+		"skipToIdpId": 3,
+		"postAuthPath": "/dashboard",
+		"proxyProtocol": true,
+		"proxyProtocolVersion": 2,
+		"maintenanceModeEnabled": false,
+		"maintenanceModeType": "planned",
+		"maintenanceTitle": null,
+		"maintenanceMessage": null,
+		"maintenanceEstimatedTime": null,
+		"resourcePolicyId": 11,
+		"defaultResourcePolicyId": 7
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.ResourceID != 22 || r.ResourceGuid != "guid-abc" || r.OrgID != "acme" || r.Health != "ok" {
+		t.Errorf("identity fields wrong: %+v", r)
+	}
+	if r.Mode != "ssh" || r.PamMode != "push" || r.AuthDaemonMode != "sidecar" {
+		t.Errorf("mode / auth-daemon strings wrong: mode=%q pam=%q ad=%q", r.Mode, r.PamMode, r.AuthDaemonMode)
+	}
+	if r.ProxyPort == nil || *r.ProxyPort != 2222 {
+		t.Errorf("proxyPort wrong: %+v", r.ProxyPort)
+	}
+	if r.AuthDaemonPort == nil || *r.AuthDaemonPort != 8443 {
+		t.Errorf("authDaemonPort wrong: %+v", r.AuthDaemonPort)
+	}
+	if !r.SSO {
+		t.Errorf("sso=1 should decode to true, got %v", r.SSO)
+	}
+	if r.SetHostHeader == nil || *r.SetHostHeader != "internal.example.com" {
+		t.Errorf("setHostHeader wrong: %+v", r.SetHostHeader)
+	}
+	if r.EnableProxy == nil || !*r.EnableProxy {
+		t.Errorf("enableProxy wrong: %+v", r.EnableProxy)
+	}
+	if len(r.Headers) != 2 || r.Headers[0].Name != "X-Fwd-User" || r.Headers[1].Value != "on" {
+		t.Errorf("headers wrong: %+v", r.Headers)
+	}
+	if r.SkipToIdpID == nil || *r.SkipToIdpID != 3 {
+		t.Errorf("skipToIdpId wrong: %+v", r.SkipToIdpID)
+	}
+	if r.PostAuthPath == nil || *r.PostAuthPath != "/dashboard" {
+		t.Errorf("postAuthPath wrong: %+v", r.PostAuthPath)
+	}
+	if r.ProxyProtocol == nil || !*r.ProxyProtocol {
+		t.Errorf("proxyProtocol wrong: %+v", r.ProxyProtocol)
+	}
+	if r.ProxyProtocolVersion == nil || *r.ProxyProtocolVersion != 2 {
+		t.Errorf("proxyProtocolVersion wrong: %+v", r.ProxyProtocolVersion)
+	}
+	if r.MaintenanceModeEnabled == nil || *r.MaintenanceModeEnabled {
+		t.Errorf("maintenanceModeEnabled wrong: %+v", r.MaintenanceModeEnabled)
+	}
+	if r.MaintenanceModeType != "planned" {
+		t.Errorf("maintenanceModeType wrong: %q", r.MaintenanceModeType)
+	}
+	if r.MaintenanceTitle != nil || r.MaintenanceMessage != nil || r.MaintenanceEstimatedTime != nil {
+		t.Errorf("nullable maintenance strings wrong: %+v %+v %+v", r.MaintenanceTitle, r.MaintenanceMessage, r.MaintenanceEstimatedTime)
+	}
+	if r.ResourcePolicyID == nil || *r.ResourcePolicyID != 11 {
+		t.Errorf("resourcePolicyId wrong: %+v", r.ResourcePolicyID)
+	}
+	if r.DefaultResourcePolicyID == nil || *r.DefaultResourcePolicyID != 7 {
+		t.Errorf("defaultResourcePolicyId wrong: %+v", r.DefaultResourcePolicyID)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
