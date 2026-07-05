@@ -443,7 +443,7 @@ type ResourceHeader struct {
 // Resource represents a Pangolin HTTP resource.
 //
 // Pangolin 1.19 dropped the legacy `http bool` + `protocol` split in
-// favour of a unified `mode` enum (http/ssh/rdp/vnc/tcp/udp) and
+// favor of a unified `mode` enum (http/ssh/rdp/vnc/tcp/udp) and
 // added a large number of new fields around PAM, auth daemon,
 // maintenance mode, proxy-protocol and resource-policy backing.
 // Older server builds still emit the pre-1.19 fields; every 1.19+
@@ -1059,11 +1059,11 @@ type Role struct {
 	// allowSsh) from an explicit false. The Update/Create requests
 	// keep pointer semantics too, so nil round-trips as "leave alone"
 	// on the wire.
-	AllowSSH         *bool  `json:"allowSsh,omitempty"`
-	SSHSudoMode      string `json:"sshSudoMode,omitempty"`
-	SSHSudoCommandsRaw    string `json:"sshSudoCommands,omitempty"`
-	SSHCreateHomeDir      bool   `json:"sshCreateHomeDir"`
-	SSHUnixGroupsRaw      string `json:"sshUnixGroups,omitempty"`
+	AllowSSH           *bool  `json:"allowSsh,omitempty"`
+	SSHSudoMode        string `json:"sshSudoMode,omitempty"`
+	SSHSudoCommandsRaw string `json:"sshSudoCommands,omitempty"`
+	SSHCreateHomeDir   bool   `json:"sshCreateHomeDir"`
+	SSHUnixGroupsRaw   string `json:"sshUnixGroups,omitempty"`
 }
 
 // ParseSSHList decodes one of the JSON-serialized list fields

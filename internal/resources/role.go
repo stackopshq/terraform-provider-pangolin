@@ -400,7 +400,7 @@ func roleToModel(ctx context.Context, role *client.Role, prior RoleResourceModel
 	// Pangolin 1.19 stopped emitting `allowSsh` on Read responses. If
 	// the server did not surface it (role.AllowSSH == nil) we preserve
 	// the value the user planned so the plan is a no-op — the field is
-	// still writable and honoured server-side on Create/Update.
+	// still writable and honored server-side on Create/Update.
 	allowSSH := prior.AllowSSH
 	if role.AllowSSH != nil {
 		allowSSH = types.BoolValue(*role.AllowSSH)
