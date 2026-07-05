@@ -34,23 +34,25 @@ resource "pangolin_resource" "web_advanced" {
 }
 
 # ---------------------------------------------------------------------
-# SSH jumpbox — L4 mode, exposed on a fixed proxy port on the Pangolin
-# edge. `pam_mode = "push"` triggers a push-notification MFA flow.
+# SSH bastion — a `mode = "tcp"` resource fronted by the Pangolin
+# auth-daemon on the edge. `pam_mode = "push"` triggers a
+# push-notification MFA flow on ssh login.
 # ---------------------------------------------------------------------
-resource "pangolin_resource" "ssh_jumpbox" {
+resource "pangolin_resource" "ssh_bastion" {
   name       = "ssh-jumpbox"
-  mode       = "ssh"
+  mode       = "tcp"
   proxy_port = 2222
   pam_mode   = "push"
   sso        = true
 }
 
 # ---------------------------------------------------------------------
-# RDP resource. `mode = "rdp"` is the Windows remote-desktop L4 mode.
+# RDP resource. Same shape as SSH — Windows RDP is just L4 TCP with a
+# well-known destination port.
 # ---------------------------------------------------------------------
 resource "pangolin_resource" "rdp_desktop" {
   name       = "win-workstation"
-  mode       = "rdp"
+  mode       = "tcp"
   proxy_port = 3389
   sso        = true
 }

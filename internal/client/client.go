@@ -541,25 +541,30 @@ func (r *Resource) UnmarshalJSON(data []byte) error {
 }
 
 // CreateResourceRequest is the payload for creating a Pangolin
-// resource. Pre-1.19 you only had `http bool` + `protocol`; 1.19+
-// introduced a unified `mode` enum (http/ssh/rdp/vnc). The old
-// fields are still honored on the server side for HTTP resources,
-// so we keep them and layer `mode` on top for the new L4 modes.
+// resource. Pre-1.19 you only had `http bool` + `protocol` + a
+// domain/subdomain pair; 1.19+ added `mode` (http|tcp|udp) and
+// `proxyPort` for the L4 modes.
+//
+// PAM / auth-daemon knobs (`pamMode`, `authDaemonMode`,
+// `authDaemonPort`) are **not** accepted at Create — the server
+// returns 400 "Unrecognized keys". They belong on the follow-up
+// UpdateResource call, which is what the resource layer does after
+// Create returns.
+//
+// `Subdomain` and `DomainID` use omitempty so an L4 resource
+// creation payload does not carry the empty-string placeholders
+// the server rejects with "Unrecognized keys: subdomain, domainId".
 type CreateResourceRequest struct {
 	Name      string  `json:"name"`
 	HTTP      bool    `json:"http"`
-	Subdomain *string `json:"subdomain"`
-	DomainID  string  `json:"domainId"`
+	Subdomain *string `json:"subdomain,omitempty"`
+	DomainID  string  `json:"domainId,omitempty"`
 	Protocol  string  `json:"protocol"`
 
-	// 1.19+ mode / PAM / auth-daemon knobs. All optional so that
-	// older server builds continue to accept the same payload
-	// shape without change.
-	Mode           string `json:"mode,omitempty"`
-	ProxyPort      *int   `json:"proxyPort,omitempty"`
-	PamMode        string `json:"pamMode,omitempty"`
-	AuthDaemonMode string `json:"authDaemonMode,omitempty"`
-	AuthDaemonPort *int   `json:"authDaemonPort,omitempty"`
+	// 1.19+ mode + edge listener port. Sent omitempty so older
+	// server builds keep receiving the pre-1.19 payload unchanged.
+	Mode      string `json:"mode,omitempty"`
+	ProxyPort *int   `json:"proxyPort,omitempty"`
 }
 
 // CreateResource creates a new HTTP resource.
@@ -1405,16 +1410,15 @@ type UpdateResourceRequest struct {
 	StickySession         *bool   `json:"stickySession,omitempty"`
 	TLSServerName         *string `json:"tlsServerName,omitempty"`
 
-	// 1.19+ additions — routing / auth
+	// 1.19+ additions — routing / auth. `enableProxy`,
+	// `proxyProtocol` and `proxyProtocolVersion` were probed on the
+	// live 1.19 ent server: POST /resource/{id} answers with
+	// `Unrecognized key`. They stay on the wire struct (Read
+	// surfaces them) but not on the write payload.
 	SetHostHeader *string           `json:"setHostHeader,omitempty"`
-	EnableProxy   *bool             `json:"enableProxy,omitempty"`
 	Headers       *[]ResourceHeader `json:"headers,omitempty"`
 	SkipToIdpID   *int              `json:"skipToIdpId,omitempty"`
 	PostAuthPath  *string           `json:"postAuthPath,omitempty"`
-
-	// 1.19+ additions — proxy-protocol
-	ProxyProtocol        *bool `json:"proxyProtocol,omitempty"`
-	ProxyProtocolVersion *int  `json:"proxyProtocolVersion,omitempty"`
 
 	// 1.19+ additions — maintenance mode
 	MaintenanceModeEnabled   *bool   `json:"maintenanceModeEnabled,omitempty"`

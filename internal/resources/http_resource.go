@@ -14,7 +14,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -103,15 +102,17 @@ func (r *HTTPResource) Metadata(_ context.Context, req resource.MetadataRequest,
 func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes. " +
-			"The `mode` attribute selects the L7 protocol: `http` (reverse proxy, the historical default), " +
-			"or one of the L4 modes `ssh` / `rdp` / `vnc` introduced in Pangolin 1.19. " +
-			"HTTP resources are addressed by `domain_id` + `subdomain`; SSH/RDP/VNC resources are " +
-			"addressed by `proxy_port` on the Pangolin edge.\n\n" +
+			"The `mode` attribute picks the transport: `http` (reverse-proxy the historical default), " +
+			"`tcp` or `udp` (raw L4). HTTP resources are addressed by `domain_id` + `subdomain`; " +
+			"L4 resources are addressed by `proxy_port` on the Pangolin edge.\n\n" +
 			"> **Note:** the 1.19+ attributes (`mode`, `pam_mode`, `auth_daemon_*`, `set_host_header`, " +
 			"`enable_proxy`, `headers`, `proxy_protocol*`, `maintenance_*`, `post_auth_path`, " +
 			"`skip_to_idp_id`, `resource_guid`, `health`, `resource_policy_id`, `default_resource_policy_id`) " +
 			"are only meaningful on Pangolin >= 1.19. On older servers they either fall back to the " +
-			"server default or stay absent from the wire (Optional+Computed keeps state consistent).",
+			"server default or stay absent from the wire (Optional+Computed keeps state consistent).\n\n" +
+			"> **Note:** SSH / RDP / VNC bastions are `mode = \"tcp\"` resources with `pam_mode` and " +
+			"`auth_daemon_*` set. The Pangolin server does not yet accept `ssh`/`rdp`/`vnc` as " +
+			"literal `mode` values.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric ID of the resource.",
@@ -175,8 +176,12 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"mode": schema.StringAttribute{
-				Description: "The resource mode. One of `http` (reverse proxy, default), `ssh`, `rdp`, " +
-					"`vnc`, `tcp`, `udp`. Changing this attribute forces replacement.",
+				Description: "The resource mode. One of `http` (reverse proxy, default), `tcp` or `udp` " +
+					"(raw L4). Changing this attribute forces replacement.\n\n" +
+					"> **Note:** SSH / RDP / VNC bastion modes are configured by starting from `mode = " +
+					"\"tcp\"` and layering `pam_mode` / `auth_daemon_mode` / `auth_daemon_port`. " +
+					"The Pangolin server does **not** accept `\"ssh\"` / `\"rdp\"` / `\"vnc\"` as literal " +
+					"mode values yet (spec-ahead-of-server pattern in 1.19).",
 				Optional: true,
 				Computed: true,
 				Default:  stringdefault.StaticString("http"),
@@ -184,7 +189,7 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 					stringplanmodifier.RequiresReplace(),
 				},
 				Validators: []validator.String{
-					stringvalidator.OneOf("http", "ssh", "rdp", "vnc", "tcp", "udp"),
+					stringvalidator.OneOf("http", "tcp", "udp"),
 				},
 			},
 			"proxy_port": schema.Int64Attribute{
@@ -282,20 +287,20 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"enable_proxy": schema.BoolAttribute{
-				Description: "Enable the upstream HTTP proxy layer (headers, path rewriting, buffering).",
-				Optional:    true,
-				Computed:    true,
+				Description: "Whether the upstream HTTP proxy layer (headers, path rewriting, buffering) " +
+					"is on. Read-only in the current provider: the server-side POST endpoint refuses this " +
+					"key with `Unrecognized key: \"enableProxy\"`. Configure it out-of-band and Terraform " +
+					"will surface the effective value.",
+				Computed: true,
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"headers": schema.ListNestedAttribute{
-				Description: "Static request headers injected on the upstream request — list of `{name, value}` objects.",
-				Optional:    true,
-				Computed:    true,
-				PlanModifiers: []planmodifier.List{
-					listplanmodifier.UseStateForUnknown(),
-				},
+				Description: "Static request headers injected on the upstream request — list of `{name, value}` objects. " +
+					"Leave unset to keep the server default (no injection). Cannot be marked Computed because " +
+					"the Go slice model type in the plugin framework does not carry an \"unknown\" sentinel.",
+				Optional: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"name":  schema.StringAttribute{Description: "Header name.", Required: true},
@@ -320,22 +325,19 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"proxy_protocol": schema.BoolAttribute{
-				Description: "Enable PROXY-protocol encapsulation on the upstream L4 socket.",
-				Optional:    true,
-				Computed:    true,
+				Description: "Whether PROXY-protocol encapsulation is on for the upstream L4 socket. " +
+					"Read-only in the current provider — the server-side POST endpoint refuses this key.",
+				Computed: true,
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"proxy_protocol_version": schema.Int64Attribute{
-				Description: "PROXY-protocol version (1 or 2). Ignored when `proxy_protocol = false`.",
-				Optional:    true,
-				Computed:    true,
+				Description: "PROXY-protocol version (1 or 2). Read-only in the current provider — " +
+					"the server-side POST endpoint refuses this key.",
+				Computed: true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
-				},
-				Validators: []validator.Int64{
-					int64validator.Between(1, 2),
 				},
 			},
 			"maintenance_mode_enabled": schema.BoolAttribute{
@@ -463,16 +465,10 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 		v := int(plan.ProxyPort.ValueInt64())
 		createReq.ProxyPort = &v
 	}
-	if !plan.PamMode.IsNull() && !plan.PamMode.IsUnknown() {
-		createReq.PamMode = plan.PamMode.ValueString()
-	}
-	if !plan.AuthDaemonMode.IsNull() && !plan.AuthDaemonMode.IsUnknown() {
-		createReq.AuthDaemonMode = plan.AuthDaemonMode.ValueString()
-	}
-	if !plan.AuthDaemonPort.IsNull() && !plan.AuthDaemonPort.IsUnknown() {
-		v := int(plan.AuthDaemonPort.ValueInt64())
-		createReq.AuthDaemonPort = &v
-	}
+	// pam_mode / auth_daemon_* are refused by the server at Create
+	// (400 "Unrecognized keys"). They are applied on the follow-up
+	// Update call — buildHTTPResourceUpdateRequest picks them up
+	// from the plan.
 
 	resource, err := r.client.CreateResource(ctx, createReq)
 	if err != nil {
@@ -483,15 +479,22 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 	plan.ID = types.Int64Value(int64(resource.ResourceID))
 	plan.NiceID = types.StringValue(resource.NiceID)
 
-	// Apply user-specified settings (sso, ssl, etc.) via update.
-	// buildUpdateRequest reads from plan which still holds the user's intended values.
-	updated, err := r.client.UpdateResource(ctx, int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to apply resource settings after creation", err.Error())
-		return
+	// L4 resources (mode = tcp/udp) reject almost every scalar on
+	// the follow-up POST /resource/{id} — only `name`, `enabled`,
+	// and `proxyPort` are accepted, and proxyPort is create-only.
+	// So we hydrate from the Create response directly and skip the
+	// Update round-trip. L7 (http) still uses the historical
+	// Create + Update pattern so user-set sso/ssl/etc. are pushed.
+	if mode == "http" {
+		updated, err := r.client.UpdateResource(ctx, int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to apply resource settings after creation", err.Error())
+			return
+		}
+		plan = applyHTTPResourceResponse(plan, updated)
+	} else {
+		plan = applyHTTPResourceResponse(plan, resource)
 	}
-
-	plan = applyHTTPResourceResponse(plan, updated)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -523,7 +526,18 @@ func (r *HTTPResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	res, err := r.client.UpdateResource(ctx, int(plan.ID.ValueInt64()), buildHTTPResourceUpdateRequest(plan))
+	// See the note in Create: L4 resources accept only `name` and
+	// `enabled` on POST /resource/{id}. Build a narrow payload for
+	// them so we don't 400 on an unrelated field the user could not
+	// have written anyway.
+	updateReq := buildHTTPResourceUpdateRequest(plan)
+	if plan.Mode.ValueString() != "http" {
+		updateReq = &client.UpdateResourceRequest{
+			Name:    plan.Name.ValueString(),
+			Enabled: updateReq.Enabled,
+		}
+	}
+	res, err := r.client.UpdateResource(ctx, int(plan.ID.ValueInt64()), updateReq)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update resource", err.Error())
 		return
@@ -623,10 +637,6 @@ func buildHTTPResourceUpdateRequest(plan HTTPResourceModel) *client.UpdateResour
 			req.SetHostHeader = &s
 		}
 	}
-	if !plan.EnableProxy.IsUnknown() {
-		v := plan.EnableProxy.ValueBool()
-		req.EnableProxy = &v
-	}
 	if !isUnknownList(plan.Headers) {
 		hs := make([]client.ResourceHeader, len(plan.Headers))
 		for i, h := range plan.Headers {
@@ -652,14 +662,6 @@ func buildHTTPResourceUpdateRequest(plan HTTPResourceModel) *client.UpdateResour
 			s := plan.PostAuthPath.ValueString()
 			req.PostAuthPath = &s
 		}
-	}
-	if !plan.ProxyProtocol.IsUnknown() {
-		v := plan.ProxyProtocol.ValueBool()
-		req.ProxyProtocol = &v
-	}
-	if !plan.ProxyProtocolVersion.IsUnknown() {
-		v := int(plan.ProxyProtocolVersion.ValueInt64())
-		req.ProxyProtocolVersion = &v
 	}
 	if !plan.MaintenanceModeEnabled.IsUnknown() {
 		v := plan.MaintenanceModeEnabled.ValueBool()
