@@ -2171,41 +2171,50 @@ func TestParseSSHList(t *testing.T) {
 	}
 }
 
-func TestGetRoleByID_SSHBastionFields(t *testing.T) {
+// TestGetRoleByID_FallbackViaList pins the pre-1.19 codepath:
+// GET /role/{id} 404s, and the client falls back to /org/{}/roles
+// list+filter. Every field must round-trip through the list handler.
+func TestGetRoleByID_FallbackViaList(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/org/test-org/roles" {
-			t.Errorf("path = %q", r.URL.Path)
+		switch r.URL.Path {
+		case "/v1/role/40632", "/v1/role/40633":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"data":null,"success":false,"error":true,"message":"Not found","status":404}`))
+			return
+		case "/v1/org/test-org/roles":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{
+				"roles": []map[string]any{
+					{
+						"roleId":                40632,
+						"orgId":                 "test-org",
+						"orgName":               "Test Org",
+						"isAdmin":               true,
+						"name":                  "Admin",
+						"description":           "Admin role",
+						"requireDeviceApproval": true,
+						"allowSsh":              true,
+						"sshSudoMode":           "full",
+						"sshSudoCommands":       `["sudo","wheel"]`,
+						"sshCreateHomeDir":      true,
+						"sshUnixGroups":         `["docker","kvm"]`,
+					},
+					{
+						"roleId":                40633,
+						"isAdmin":               nil,
+						"name":                  "Member",
+						"description":           "View only",
+						"requireDeviceApproval": false,
+						"allowSsh":              false,
+						"sshSudoMode":           "none",
+						"sshSudoCommands":       "[]",
+						"sshCreateHomeDir":      true,
+						"sshUnixGroups":         "[]",
+					},
+				},
+			})
+			return
 		}
-		writeEnvelope(t, w, http.StatusOK, map[string]any{
-			"roles": []map[string]any{
-				{
-					"roleId":                40632,
-					"orgId":                 "test-org",
-					"orgName":               "Test Org",
-					"isAdmin":               true,
-					"name":                  "Admin",
-					"description":           "Admin role",
-					"requireDeviceApproval": true,
-					"allowSsh":              true,
-					"sshSudoMode":           "full",
-					"sshSudoCommands":       `["sudo","wheel"]`,
-					"sshCreateHomeDir":      true,
-					"sshUnixGroups":         `["docker","kvm"]`,
-				},
-				{
-					"roleId":                40633,
-					"isAdmin":               nil,
-					"name":                  "Member",
-					"description":           "View only",
-					"requireDeviceApproval": false,
-					"allowSsh":              false,
-					"sshSudoMode":           "none",
-					"sshSudoCommands":       "[]",
-					"sshCreateHomeDir":      true,
-					"sshUnixGroups":         "[]",
-				},
-			},
-		})
+		t.Errorf("unexpected path = %q", r.URL.Path)
 	})
 
 	role, err := c.GetRoleByID(context.Background(), 40632)
@@ -2233,6 +2242,73 @@ func TestGetRoleByID_SSHBastionFields(t *testing.T) {
 	}
 	if member.IsAdmin != nil {
 		t.Errorf("IsAdmin = %v, want nil", member.IsAdmin)
+	}
+}
+
+// TestGetRole_DirectHit pins the 1.19+ codepath: GET /role/{id}
+// answers with the role directly, and the client parses every
+// scalar without a fallback round-trip.
+func TestGetRole_DirectHit(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/role/40632" {
+			t.Errorf("path = %q, want /v1/role/40632", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId":                40632,
+			"orgId":                 "test-org",
+			"orgName":               "Test Org",
+			"isAdmin":               true,
+			"name":                  "Admin",
+			"description":           "Admin role",
+			"requireDeviceApproval": true,
+			"allowSsh":              true,
+			"sshSudoMode":           "full",
+			"sshSudoCommands":       `["sudo"]`,
+			"sshCreateHomeDir":      true,
+			"sshUnixGroups":         `["wheel"]`,
+		})
+	})
+
+	role, err := c.GetRole(context.Background(), 40632)
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if role.RoleID != 40632 || role.Name != "Admin" {
+		t.Errorf("scalars wrong: %+v", role)
+	}
+	if !role.AllowSSH || role.SSHSudoMode != "full" {
+		t.Errorf("ssh top-level wrong: %+v", role)
+	}
+}
+
+// TestGetRoleByID_DirectHitFast verifies that when GET /role/{id}
+// works on 1.19+, GetRoleByID does NOT round-trip through the
+// list endpoint at all — a hit on the list handler here would
+// mean an unnecessary API call in production.
+func TestGetRoleByID_DirectHitFast(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/org/test-org/roles" {
+			t.Errorf("unexpected fallback to list endpoint")
+		}
+		if r.URL.Path != "/v1/role/77" {
+			t.Errorf("path = %q, want /v1/role/77", r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId":                77,
+			"name":                  "cached",
+			"description":           "",
+			"requireDeviceApproval": false,
+			"allowSsh":              false,
+			"sshCreateHomeDir":      false,
+		})
+	})
+
+	role, err := c.GetRoleByID(context.Background(), 77)
+	if err != nil {
+		t.Fatalf("GetRoleByID: %v", err)
+	}
+	if role.RoleID != 77 || role.Name != "cached" {
+		t.Errorf("scalars wrong: %+v", role)
 	}
 }
 

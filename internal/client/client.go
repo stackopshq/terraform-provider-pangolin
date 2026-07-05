@@ -1503,16 +1503,44 @@ func (c *Client) CreateRole(ctx context.Context, req *CreateRoleRequest) (*Role,
 	return &role, nil
 }
 
-// GetRoleByID retrieves a role by ID (via list + filter, no individual Get endpoint).
-func (c *Client) GetRoleByID(ctx context.Context, roleID int) (*Role, error) {
-	roles, err := c.ListRoles(ctx)
+// GetRole retrieves a role by ID via the direct GET /role/{id}
+// endpoint that Pangolin 1.19+ exposes. On older servers (or when
+// the route is not wired) the caller should fall back to
+// GetRoleByID, which handles that automatically.
+func (c *Client) GetRole(ctx context.Context, roleID int) (*Role, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/role/%d", roleID), nil)
 	if err != nil {
 		return nil, err
 	}
-	for _, role := range roles {
-		if role.RoleID == roleID {
-			r := role
-			return &r, nil
+	var role Role
+	if err := json.Unmarshal(resp.Data, &role); err != nil {
+		return nil, fmt.Errorf("failed to parse role: %w", err)
+	}
+	return &role, nil
+}
+
+// GetRoleByID retrieves a role by ID. It prefers the direct
+// GET /role/{id} endpoint introduced in Pangolin 1.19; if the
+// server returns 404 (route not wired on older builds) it falls
+// back to the historical list+filter path via ListRoles. This
+// keeps the client backwards-compatible without paying the extra
+// round-trip on 1.19+ deployments.
+func (c *Client) GetRoleByID(ctx context.Context, roleID int) (*Role, error) {
+	role, err := c.GetRole(ctx, roleID)
+	if err == nil {
+		return role, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	roles, listErr := c.ListRoles(ctx)
+	if listErr != nil {
+		return nil, listErr
+	}
+	for _, r := range roles {
+		if r.RoleID == roleID {
+			out := r
+			return &out, nil
 		}
 	}
 	return nil, fmt.Errorf("role %d: %w", roleID, ErrNotFound)
