@@ -2224,7 +2224,7 @@ func TestGetRoleByID_FallbackViaList(t *testing.T) {
 	if role.IsAdmin == nil || !*role.IsAdmin {
 		t.Errorf("IsAdmin = %v, want *true", role.IsAdmin)
 	}
-	if !role.AllowSSH || role.SSHSudoMode != "full" {
+	if role.AllowSSH == nil || !*role.AllowSSH || role.SSHSudoMode != "full" {
 		t.Errorf("ssh top-level wrong: %+v", role)
 	}
 	if role.SSHSudoCommandsRaw != `["sudo","wheel"]` {
@@ -2276,8 +2276,37 @@ func TestGetRole_DirectHit(t *testing.T) {
 	if role.RoleID != 40632 || role.Name != "Admin" {
 		t.Errorf("scalars wrong: %+v", role)
 	}
-	if !role.AllowSSH || role.SSHSudoMode != "full" {
+	if role.AllowSSH == nil || !*role.AllowSSH || role.SSHSudoMode != "full" {
 		t.Errorf("ssh top-level wrong: %+v", role)
+	}
+}
+
+// TestGetRole_AllowSSHOmittedFromRead pins the Pangolin 1.19 quirk
+// where the Read response no longer surfaces `allowSsh`. The
+// client-side struct must decode it as nil rather than defaulting
+// to a false that would clobber the user's plan on next apply.
+func TestGetRole_AllowSSHOmittedFromRead(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"roleId":                1,
+			"orgId":                 "test-org",
+			"isAdmin":               true,
+			"name":                  "Admin",
+			"description":           "Admin",
+			"requireDeviceApproval": false,
+			// note: no "allowSsh" key
+			"sshSudoMode":      "full",
+			"sshSudoCommands":  "[]",
+			"sshCreateHomeDir": true,
+			"sshUnixGroups":    "[]",
+		})
+	})
+	role, err := c.GetRole(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetRole: %v", err)
+	}
+	if role.AllowSSH != nil {
+		t.Errorf("AllowSSH should stay nil when the server omits the key, got %v", *role.AllowSSH)
 	}
 }
 

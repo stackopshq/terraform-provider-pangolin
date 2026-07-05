@@ -205,7 +205,7 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		resp.Diagnostics.AddError("Failed to read role after create", err.Error())
 		return
 	}
-	state, diags := roleToModel(ctx, got)
+	state, diags := roleToModel(ctx, got, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -229,7 +229,7 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}
-	next, diags := roleToModel(ctx, role)
+	next, diags := roleToModel(ctx, role, state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -265,7 +265,7 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		resp.Diagnostics.AddError("Failed to read role after update", err.Error())
 		return
 	}
-	state, diags := roleToModel(ctx, got)
+	state, diags := roleToModel(ctx, got, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -316,7 +316,7 @@ func (r *RoleResource) ImportState(ctx context.Context, req resource.ImportState
 		resp.Diagnostics.AddError("Failed to import role", err.Error())
 		return
 	}
-	state, diags := roleToModel(ctx, role)
+	state, diags := roleToModel(ctx, role, RoleResourceModel{})
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -370,7 +370,12 @@ func applyRoleSSHFields(
 // roleToModel maps a *client.Role onto a RoleResourceModel, decoding
 // the JSON-serialized list fields (sshSudoCommands, sshUnixGroups)
 // into proper Terraform string lists.
-func roleToModel(ctx context.Context, role *client.Role) (RoleResourceModel, diag.Diagnostics) {
+// roleToModel maps a *client.Role onto a RoleResourceModel. `prior`
+// carries the value the user planned (Create/Update path) or the
+// previous state (Read path); it lets us preserve fields the server
+// no longer surfaces on the wire (`allowSsh` was dropped from the
+// Read response in Pangolin 1.19).
+func roleToModel(ctx context.Context, role *client.Role, prior RoleResourceModel) (RoleResourceModel, diag.Diagnostics) {
 	var allDiags diag.Diagnostics
 
 	sudoCommands, err := client.ParseSSHList(role.SSHSudoCommandsRaw)
@@ -392,12 +397,24 @@ func roleToModel(ctx context.Context, role *client.Role) (RoleResourceModel, dia
 		isAdmin = types.BoolValue(*role.IsAdmin)
 	}
 
+	// Pangolin 1.19 stopped emitting `allowSsh` on Read responses. If
+	// the server did not surface it (role.AllowSSH == nil) we preserve
+	// the value the user planned so the plan is a no-op — the field is
+	// still writable and honoured server-side on Create/Update.
+	allowSSH := prior.AllowSSH
+	if role.AllowSSH != nil {
+		allowSSH = types.BoolValue(*role.AllowSSH)
+	}
+	if allowSSH.IsNull() || allowSSH.IsUnknown() {
+		allowSSH = types.BoolValue(false)
+	}
+
 	return RoleResourceModel{
 		ID:                    types.Int64Value(int64(role.RoleID)),
 		Name:                  types.StringValue(role.Name),
 		Description:           types.StringValue(role.Description),
 		RequireDeviceApproval: types.BoolValue(role.RequireDeviceApproval),
-		AllowSSH:              types.BoolValue(role.AllowSSH),
+		AllowSSH:              allowSSH,
 		SSHSudoMode:           types.StringValue(role.SSHSudoMode),
 		SSHSudoCommands:       sudoCommandsList,
 		SSHCreateHomeDir:      types.BoolValue(role.SSHCreateHomeDir),

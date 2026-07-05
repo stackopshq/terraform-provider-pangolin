@@ -1049,8 +1049,13 @@ type Role struct {
 	OrgID                 string `json:"orgId,omitempty"`
 	OrgName               string `json:"orgName,omitempty"`
 	RequireDeviceApproval bool   `json:"requireDeviceApproval"`
-	AllowSSH              bool   `json:"allowSsh"`
-	SSHSudoMode           string `json:"sshSudoMode,omitempty"`
+	// AllowSSH is a *bool so callers can distinguish "server did not
+	// emit the field" (nil — the 1.19+ Read response no longer surfaces
+	// allowSsh) from an explicit false. The Update/Create requests
+	// keep pointer semantics too, so nil round-trips as "leave alone"
+	// on the wire.
+	AllowSSH         *bool  `json:"allowSsh,omitempty"`
+	SSHSudoMode      string `json:"sshSudoMode,omitempty"`
 	SSHSudoCommandsRaw    string `json:"sshSudoCommands,omitempty"`
 	SSHCreateHomeDir      bool   `json:"sshCreateHomeDir"`
 	SSHUnixGroupsRaw      string `json:"sshUnixGroups,omitempty"`
