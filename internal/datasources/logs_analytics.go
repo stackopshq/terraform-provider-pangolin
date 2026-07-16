@@ -58,7 +58,7 @@ func (d *LogsAnalyticsDataSource) Metadata(_ context.Context, req datasource.Met
 
 func (d *LogsAnalyticsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Returns the request analytics rollup of the configured organization — same view the Pangolin web UI " +
+		Description: "Returns the request analytics rollup of the configured organization - same view the Pangolin web UI " +
 			"displays under \"Logs > Analytics\". Three breakdowns: by country, by day, and global totals.\n\n" +
 			"> **Note:** Requires an active enterprise subscription on Pangolin Cloud. Always available on " +
 			"self-hosted enterprise installs.",

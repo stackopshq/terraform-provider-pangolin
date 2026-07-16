@@ -4,20 +4,20 @@ page_title: "pangolin_user_role Resource - pangolin"
 subcategory: ""
 description: |-
   Binds an additional role to a user (cumulative). Unlike pangolin_role_user, which assigns a single role to a user and strips other bindings, this resource adds one more role on top of any existing bindings. Use it when a user must hold multiple roles simultaneously.
-  **Note:** Both attributes are `RequiresReplace` — the binding is identified by its `(user_id, role_id)` pair, so any change creates a new binding and removes the old one.
+  **Note:** Both attributes are `RequiresReplace` - the binding is identified by its `(user_id, role_id)` pair, so any change creates a new binding and removes the old one.
 ---
 
 # pangolin_user_role (Resource)
 
 Binds an additional role to a user (cumulative). Unlike `pangolin_role_user`, which assigns a single role to a user and strips other bindings, this resource adds one more role on top of any existing bindings. Use it when a user must hold multiple roles simultaneously.
 
-> **Note:** Both attributes are `RequiresReplace` — the binding is identified by its `(user_id, role_id)` pair, so any change creates a new binding and removes the old one.
+> **Note:** Both attributes are `RequiresReplace` - the binding is identified by its `(user_id, role_id)` pair, so any change creates a new binding and removes the old one.
 
 ## Example Usage
 
 ```terraform
 # Bind an additional role to an existing user. This is a *cumulative*
-# binding — the user keeps any other roles they already have.
+# binding - the user keeps any other roles they already have.
 #
 # For a single-role assignment that strips other bindings, use
 # `pangolin_role_user` instead.

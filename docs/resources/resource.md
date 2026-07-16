@@ -3,14 +3,14 @@
 page_title: "pangolin_resource Resource - pangolin"
 subcategory: ""
 description: |-
-  Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes. The mode attribute picks the transport: http (reverse-proxy the historical default), tcp or udp (raw L4). HTTP resources are addressed by domain_id + subdomain; L4 resources are addressed by proxy_port on the Pangolin edge.
+  Manages a Pangolin resource - the public-facing endpoint that Pangolin exposes. The mode attribute picks the transport: http (reverse-proxy the historical default), tcp or udp (raw L4). HTTP resources are addressed by domain_id + subdomain; L4 resources are addressed by proxy_port on the Pangolin edge.
   **Note:** the 1.19+ attributes (`mode`, `pam_mode`, `auth_daemon_*`, `set_host_header`, `enable_proxy`, `headers`, `proxy_protocol*`, `maintenance_*`, `post_auth_path`, `skip_to_idp_id`, `resource_guid`, `health`, `resource_policy_id`, `default_resource_policy_id`) are only meaningful on Pangolin >= 1.19. On older servers they either fall back to the server default or stay absent from the wire (Optional+Computed keeps state consistent).
   **Note:** SSH / RDP / VNC bastions are `mode = "tcp"` resources with `pam_mode` and `auth_daemon_*` set. The Pangolin server does not yet accept `ssh`/`rdp`/`vnc` as literal `mode` values.
 ---
 
 # pangolin_resource (Resource)
 
-Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes. The `mode` attribute picks the transport: `http` (reverse-proxy the historical default), `tcp` or `udp` (raw L4). HTTP resources are addressed by `domain_id` + `subdomain`; L4 resources are addressed by `proxy_port` on the Pangolin edge.
+Manages a Pangolin resource - the public-facing endpoint that Pangolin exposes. The `mode` attribute picks the transport: `http` (reverse-proxy the historical default), `tcp` or `udp` (raw L4). HTTP resources are addressed by `domain_id` + `subdomain`; L4 resources are addressed by `proxy_port` on the Pangolin edge.
 
 > **Note:** the 1.19+ attributes (`mode`, `pam_mode`, `auth_daemon_*`, `set_host_header`, `enable_proxy`, `headers`, `proxy_protocol*`, `maintenance_*`, `post_auth_path`, `skip_to_idp_id`, `resource_guid`, `health`, `resource_policy_id`, `default_resource_policy_id`) are only meaningful on Pangolin >= 1.19. On older servers they either fall back to the server default or stay absent from the wire (Optional+Computed keeps state consistent).
 
@@ -22,7 +22,7 @@ Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes
 data "pangolin_domains" "all" {}
 
 # ---------------------------------------------------------------------
-# HTTP resource — the historical Pangolin default. Reverse-proxied by
+# HTTP resource - the historical Pangolin default. Reverse-proxied by
 # the Pangolin edge and gated on a subdomain of a managed domain.
 # ---------------------------------------------------------------------
 resource "pangolin_resource" "web" {
@@ -55,7 +55,7 @@ resource "pangolin_resource" "web_advanced" {
 }
 
 # ---------------------------------------------------------------------
-# SSH bastion — a `mode = "tcp"` resource fronted by the Pangolin
+# SSH bastion - a `mode = "tcp"` resource fronted by the Pangolin
 # auth-daemon on the edge. `pam_mode = "push"` triggers a
 # push-notification MFA flow on ssh login.
 # ---------------------------------------------------------------------
@@ -68,7 +68,7 @@ resource "pangolin_resource" "ssh_bastion" {
 }
 
 # ---------------------------------------------------------------------
-# RDP resource. Same shape as SSH — Windows RDP is just L4 TCP with a
+# RDP resource. Same shape as SSH - Windows RDP is just L4 TCP with a
 # well-known destination port.
 # ---------------------------------------------------------------------
 resource "pangolin_resource" "rdp_desktop" {
@@ -112,11 +112,11 @@ resource "pangolin_resource" "under_maintenance" {
 - `domain_id` (String) The domain ID to attach this resource to. Required when `mode = "http"`, leave unset for L4 modes.
 - `email_whitelist_enabled` (Boolean) Enable the email whitelist on this resource.
 - `enabled` (Boolean) Enable or disable the resource.
-- `headers` (Attributes List) Static request headers injected on the upstream request — list of `{name, value}` objects. Leave unset to keep the server default (no injection). Cannot be marked Computed because the Go slice model type in the plugin framework does not carry an "unknown" sentinel. (see [below for nested schema](#nestedatt--headers))
+- `headers` (Attributes List) Static request headers injected on the upstream request - list of `{name, value}` objects. Leave unset to keep the server default (no injection). Cannot be marked Computed because the Go slice model type in the plugin framework does not carry an "unknown" sentinel. (see [below for nested schema](#nestedatt--headers))
 - `maintenance_estimated_time` (String) Free-form estimated end-of-maintenance timestamp / duration (surfaced on the maintenance page).
 - `maintenance_message` (String) Maintenance page body message.
 - `maintenance_mode_enabled` (Boolean) Serve a maintenance page (or reject the L4 connection) instead of proxying.
-- `maintenance_mode_type` (String) Maintenance type — free-form label surfaced on the maintenance page.
+- `maintenance_mode_type` (String) Maintenance type - free-form label surfaced on the maintenance page.
 - `maintenance_title` (String) Maintenance page title.
 - `mode` (String) The resource mode. One of `http` (reverse proxy, default), `tcp` or `udp` (raw L4). Changing this attribute forces replacement.
 
@@ -141,8 +141,8 @@ resource "pangolin_resource" "under_maintenance" {
 - `health` (String) Server-reported aggregate health status (1.19+).
 - `id` (Number) The numeric ID of the resource.
 - `nice_id` (String) The human-readable ID of the resource.
-- `proxy_protocol` (Boolean) Whether PROXY-protocol encapsulation is on for the upstream L4 socket. Read-only in the current provider — the server-side POST endpoint refuses this key.
-- `proxy_protocol_version` (Number) PROXY-protocol version (1 or 2). Read-only in the current provider — the server-side POST endpoint refuses this key.
+- `proxy_protocol` (Boolean) Whether PROXY-protocol encapsulation is on for the upstream L4 socket. Read-only in the current provider - the server-side POST endpoint refuses this key.
+- `proxy_protocol_version` (Number) PROXY-protocol version (1 or 2). Read-only in the current provider - the server-side POST endpoint refuses this key.
 - `resource_guid` (String) Server-assigned globally unique identifier (1.19+).
 - `resource_policy_id` (Number) ID of the shared resource-policy this resource is attached to (1.19+). Read-only: the resource-policy CRUD endpoints require an API key scoped to resource policies and are not exposed via this provider.
 - `wildcard` (Boolean) Whether the resource matches a wildcard subdomain (1.19+).

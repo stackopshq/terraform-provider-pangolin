@@ -1,4 +1,4 @@
-# L4 tunnel (cidr / host modes) — requires alias + port ranges.
+# L4 tunnel (cidr / host modes) - requires alias + port ranges.
 resource "pangolin_site_resource" "internal_db" {
   site_id        = pangolin_site.example.id
   name           = "internal-db"
@@ -8,7 +8,7 @@ resource "pangolin_site_resource" "internal_db" {
   tcp_port_range = "5432"
 }
 
-# L7 HTTP proxy (http mode) — requires domain_id + subdomain + scheme + destination_port.
+# L7 HTTP proxy (http mode) - requires domain_id + subdomain + scheme + destination_port.
 resource "pangolin_site_resource" "app_proxy" {
   site_id          = pangolin_site.example.id
   name             = "app-proxy"
@@ -24,7 +24,7 @@ output "app_full_domain" {
   value = pangolin_site_resource.app_proxy.full_domain
 }
 
-# SSH-backed site resource (Pangolin 1.19+) — L4 tunnel with PAM push
+# SSH-backed site resource (Pangolin 1.19+) - L4 tunnel with PAM push
 # notification MFA.
 resource "pangolin_site_resource" "ssh_bastion" {
   site_id        = pangolin_site.example.id

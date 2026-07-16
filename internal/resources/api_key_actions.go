@@ -53,7 +53,7 @@ func (r *APIKeyActionsResource) Schema(_ context.Context, _ resource.SchemaReque
 			"a 400 from the upstream API.\n\n" +
 			"> **Note:** the upstream rejects empty sets. To clear all actions, delete " +
 			"the parent API key instead. `terraform destroy` on this resource only removes " +
-			"it from state — the actions remain bound to the key until the key itself is " +
+			"it from state - the actions remain bound to the key until the key itself is " +
 			"deleted (typically by the parent `pangolin_api_key` resource).",
 		Attributes: map[string]schema.Attribute{
 			"api_key_id": schema.StringAttribute{

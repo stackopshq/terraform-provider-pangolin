@@ -3,13 +3,13 @@
 page_title: "pangolin_invitation Resource - pangolin"
 subcategory: ""
 description: |-
-  Manages a pending invitation for a user to join the configured organization. Invitations are immutable once created — changing any attribute triggers a destroy + create. Use terraform destroy (or removing the resource block) to cancel an open invitation.
+  Manages a pending invitation for a user to join the configured organization. Invitations are immutable once created - changing any attribute triggers a destroy + create. Use terraform destroy (or removing the resource block) to cancel an open invitation.
   **Note:** `invite_link` carries a single-use token in clear and is stored in state. Treat the state as a secret.
 ---
 
 # pangolin_invitation (Resource)
 
-Manages a pending invitation for a user to join the configured organization. Invitations are immutable once created — changing any attribute triggers a destroy + create. Use `terraform destroy` (or removing the resource block) to cancel an open invitation.
+Manages a pending invitation for a user to join the configured organization. Invitations are immutable once created - changing any attribute triggers a destroy + create. Use `terraform destroy` (or removing the resource block) to cancel an open invitation.
 
 > **Note:** `invite_link` carries a single-use token in clear and is stored in state. Treat the state as a secret.
 

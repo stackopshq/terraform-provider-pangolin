@@ -169,7 +169,7 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 			},
 			"pam_mode": schema.StringAttribute{
 				Description: "PAM (Pluggable Authentication Module) mode for SSH-backed site resources. " +
-					"One of `passthrough` or `push`. 1.19+ only — pre-1.19 servers leave this null.",
+					"One of `passthrough` or `push`. 1.19+ only - pre-1.19 servers leave this null.",
 				Optional: true,
 				Computed: true,
 				PlanModifiers: []planmodifier.String{
@@ -219,7 +219,7 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"proxy_port": schema.Int64Attribute{
-				Description: "The proxy-facing port (server-assigned, read-only). The Pangolin API does NOT accept this as a create input — passing it returns `Validation error: Unrecognized key: \"proxyPort\"`.",
+				Description: "The proxy-facing port (server-assigned, read-only). The Pangolin API does NOT accept this as a create input - passing it returns `Validation error: Unrecognized key: \"proxyPort\"`.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.UseStateForUnknown(),
@@ -249,7 +249,7 @@ func (r *SitePrivateResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"subdomain": schema.StringAttribute{
-				Description: "Subdomain to host the proxy at — combined with `domain_id` to produce `full_domain`. Required for `mode = http`; ignored for `cidr` / `host`.",
+				Description: "Subdomain to host the proxy at - combined with `domain_id` to produce `full_domain`. Required for `mode = http`; ignored for `cidr` / `host`.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
@@ -409,7 +409,7 @@ func (r *SitePrivateResource) ImportState(ctx context.Context, req resource.Impo
 // hydrateSiteResourceState copies every server-owned field from a
 // freshly-fetched SiteResource into the TF state model. The caller
 // must populate state.ID separately (it's the import-time key and
-// not always present on the wire — e.g. on Create the response does
+// not always present on the wire - e.g. on Create the response does
 // carry siteResourceId, but we set it explicitly to keep the codepaths
 // symmetric).
 //

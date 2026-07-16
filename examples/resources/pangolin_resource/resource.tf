@@ -1,7 +1,7 @@
 data "pangolin_domains" "all" {}
 
 # ---------------------------------------------------------------------
-# HTTP resource — the historical Pangolin default. Reverse-proxied by
+# HTTP resource - the historical Pangolin default. Reverse-proxied by
 # the Pangolin edge and gated on a subdomain of a managed domain.
 # ---------------------------------------------------------------------
 resource "pangolin_resource" "web" {
@@ -34,7 +34,7 @@ resource "pangolin_resource" "web_advanced" {
 }
 
 # ---------------------------------------------------------------------
-# SSH bastion — a `mode = "tcp"` resource fronted by the Pangolin
+# SSH bastion - a `mode = "tcp"` resource fronted by the Pangolin
 # auth-daemon on the edge. `pam_mode = "push"` triggers a
 # push-notification MFA flow on ssh login.
 # ---------------------------------------------------------------------
@@ -47,7 +47,7 @@ resource "pangolin_resource" "ssh_bastion" {
 }
 
 # ---------------------------------------------------------------------
-# RDP resource. Same shape as SSH — Windows RDP is just L4 TCP with a
+# RDP resource. Same shape as SSH - Windows RDP is just L4 TCP with a
 # well-known destination port.
 # ---------------------------------------------------------------------
 resource "pangolin_resource" "rdp_desktop" {

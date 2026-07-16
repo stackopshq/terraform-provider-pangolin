@@ -12,14 +12,14 @@ import (
 var _ datasource.DataSource = &BlueprintsDataSource{}
 
 // BlueprintsDataSource lists the blueprint audit records for the org.
-// Blueprints are append-only "apply" snapshots — useful for audit
+// Blueprints are append-only "apply" snapshots - useful for audit
 // reports and for picking the latest applied entry by ID.
 type BlueprintsDataSource struct {
 	client *client.Client
 }
 
 // BlueprintItemModel mirrors [client.Blueprint]. The `created_at`
-// attribute is epoch seconds (NOT milliseconds — Pangolin is
+// attribute is epoch seconds (NOT milliseconds - Pangolin is
 // inconsistent here vs other list endpoints).
 type BlueprintItemModel struct {
 	ID        types.Int64  `tfsdk:"id"`
@@ -49,7 +49,7 @@ func (d *BlueprintsDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 		Description: "Lists every blueprint audit record for the organization.\n\n" +
 			"Blueprints are an append-only log of past `PUT /org/{org}/blueprint` " +
 			"applies (auto-named with Pangolin's pet-name generator). There is no " +
-			"DELETE endpoint — every record persists. Use this data source for audit " +
+			"DELETE endpoint - every record persists. Use this data source for audit " +
 			"reporting or to fetch the latest entry by `id` for inspection via " +
 			"`pangolin_blueprint`.\n\n" +
 			"> **Note:** `created_at` is epoch **seconds** on this endpoint, distinct " +

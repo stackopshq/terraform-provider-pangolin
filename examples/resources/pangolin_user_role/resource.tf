@@ -1,5 +1,5 @@
 # Bind an additional role to an existing user. This is a *cumulative*
-# binding — the user keeps any other roles they already have.
+# binding - the user keeps any other roles they already have.
 #
 # For a single-role assignment that strips other bindings, use
 # `pangolin_role_user` instead.

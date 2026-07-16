@@ -31,11 +31,32 @@ jobs:
             exit 1
           fi
 
+      - name: Verify no em/en dashes in versioned content
+        run: |
+          if hits=$(grep -rlP '[\x{2013}\x{2014}]' --exclude-dir=.git --exclude-dir=vendor .); then
+            echo "::error::em-dash (U+2014) or en-dash (U+2013) found. Use ASCII hyphen '-' instead."
+            echo "$hits"
+            exit 1
+          fi
+
       - name: go vet
         run: go vet ./...
 
       - name: Build
         run: go build -v ./...
+
+      - name: Set up Terraform (for tfplugindocs schema export)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Verify tfplugindocs is idempotent
+        run: |
+          go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name pangolin
+          if ! git diff --exit-code docs/; then
+            echo "::error::docs/ drifted from schema. Run 'go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name pangolin' and commit."
+            exit 1
+          fi
 
       - name: Test
         run: go test -v ./...

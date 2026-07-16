@@ -12,7 +12,7 @@ import (
 
 var _ datasource.DataSource = &DomainDataSource{}
 
-// DomainDataSource exposes a single Pangolin domain by ID — the
+// DomainDataSource exposes a single Pangolin domain by ID - the
 // per-id endpoint that GetDomain hits directly, no list-and-filter.
 type DomainDataSource struct {
 	client *client.Client

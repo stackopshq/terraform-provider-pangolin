@@ -1,6 +1,6 @@
 # Look up a Pangolin site by its human-readable nice ID (the slug shown
-# in the Pangolin UI). Returns the full live payload — WireGuard
-# tunnel info, traffic counters, status — that the list endpoint
+# in the Pangolin UI). Returns the full live payload - WireGuard
+# tunnel info, traffic counters, status - that the list endpoint
 # does not expose.
 data "pangolin_site" "main" {
   nice_id = "smart-marbled-salamander"

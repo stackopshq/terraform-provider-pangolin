@@ -313,7 +313,7 @@ func TestNewClient_TLSWithoutCAPoolFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected TLS verification failure without trusted CA")
 	}
-	// Avoid asserting on the exact error string — Go's TLS error wording
+	// Avoid asserting on the exact error string - Go's TLS error wording
 	// differs across versions. Anything that mentions certificate or x509
 	// is good enough to confirm we tripped on verification.
 	msg := err.Error()
@@ -353,7 +353,7 @@ func TestGetSiteResource_ListHit(t *testing.T) {
 }
 
 func TestSiteResource_DecodesListWireShape(t *testing.T) {
-	// Real LIST payload captured live on the enterprise tenant —
+	// Real LIST payload captured live on the enterprise tenant -
 	// covers all the new fields, nullable scalars (emitted as JSON
 	// null), and the siteIds/siteNames/... LIST-only arrays.
 	const payload = `{"siteResources":[{
@@ -433,7 +433,7 @@ func TestSiteResource_DecodesListWireShape(t *testing.T) {
 func TestSiteResource_DecodesCreateWireShape_NoSiteIDs(t *testing.T) {
 	// Real CREATE payload captured live: the response carries every
 	// scalar but does NOT include the siteIds/siteNames/... arrays.
-	// SiteIDs must therefore stay nil after decode — the resource
+	// SiteIDs must therefore stay nil after decode - the resource
 	// model preserves the user's plan input for site_id in that case.
 	const payload = `{
 		"siteResourceId": 2,
@@ -482,7 +482,7 @@ func TestSiteResource_DecodesCreateWireShape_NoSiteIDs(t *testing.T) {
 }
 
 func TestSiteResource_NullableScalarsPopulated(t *testing.T) {
-	// Same shape but with the nullable scalars set — ensures the
+	// Same shape but with the nullable scalars set - ensures the
 	// pointer fields round-trip non-null values correctly.
 	const payload = `{"siteResources":[{
 		"siteResourceId": 3,
@@ -702,7 +702,7 @@ func TestDoRequest_RetryRespectsContextCancellation(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel after a short delay — long enough for the first attempt to
+	// Cancel after a short delay - long enough for the first attempt to
 	// complete but well within the first backoff window (100ms).
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -1189,7 +1189,7 @@ func TestListResourceWhitelist_StringItems(t *testing.T) {
 }
 
 func TestListResourceWhitelist_ObjectItems(t *testing.T) {
-	// Shape B: items are {email} objects — the other form the server may emit.
+	// Shape B: items are {email} objects - the other form the server may emit.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(t, w, http.StatusOK, map[string]any{
 			"whitelist": []map[string]any{
@@ -1762,7 +1762,7 @@ func TestListResourceTargets_ErrorPropagates(t *testing.T) {
 func TestGetLogsAnalytics_FullShape(t *testing.T) {
 	// Payload mirrors the real /logs/analytics response observed
 	// against the enterprise self-host. Day counts come as JSON
-	// strings, totals come as ints — the client must handle both.
+	// strings, totals come as ints - the client must handle both.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/org/test-org/logs/analytics" {
 			t.Errorf("path = %q", r.URL.Path)
@@ -1923,7 +1923,7 @@ func TestListIDPs_VariantField(t *testing.T) {
 			t.Errorf("idp %d Variant = %q, want %q", idp.IDPId, idp.Variant, want[idp.IDPId])
 		}
 	}
-	// OrgCount is the string-encoded JSON quirk — must round-trip as-is
+	// OrgCount is the string-encoded JSON quirk - must round-trip as-is
 	if idps[1].OrgCount != "3" {
 		t.Errorf("OrgCount = %q, want %q", idps[1].OrgCount, "3")
 	}
@@ -1980,7 +1980,7 @@ func TestCreateIDP_OmitsVariantWhenEmpty(t *testing.T) {
 		TokenURL:       "https://idp.example.com/token",
 		IdentifierPath: "sub",
 		Scopes:         "openid",
-		// Variant intentionally unset — server should pick the default
+		// Variant intentionally unset - server should pick the default
 	})
 	if err != nil {
 		t.Fatalf("CreateIDP: %v", err)
@@ -2042,7 +2042,7 @@ func TestCreateInvite_BodyAndResponse(t *testing.T) {
 
 func TestListInvitations_StringTotalQuirk(t *testing.T) {
 	// Real upstream observation: pagination.total is a *string* ("0")
-	// rather than a number. The client must not choke on this — we
+	// rather than a number. The client must not choke on this - we
 	// achieve that by ignoring the pagination block entirely.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(t, w, http.StatusOK, map[string]any{
@@ -2312,7 +2312,7 @@ func TestGetRole_AllowSSHOmittedFromRead(t *testing.T) {
 
 // TestGetRoleByID_DirectHitFast verifies that when GET /role/{id}
 // works on 1.19+, GetRoleByID does NOT round-trip through the
-// list endpoint at all — a hit on the list handler here would
+// list endpoint at all - a hit on the list handler here would
 // mean an unnecessary API call in production.
 func TestGetRoleByID_DirectHitFast(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -2498,7 +2498,7 @@ func TestUpdateOrg_PartialBodyOmitsUnsetFields(t *testing.T) {
 		Name:                  "updated",
 		RequireTwoFactor:      &two,
 		MaxSessionLengthHours: &twelve,
-		// Others left nil — must NOT appear in body
+		// Others left nil - must NOT appear in body
 	}); err != nil {
 		t.Fatalf("UpdateOrg: %v", err)
 	}
@@ -2916,7 +2916,7 @@ func TestCreateResourceAccessToken_BodyAndSecretSurfaced(t *testing.T) {
 	if tok.TokenHash != "" || tok.ResourceName != "" {
 		t.Errorf("CREATE response must not surface list-only fields (got hash=%q name=%q)", tok.TokenHash, tok.ResourceName)
 	}
-	// Verify request body shape — pointer-with-omitempty preserves the
+	// Verify request body shape - pointer-with-omitempty preserves the
 	// distinction between "field not set" and "field set to zero".
 	if string(gotBody["title"]) != `"probe-token"` || string(gotBody["validForSeconds"]) != "3600" {
 		t.Errorf("body shape wrong: %s", gotBody)
@@ -2952,7 +2952,7 @@ func TestCreateResourceAccessToken_DefaultsWhenAllNil(t *testing.T) {
 	if tok.Title != nil || tok.Description != nil {
 		t.Errorf("title/description should be nil, got %v / %v", tok.Title, tok.Description)
 	}
-	// Body must be `{}` — none of the optional fields should be serialized.
+	// Body must be `{}` - none of the optional fields should be serialized.
 	for _, k := range []string{"title", "description", "validForSeconds"} {
 		if _, ok := gotBody[k]; ok {
 			t.Errorf("body should omit %q, got %s", k, gotBody[k])
@@ -3070,7 +3070,7 @@ func TestListSiteResourcesForSite_UnwrapsJoinShape(t *testing.T) {
 	// Real wire shape captured live: each row of the outer
 	// `siteResources` array is itself a struct of three joined
 	// tables. The inner `siteResources` key holds the actual entity
-	// — the unwrapping logic is what we're pinning here.
+	// - the unwrapping logic is what we're pinning here.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/org/test-org/site/5/resources" {
 			t.Errorf("path = %q", r.URL.Path)
@@ -3162,7 +3162,7 @@ func TestPatchDomain_BodyAndResponse(t *testing.T) {
 
 func TestPatchDomain_OmitsUnsetFields(t *testing.T) {
 	// The pointer-with-omitempty pattern must preserve the distinction
-	// between "not in body" and "explicit null/false" — sending
+	// between "not in body" and "explicit null/false" - sending
 	// `preferWildcardCert: false` when the field was supposed to be
 	// untouched would silently flip the upstream value.
 	var gotBody map[string]json.RawMessage
@@ -3420,7 +3420,7 @@ func TestListOrgIDPs_DecodesSlimRowShape(t *testing.T) {
 
 func TestGetOrgIDP_DecodesThreeBlockPayload(t *testing.T) {
 	// The single GET returns three blocks: idp + idpOidcConfig +
-	// idpOrg. Pin the idpOrg shape with nullable role/org mappings —
+	// idpOrg. Pin the idpOrg shape with nullable role/org mappings -
 	// they decode to nil when unset.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/org/test-org/idp/2" {
@@ -3539,7 +3539,7 @@ func TestSetUser2FAStatus_BodyAndResponseKeysDiffer(t *testing.T) {
 		t.Errorf("decoded = %+v", got)
 	}
 	if string(gotBody["twoFactorSetupRequested"]) != "true" {
-		t.Errorf("body shape — expected twoFactorSetupRequested=true, got %s", gotBody["twoFactorSetupRequested"])
+		t.Errorf("body shape - expected twoFactorSetupRequested=true, got %s", gotBody["twoFactorSetupRequested"])
 	}
 	if _, ok := gotBody["twoFactorRequested"]; ok {
 		t.Error("body must not carry the response-side key twoFactorRequested")
@@ -3547,7 +3547,7 @@ func TestSetUser2FAStatus_BodyAndResponseKeysDiffer(t *testing.T) {
 }
 
 func TestSetUser2FAStatus_PropagatesForbidden(t *testing.T) {
-	// Root-only endpoint — a non-admin key receives 403. Caller
+	// Root-only endpoint - a non-admin key receives 403. Caller
 	// should see the error pass through.
 	disableRetryBackoff(t)
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -3560,7 +3560,7 @@ func TestSetUser2FAStatus_PropagatesForbidden(t *testing.T) {
 
 func TestListOrgs_DecodesFullOrgShape(t *testing.T) {
 	// Real /orgs payload captured live (server-admin token). The
-	// items reuse [Org] — pin the nullable security fields and the
+	// items reuse [Org] - pin the nullable security fields and the
 	// SSH CA strings (kept fake here so gitleaks stays happy).
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/orgs" {
@@ -3664,7 +3664,7 @@ func TestGetUserByID_DecodesFullPayload(t *testing.T) {
 }
 
 func TestGetUserByID_IDPProvisionedUser(t *testing.T) {
-	// Same endpoint, but for an externally-provisioned user — the
+	// Same endpoint, but for an externally-provisioned user - the
 	// idpName / idpId fields are populated rather than null.
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(t, w, http.StatusOK, map[string]any{
@@ -3740,7 +3740,7 @@ func TestListUserDevices_EmptyPage(t *testing.T) {
 }
 
 func TestListUserDevices_DecodesItemShapeInferredFromClientsEndpoint(t *testing.T) {
-	// Item shape pinned from the live /org/{org}/clients payload —
+	// Item shape pinned from the live /org/{org}/clients payload -
 	// same Pangolin "Client" entity per the OpenAPI tag and the
 	// "Clients retrieved successfully" message. If the upstream ever
 	// changes the user-devices items shape, this fixture catches it.
@@ -3804,7 +3804,7 @@ func TestListUserDevices_DecodesItemShapeInferredFromClientsEndpoint(t *testing.
 func TestListUserDevices_EncodesFilterQueryParams(t *testing.T) {
 	// Pins every filter param: integer paging, scalar filters, bool
 	// flag, CSV-joined status array. The wire shape is observable
-	// even when devices is empty — the params are the contract.
+	// even when devices is empty - the params are the contract.
 	var gotQuery string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
@@ -3869,7 +3869,7 @@ func TestListUserDevices_NilOptionsOmitsQueryString(t *testing.T) {
 
 func TestApplyBlueprint_PathBodyAndNullData(t *testing.T) {
 	// Real wire behavior: the server returns 201 with `data: null`
-	// — the freshly-minted blueprint ID is NOT echoed back. Apply is
+	// - the freshly-minted blueprint ID is NOT echoed back. Apply is
 	// fire-and-forget; callers must list afterwards if they need the
 	// new ID. The body is the raw base64 string in a `blueprint`
 	// wrapper.
@@ -3903,7 +3903,7 @@ func TestApplyBlueprint_PropagatesValidationError(t *testing.T) {
 
 func TestGetBlueprint_DecodesDetailShape(t *testing.T) {
 	// Real wire shape captured live: list-row fields + `message` +
-	// `contents`. `createdAt` is in epoch seconds (not ms — Pangolin
+	// `contents`. `createdAt` is in epoch seconds (not ms - Pangolin
 	// is inconsistent here vs other endpoints; the test pins that).
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/org/test-org/blueprint/42" {
@@ -4039,7 +4039,7 @@ func TestCreateSiteResource_HTTPModeBodyShape(t *testing.T) {
 	if string(gotBody["domainId"]) != `"dom-1"` || string(gotBody["subdomain"]) != `"tfprobe"` {
 		t.Errorf("domain/subdomain wrong: %s / %s", gotBody["domainId"], gotBody["subdomain"])
 	}
-	// The body must NOT carry `proxyPort` — the server rejects it as
+	// The body must NOT carry `proxyPort` - the server rejects it as
 	// an unrecognized key on create.
 	if _, ok := gotBody["proxyPort"]; ok {
 		t.Errorf("proxyPort must NOT appear in create body, got %s", gotBody["proxyPort"])
@@ -4047,7 +4047,7 @@ func TestCreateSiteResource_HTTPModeBodyShape(t *testing.T) {
 }
 
 func TestCreateSiteResource_CIDRModeOmitsHTTPFields(t *testing.T) {
-	// Same struct, cidr inputs — confirms the four http-only fields
+	// Same struct, cidr inputs - confirms the four http-only fields
 	// drop out via omitempty so the cidr code path is untouched.
 	var gotBody map[string]json.RawMessage
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -4079,7 +4079,7 @@ func TestCreateSiteResource_CIDRModeOmitsHTTPFields(t *testing.T) {
 
 func TestResource_UnmarshalJSON_SSOAsBool(t *testing.T) {
 	// Backward-compat path: Pangolin builds where `sso` is a plain
-	// bool — decode both `true` and `false` cleanly.
+	// bool - decode both `true` and `false` cleanly.
 	for _, tc := range []struct {
 		raw  string
 		want bool
@@ -4124,7 +4124,7 @@ func TestResource_UnmarshalJSON_SSOAsNumber(t *testing.T) {
 }
 
 func TestResource_UnmarshalJSON_SSOAbsentOrNull(t *testing.T) {
-	// Absent or `null` sso must not error — leaves the default
+	// Absent or `null` sso must not error - leaves the default
 	// (false) in place.
 	for _, raw := range []string{
 		`{"resourceId":1}`,
@@ -4141,7 +4141,7 @@ func TestResource_UnmarshalJSON_SSOAbsentOrNull(t *testing.T) {
 }
 
 func TestResource_UnmarshalJSON_SSOInvalidType(t *testing.T) {
-	// A string in the sso slot is neither bool nor int — must
+	// A string in the sso slot is neither bool nor int - must
 	// surface as a clear decode error rather than silently falling
 	// back to zero.
 	var r Resource
@@ -4189,7 +4189,7 @@ func TestResource_UnmarshalJSON_OtherFieldsUnaffected(t *testing.T) {
 }
 
 // TestResource_DecodesPre119WireShape pins the historical pre-1.19
-// payload — every 1.19-only field must default to its zero value
+// payload - every 1.19-only field must default to its zero value
 // without failing to decode.
 func TestResource_DecodesPre119WireShape(t *testing.T) {
 	raw := `{

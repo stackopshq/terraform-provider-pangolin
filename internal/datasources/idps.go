@@ -61,7 +61,7 @@ func (d *IDPsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 							Computed:    true,
 						},
 						"variant": schema.StringAttribute{
-							Description: "OIDC variant refinement — one of `oidc` (generic), `google`, `azure`. Useful to branch on provider family without parsing the name.",
+							Description: "OIDC variant refinement - one of `oidc` (generic), `google`, `azure`. Useful to branch on provider family without parsing the name.",
 							Computed:    true,
 						},
 						"auto_provision": schema.BoolAttribute{

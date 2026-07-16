@@ -13,7 +13,7 @@ import (
 var _ datasource.DataSource = &UserDevicesDataSource{}
 
 // UserDevicesDataSource lists the user-bound devices for an
-// organization — phones, laptops, browsers, anything with a per-user
+// organization - phones, laptops, browsers, anything with a per-user
 // binding. Distinct from `pangolin_clients` (not yet implemented),
 // which would list org-level OLM clients without user association.
 //
@@ -26,7 +26,7 @@ type UserDevicesDataSource struct {
 
 // UserDeviceItemModel mirrors [client.UserDevice] field-by-field.
 // All nullable upstream fields decode to TF null when the wire emits
-// null — the `name`, `subnet`, `org_*` and the boolean lifecycle
+// null - the `name`, `subnet`, `org_*` and the boolean lifecycle
 // flags are always present.
 type UserDeviceItemModel struct {
 	ClientID      types.Int64   `tfsdk:"client_id"`
@@ -78,7 +78,7 @@ func (d *UserDevicesDataSource) Metadata(_ context.Context, req datasource.Metad
 
 func (d *UserDevicesDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Lists the user-bound devices for an organization — phones, laptops, " +
+		Description: "Lists the user-bound devices for an organization - phones, laptops, " +
 			"browsers, anything with a per-user binding. Distinct from `pangolin_clients` " +
 			"(org-level OLM clients with no user association).\n\n" +
 			"All filter attributes are optional; when omitted, the upstream applies its " +
@@ -86,7 +86,7 @@ func (d *UserDevicesDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			"> **Note:** the item shape is inferred from the sibling `GET /org/{org}/clients` " +
 			"endpoint (same `Client` OpenAPI tag, same \"Clients retrieved successfully\" " +
 			"message). The `sites` field is intentionally omitted until a real value is " +
-			"observed — its element shape can't be guessed safely from spec alone.",
+			"observed - its element shape can't be guessed safely from spec alone.",
 		Attributes: map[string]schema.Attribute{
 			"query":   schema.StringAttribute{Description: "Free-text query filter.", Optional: true},
 			"sort_by": schema.StringAttribute{Description: "Sort field. One of `megabytesIn`, `megabytesOut`.", Optional: true},
@@ -115,7 +115,7 @@ func (d *UserDevicesDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 						"megabytes_in":   schema.Float64Attribute{Description: "Cumulative inbound traffic in MB. Null when the counters haven't been populated yet.", Computed: true},
 						"megabytes_out":  schema.Float64Attribute{Description: "Cumulative outbound traffic in MB. Null when the counters haven't been populated yet.", Computed: true},
 						"org_name":       schema.StringAttribute{Description: "Display name of the parent organization.", Computed: true},
-						"type":           schema.StringAttribute{Description: "Connection type — `olm` for org-level connectors, otherwise an end-user device type.", Computed: true},
+						"type":           schema.StringAttribute{Description: "Connection type - `olm` for org-level connectors, otherwise an end-user device type.", Computed: true},
 						"online":         schema.BoolAttribute{Description: "Whether the device is currently online.", Computed: true},
 						"olm_version":    schema.StringAttribute{Description: "OLM agent version when applicable. Null otherwise.", Computed: true},
 						"user_id":        schema.StringAttribute{Description: "ID of the user this device is bound to. Null for org-level devices.", Computed: true},

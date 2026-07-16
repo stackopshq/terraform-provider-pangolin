@@ -14,7 +14,7 @@ var _ datasource.DataSource = &UserByIDDataSource{}
 
 // UserByIDDataSource looks up a Pangolin user by their cross-org
 // `user_id`. Distinct from the existing `pangolin_user` data source,
-// which keys on `username + idp_id` within an org — this one queries
+// which keys on `username + idp_id` within an org - this one queries
 // the root-only `GET /user/{userId}` endpoint and surfaces the extra
 // fields it carries (server_admin, two_factor_setup_requested,
 // email_verified, date_created, idp_name).
@@ -55,7 +55,7 @@ func (d *UserByIDDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"This data source queries the root-only `GET /user/{userId}` endpoint and " +
 			"surfaces extra fields not exposed by the org-scoped variant: `server_admin`, " +
 			"`two_factor_setup_requested`, `email_verified`, `date_created`, `idp_name`.\n\n" +
-			"> **Note:** root-only — fails with HTTP 403 when the provider's API key is not " +
+			"> **Note:** root-only - fails with HTTP 403 when the provider's API key is not " +
 			"server-admin scoped.",
 		Attributes: map[string]schema.Attribute{
 			"user_id": schema.StringAttribute{
@@ -65,7 +65,7 @@ func (d *UserByIDDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"email":                      schema.StringAttribute{Description: "The user's email address.", Computed: true},
 			"username":                   schema.StringAttribute{Description: "The user's username (IDP-issued or local).", Computed: true},
 			"name":                       schema.StringAttribute{Description: "The user's display name. Null when unset.", Computed: true},
-			"type":                       schema.StringAttribute{Description: "Account type — `internal` for local accounts, otherwise the IDP variant name.", Computed: true},
+			"type":                       schema.StringAttribute{Description: "Account type - `internal` for local accounts, otherwise the IDP variant name.", Computed: true},
 			"two_factor_enabled":         schema.BoolAttribute{Description: "Whether the user has 2FA enrolled and active.", Computed: true},
 			"two_factor_setup_requested": schema.BoolAttribute{Description: "Whether the user has been asked to set up 2FA on next login.", Computed: true},
 			"email_verified":             schema.BoolAttribute{Description: "Whether the user's email address has been verified.", Computed: true},

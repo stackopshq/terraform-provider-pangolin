@@ -111,7 +111,7 @@ func (r *ResourcePincodeResource) Read(ctx context.Context, req resource.ReadReq
 	}
 
 	if authState.PincodeID == nil {
-		// PIN code was removed externally — remove from state.
+		// PIN code was removed externally - remove from state.
 		resp.State.RemoveResource(ctx)
 		return
 	}

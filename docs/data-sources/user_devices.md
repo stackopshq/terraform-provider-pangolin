@@ -3,18 +3,18 @@
 page_title: "pangolin_user_devices Data Source - pangolin"
 subcategory: ""
 description: |-
-  Lists the user-bound devices for an organization — phones, laptops, browsers, anything with a per-user binding. Distinct from pangolin_clients (org-level OLM clients with no user association).
+  Lists the user-bound devices for an organization - phones, laptops, browsers, anything with a per-user binding. Distinct from pangolin_clients (org-level OLM clients with no user association).
   All filter attributes are optional; when omitted, the upstream applies its defaults (page_size = 20, status = ["active", "pending"], order = "asc").
-  **Note:** the item shape is inferred from the sibling `GET /org/{org}/clients` endpoint (same `Client` OpenAPI tag, same "Clients retrieved successfully" message). The `sites` field is intentionally omitted until a real value is observed — its element shape can't be guessed safely from spec alone.
+  **Note:** the item shape is inferred from the sibling `GET /org/{org}/clients` endpoint (same `Client` OpenAPI tag, same "Clients retrieved successfully" message). The `sites` field is intentionally omitted until a real value is observed - its element shape can't be guessed safely from spec alone.
 ---
 
 # pangolin_user_devices (Data Source)
 
-Lists the user-bound devices for an organization — phones, laptops, browsers, anything with a per-user binding. Distinct from `pangolin_clients` (org-level OLM clients with no user association).
+Lists the user-bound devices for an organization - phones, laptops, browsers, anything with a per-user binding. Distinct from `pangolin_clients` (org-level OLM clients with no user association).
 
 All filter attributes are optional; when omitted, the upstream applies its defaults (`page_size = 20`, `status = ["active", "pending"]`, `order = "asc"`).
 
-> **Note:** the item shape is inferred from the sibling `GET /org/{org}/clients` endpoint (same `Client` OpenAPI tag, same "Clients retrieved successfully" message). The `sites` field is intentionally omitted until a real value is observed — its element shape can't be guessed safely from spec alone.
+> **Note:** the item shape is inferred from the sibling `GET /org/{org}/clients` endpoint (same `Client` OpenAPI tag, same "Clients retrieved successfully" message). The `sites` field is intentionally omitted until a real value is observed - its element shape can't be guessed safely from spec alone.
 
 ## Example Usage
 
@@ -83,7 +83,7 @@ Read-Only:
 - `org_name` (String) Display name of the parent organization.
 - `pub_key` (String) Wireguard public key. Null when the device hasn't completed handshake.
 - `subnet` (String) The device's assigned subnet.
-- `type` (String) Connection type — `olm` for org-level connectors, otherwise an end-user device type.
+- `type` (String) Connection type - `olm` for org-level connectors, otherwise an end-user device type.
 - `user_email` (String) Email of the bound user. Null for org-level devices.
 - `user_id` (String) ID of the user this device is bound to. Null for org-level devices.
 - `username` (String) Username of the bound user. Null for org-level devices.

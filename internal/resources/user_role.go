@@ -24,7 +24,7 @@ var (
 	_ resource.ResourceWithImportState = &UserRoleResource{}
 )
 
-// UserRoleResource binds an additional role to a user — cumulative,
+// UserRoleResource binds an additional role to a user - cumulative,
 // unlike pangolin_role_user which assigns a single role to a user.
 //
 // Use this resource when a user must hold multiple roles
@@ -55,7 +55,7 @@ func (r *UserRoleResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 		Description: "Binds an additional role to a user (cumulative). Unlike `pangolin_role_user`, which assigns a " +
 			"single role to a user and strips other bindings, this resource adds one more role on top of any " +
 			"existing bindings. Use it when a user must hold multiple roles simultaneously.\n\n" +
-			"> **Note:** Both attributes are `RequiresReplace` — the binding is identified by its `(user_id, role_id)` " +
+			"> **Note:** Both attributes are `RequiresReplace` - the binding is identified by its `(user_id, role_id)` " +
 			"pair, so any change creates a new binding and removes the old one.",
 		Attributes: map[string]schema.Attribute{
 			"user_id": schema.StringAttribute{
@@ -150,7 +150,7 @@ func (r *UserRoleResource) Delete(ctx context.Context, req resource.DeleteReques
 
 	if err := r.client.RemoveRoleFromUser(ctx, state.UserID.ValueString(), int(state.RoleID.ValueInt64())); err != nil {
 		if errors.Is(err, client.ErrNotFound) {
-			// Already detached / user gone — treat as success.
+			// Already detached / user gone - treat as success.
 			return
 		}
 		resp.Diagnostics.AddError("Failed to remove role from user", err.Error())

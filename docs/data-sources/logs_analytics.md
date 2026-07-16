@@ -3,13 +3,13 @@
 page_title: "pangolin_logs_analytics Data Source - pangolin"
 subcategory: ""
 description: |-
-  Returns the request analytics rollup of the configured organization — same view the Pangolin web UI displays under "Logs > Analytics". Three breakdowns: by country, by day, and global totals.
+  Returns the request analytics rollup of the configured organization - same view the Pangolin web UI displays under "Logs > Analytics". Three breakdowns: by country, by day, and global totals.
   **Note:** Requires an active enterprise subscription on Pangolin Cloud. Always available on self-hosted enterprise installs.
 ---
 
 # pangolin_logs_analytics (Data Source)
 
-Returns the request analytics rollup of the configured organization — same view the Pangolin web UI displays under "Logs > Analytics". Three breakdowns: by country, by day, and global totals.
+Returns the request analytics rollup of the configured organization - same view the Pangolin web UI displays under "Logs > Analytics". Three breakdowns: by country, by day, and global totals.
 
 > **Note:** Requires an active enterprise subscription on Pangolin Cloud. Always available on self-hosted enterprise installs.
 

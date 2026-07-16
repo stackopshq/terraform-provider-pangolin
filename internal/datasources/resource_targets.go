@@ -84,7 +84,7 @@ func (d *ResourceTargetsDataSource) Schema(_ context.Context, _ datasource.Schem
 			"with the full list-view detail (site labels, health-check configuration, path routing) " +
 			"that the per-id `GET /target/{id}` endpoint does not echo.\n\n" +
 			"> **Note:** Health-check fields (`hc_*`) and routing fields (`path`, `rewrite_*`, etc.) come " +
-			"back as `null` when no probe / no routing is configured — surfaced as Terraform `null` in those cases.",
+			"back as `null` when no probe / no routing is configured - surfaced as Terraform `null` in those cases.",
 		Attributes: map[string]schema.Attribute{
 			"resource_id": schema.Int64Attribute{
 				Description: "Numeric ID of the HTTP resource whose targets to list.",
@@ -114,7 +114,7 @@ func (d *ResourceTargetsDataSource) Schema(_ context.Context, _ datasource.Schem
 						"hc_unhealthy_interval": schema.Int64Attribute{Description: "Probe interval in seconds when the target is unhealthy.", Computed: true},
 						"hc_timeout":            schema.Int64Attribute{Description: "Probe timeout in seconds.", Computed: true},
 						"hc_headers": schema.ListNestedAttribute{
-							Description: "Probe request headers — list of `{name, value}` objects.",
+							Description: "Probe request headers - list of `{name, value}` objects.",
 							Computed:    true,
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
@@ -134,7 +134,7 @@ func (d *ResourceTargetsDataSource) Schema(_ context.Context, _ datasource.Schem
 						"path_match_type":        schema.StringAttribute{Description: "How `path` is matched (e.g. `prefix`, `exact`, `regex`).", Computed: true},
 						"rewrite_path":           schema.StringAttribute{Description: "Path the request is rewritten to before being forwarded.", Computed: true},
 						"rewrite_path_type":      schema.StringAttribute{Description: "Rewrite mode.", Computed: true},
-						"priority":               schema.Int64Attribute{Description: "Routing priority — lower numbers win.", Computed: true},
+						"priority":               schema.Int64Attribute{Description: "Routing priority - lower numbers win.", Computed: true},
 					},
 				},
 			},

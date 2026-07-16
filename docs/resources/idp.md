@@ -67,7 +67,7 @@ output "redirect_url" {
 - `email_path` (String) The path in the ID token for the user email.
 - `name_path` (String) The path in the ID token for the user display name.
 - `tags` (String) Optional tags associated with the IDP.
-- `variant` (String) OIDC variant. Refines `type = oidc` to a provider family — Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.
+- `variant` (String) OIDC variant. Refines `type = oidc` to a provider family - Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.
 
 ### Read-Only
 

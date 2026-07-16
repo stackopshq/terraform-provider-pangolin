@@ -17,7 +17,7 @@ type ResourceRolesDataSource struct {
 }
 
 // ResourceRoleItemModel mirrors the slim shape the list endpoint
-// returns — only id / name / description / isAdmin. The full Role
+// returns - only id / name / description / isAdmin. The full Role
 // struct is reachable via the pangolin_roles data source.
 type ResourceRoleItemModel struct {
 	ID          types.Int64  `tfsdk:"id"`

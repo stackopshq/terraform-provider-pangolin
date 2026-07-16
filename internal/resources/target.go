@@ -234,7 +234,7 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"hc_headers": schema.ListNestedAttribute{
-				Description: "Request headers to set on the probe — list of `{name, value}` objects.",
+				Description: "Request headers to set on the probe - list of `{name, value}` objects.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.List{
@@ -345,7 +345,7 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"priority": schema.Int64Attribute{
-				Description: "Routing priority — lower numbers win when multiple targets match.",
+				Description: "Routing priority - lower numbers win when multiple targets match.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.Int64{
@@ -556,7 +556,7 @@ func applyTargetHCFields(
 
 // targetToModel maps a *client.Target onto a TargetResourceModel,
 // decoding the JSON-string-encoded hcHeaders into the typed list.
-// Malformed hcHeaders silently fall back to an empty list — the
+// Malformed hcHeaders silently fall back to an empty list - the
 // alternative would be a hard error on every Read of a corrupt
 // server-side payload, which is the wrong tradeoff here.
 func targetToModel(t *client.Target, prior TargetResourceModel) TargetResourceModel {

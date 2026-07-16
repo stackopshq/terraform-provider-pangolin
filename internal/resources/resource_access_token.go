@@ -51,7 +51,7 @@ func (r *ResourceAccessTokenResource) Schema(_ context.Context, _ resource.Schem
 	resp.Schema = schema.Schema{
 		Description: "Manages a bearer access token bound to a Pangolin HTTP resource.\n\n" +
 			"> **Note:** the `token` (bearer secret) is only returned by the API at creation time. " +
-			"After `terraform import`, the `token` attribute is empty by design — the upstream " +
+			"After `terraform import`, the `token` attribute is empty by design - the upstream " +
 			"only exposes a `tokenHash` afterwards. Rotate by destroying and recreating the resource.\n\n" +
 			"Every meaningful attribute is `RequiresReplace`: the Pangolin API does not expose an " +
 			"endpoint to update title / description / lifetime in-place.",
@@ -215,7 +215,7 @@ func (r *ResourceAccessTokenResource) Read(ctx context.Context, req resource.Rea
 	state.Title = tfconv.StringFromPtr(tok.Title)
 	state.Description = tfconv.StringFromPtr(tok.Description)
 	state.ExpiresAt = tfconv.Int64FromInt64Ptr(tok.ExpiresAt)
-	// token (bearer secret) is preserved from existing state — the list endpoint never exposes it.
+	// token (bearer secret) is preserved from existing state - the list endpoint never exposes it.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

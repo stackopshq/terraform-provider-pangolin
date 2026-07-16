@@ -15,7 +15,7 @@ var _ datasource.DataSource = &UserDataSource{}
 
 // UserDataSource looks up a single user by their username + IDP ID.
 // Usernames are unique only within an IDP, so both inputs are
-// required — that mirrors the underlying API contract.
+// required - that mirrors the underlying API contract.
 type UserDataSource struct {
 	client *client.Client
 }
@@ -46,7 +46,7 @@ func (d *UserDataSource) Metadata(_ context.Context, req datasource.MetadataRequ
 func (d *UserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Looks up a Pangolin user by their `username` within an IDP. Usernames are unique only within an IDP, " +
-			"so the `idp_id` input is required — matching the underlying `GET /org/{org}/user-by-username` contract.\n\n" +
+			"so the `idp_id` input is required - matching the underlying `GET /org/{org}/user-by-username` contract.\n\n" +
 			"> **Note:** This data source returns `null` for `email` and `name` when the user has not yet logged in or did not " +
 			"share these claims with Pangolin. Treat them as eventually-consistent.",
 		Attributes: map[string]schema.Attribute{

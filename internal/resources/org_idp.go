@@ -169,7 +169,7 @@ func (r *OrgIDPResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"variant": schema.StringAttribute{
-				Description: "OIDC variant — refines `type = oidc` to a provider family. One of `oidc` (generic, default), `google`, `azure`.",
+				Description: "OIDC variant - refines `type = oidc` to a provider family. One of `oidc` (generic, default), `google`, `azure`.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
@@ -196,7 +196,7 @@ func (r *OrgIDPResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"redirect_url": schema.StringAttribute{
-				Description: "The OAuth callback URL to configure in your OIDC provider. Only returned on create — empty after import.",
+				Description: "The OAuth callback URL to configure in your OIDC provider. Only returned on create - empty after import.",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -276,7 +276,7 @@ func (r *OrgIDPResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	hydrateOrgIDPState(&state, detail)
-	// client_secret is not recoverable from the API — preserve existing.
+	// client_secret is not recoverable from the API - preserve existing.
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -306,7 +306,7 @@ func (r *OrgIDPResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	// The POST response is `{idpId}` only — refetch for the full payload.
+	// The POST response is `{idpId}` only - refetch for the full payload.
 	detail, err := r.client.GetOrgIDP(ctx, plan.OrgID.ValueString(), int(plan.ID.ValueInt64()))
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read org IDP after update", err.Error())

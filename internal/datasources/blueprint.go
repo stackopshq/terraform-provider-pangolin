@@ -45,7 +45,7 @@ func (d *BlueprintDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 			"slim fields as `pangolin_blueprints` plus the apply `message` and the " +
 			"raw decoded `contents` (the JSON document that was applied, after " +
 			"base64-decoding).\n\n" +
-			"Use this alongside `pangolin_blueprints` for inspection — e.g. dump the " +
+			"Use this alongside `pangolin_blueprints` for inspection - e.g. dump the " +
 			"latest blueprint's `contents` to a `local_file` for diff review.\n\n" +
 			"> **Note:** `created_at` is epoch **seconds** (distinct from the ms used " +
 			"elsewhere in the Pangolin API).",

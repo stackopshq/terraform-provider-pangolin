@@ -101,7 +101,7 @@ func (r *HTTPResource) Metadata(_ context.Context, req resource.MetadataRequest,
 
 func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a Pangolin resource — the public-facing endpoint that Pangolin exposes. " +
+		Description: "Manages a Pangolin resource - the public-facing endpoint that Pangolin exposes. " +
 			"The `mode` attribute picks the transport: `http` (reverse-proxy the historical default), " +
 			"`tcp` or `udp` (raw L4). HTTP resources are addressed by `domain_id` + `subdomain`; " +
 			"L4 resources are addressed by `proxy_port` on the Pangolin edge.\n\n" +
@@ -297,7 +297,7 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"headers": schema.ListNestedAttribute{
-				Description: "Static request headers injected on the upstream request — list of `{name, value}` objects. " +
+				Description: "Static request headers injected on the upstream request - list of `{name, value}` objects. " +
 					"Leave unset to keep the server default (no injection). Cannot be marked Computed because " +
 					"the Go slice model type in the plugin framework does not carry an \"unknown\" sentinel.",
 				Optional: true,
@@ -326,14 +326,14 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			},
 			"proxy_protocol": schema.BoolAttribute{
 				Description: "Whether PROXY-protocol encapsulation is on for the upstream L4 socket. " +
-					"Read-only in the current provider — the server-side POST endpoint refuses this key.",
+					"Read-only in the current provider - the server-side POST endpoint refuses this key.",
 				Computed: true,
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"proxy_protocol_version": schema.Int64Attribute{
-				Description: "PROXY-protocol version (1 or 2). Read-only in the current provider — " +
+				Description: "PROXY-protocol version (1 or 2). Read-only in the current provider - " +
 					"the server-side POST endpoint refuses this key.",
 				Computed: true,
 				PlanModifiers: []planmodifier.Int64{
@@ -349,7 +349,7 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"maintenance_mode_type": schema.StringAttribute{
-				Description: "Maintenance type — free-form label surfaced on the maintenance page.",
+				Description: "Maintenance type - free-form label surfaced on the maintenance page.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
@@ -467,7 +467,7 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 	// pam_mode / auth_daemon_* are refused by the server at Create
 	// (400 "Unrecognized keys"). They are applied on the follow-up
-	// Update call — buildHTTPResourceUpdateRequest picks them up
+	// Update call - buildHTTPResourceUpdateRequest picks them up
 	// from the plan.
 
 	resource, err := r.client.CreateResource(ctx, createReq)
@@ -480,7 +480,7 @@ func (r *HTTPResource) Create(ctx context.Context, req resource.CreateRequest, r
 	plan.NiceID = types.StringValue(resource.NiceID)
 
 	// L4 resources (mode = tcp/udp) reject almost every scalar on
-	// the follow-up POST /resource/{id} — only `name`, `enabled`,
+	// the follow-up POST /resource/{id} - only `name`, `enabled`,
 	// and `proxyPort` are accepted, and proxyPort is create-only.
 	// So we hydrate from the Create response directly and skip the
 	// Update round-trip. L7 (http) still uses the historical
@@ -626,7 +626,7 @@ func buildHTTPResourceUpdateRequest(plan HTTPResourceModel) *client.UpdateResour
 		}
 	}
 
-	// 1.19+ mutable fields — only send when the user set the value
+	// 1.19+ mutable fields - only send when the user set the value
 	// (i.e. not Unknown coming from a Computed default). Empty strings
 	// mean "empty string on wire", nulls mean "clear the field".
 	if !plan.SetHostHeader.IsUnknown() {
@@ -787,7 +787,7 @@ func applyHTTPResourceResponse(m HTTPResourceModel, res *client.Resource) HTTPRe
 	m.ResourcePolicyID = tfconv.Int64FromIntPtr(res.ResourcePolicyID)
 	m.DefaultResourcePolicyID = tfconv.Int64FromIntPtr(res.DefaultResourcePolicyID)
 
-	// Headers — round-trip the list. An absent/empty wire list keeps
+	// Headers - round-trip the list. An absent/empty wire list keeps
 	// the model at nil so it round-trips as null (Optional+Computed).
 	if len(res.Headers) > 0 {
 		hs := make([]ResourceHeaderModel, len(res.Headers))

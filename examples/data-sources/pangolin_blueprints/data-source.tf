@@ -10,7 +10,7 @@ output "recent_apply_audit" {
   )
 }
 
-# Failed applies — useful for alerting on broken IaC pushes.
+# Failed applies - useful for alerting on broken IaC pushes.
 output "failed_applies" {
   value = [
     for b in data.pangolin_blueprints.all.blueprints : {

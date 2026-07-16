@@ -40,7 +40,7 @@ func Int64FromIntPtr(p *int) types.Int64 {
 }
 
 // Int64FromInt64Ptr is the same as Int64FromIntPtr but for `*int64`.
-// Distinguished from Int64FromIntPtr at the type level — Go's
+// Distinguished from Int64FromIntPtr at the type level - Go's
 // integer-type erasure won't let us write a single function. Kept
 // separate rather than introducing generics so the call sites stay
 // trivially greppable.

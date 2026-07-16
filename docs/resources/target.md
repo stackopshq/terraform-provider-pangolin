@@ -63,7 +63,7 @@ resource "pangolin_target" "healthchecked" {
 - `enabled` (Boolean) Enable or disable this target. Defaults to `true`.
 - `hc_enabled` (Boolean) Whether to enable active health-check probing for this target.
 - `hc_follow_redirects` (Boolean) Whether the probe follows HTTP redirects.
-- `hc_headers` (Attributes List) Request headers to set on the probe — list of `{name, value}` objects. (see [below for nested schema](#nestedatt--hc_headers))
+- `hc_headers` (Attributes List) Request headers to set on the probe - list of `{name, value}` objects. (see [below for nested schema](#nestedatt--hc_headers))
 - `hc_healthy_threshold` (Number) Consecutive successful probes required to mark the target healthy.
 - `hc_hostname` (String) `Host` header value used by the probe.
 - `hc_interval` (Number) Probe interval in seconds while the target is healthy.
@@ -80,7 +80,7 @@ resource "pangolin_target" "healthchecked" {
 - `method` (String) Scheme used to reach the target (`http` or `https`). Defaults to `http`.
 - `path` (String) URL path prefix routed to this target. Combined with `path_match_type`.
 - `path_match_type` (String) How `path` is matched (e.g. `prefix`, `exact`, `regex`).
-- `priority` (Number) Routing priority — lower numbers win when multiple targets match.
+- `priority` (Number) Routing priority - lower numbers win when multiple targets match.
 - `rewrite_path` (String) Path the request is rewritten to before being forwarded.
 - `rewrite_path_type` (String) Rewrite mode.
 

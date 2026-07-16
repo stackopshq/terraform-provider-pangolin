@@ -21,14 +21,14 @@ import (
 // Sentinel errors returned by the client. Callers should match with
 // errors.Is to drive control flow (e.g. retries, state removal).
 var (
-	// ErrUnauthorized is returned for HTTP 401 — usually means the API
+	// ErrUnauthorized is returned for HTTP 401 - usually means the API
 	// key is missing, malformed, expired, or has been revoked.
 	ErrUnauthorized = errors.New("pangolin: unauthorized")
-	// ErrForbidden is returned for HTTP 403 — usually means the API key
+	// ErrForbidden is returned for HTTP 403 - usually means the API key
 	// is valid but does not have access to the requested organization
 	// or resource.
 	ErrForbidden = errors.New("pangolin: forbidden")
-	// ErrServer is returned for HTTP 5xx — the upstream is unhealthy.
+	// ErrServer is returned for HTTP 5xx - the upstream is unhealthy.
 	// The client retries idempotent methods on this error.
 	ErrServer = errors.New("pangolin: server error")
 	// ErrRateLimited is returned for HTTP 429. The client retries
@@ -84,7 +84,7 @@ func WithCAPool(pool *x509.CertPool) Option {
 }
 
 // WithInsecureTLS disables TLS certificate verification. Intended for
-// local debugging only — never use against a production Pangolin.
+// local debugging only - never use against a production Pangolin.
 func WithInsecureTLS() Option {
 	return func(c *Client) {
 		c.tlsConfig().InsecureSkipVerify = true
@@ -293,7 +293,7 @@ func (c *Client) GetSiteDefaults(ctx context.Context) (*SiteDefaults, error) {
 // Site represents a Pangolin site (tunnel connector).
 //
 // The per-id GET (used by GetSite / GetSiteByNiceID) returns a much
-// richer payload than the create / list responses — exit-node assoc,
+// richer payload than the create / list responses - exit-node assoc,
 // WireGuard keys, traffic counters, public endpoint, status / newt
 // metadata. All these read-only fields are omitempty so older
 // CRUD code paths that fill only the first seven keep working.
@@ -384,7 +384,7 @@ func (c *Client) DeleteSite(ctx context.Context, siteID int) error {
 // --- Domains ---
 
 // Domain represents a Pangolin domain. The list endpoint returns a
-// richer shape than the older provider modeled — verification flags,
+// richer shape than the older provider modeled - verification flags,
 // retry counters, cert resolver configuration and the last error
 // message are all surfaced now.
 type Domain struct {
@@ -469,7 +469,7 @@ type Resource struct {
 	AuthDaemonMode string `json:"authDaemonMode,omitempty"`
 	AuthDaemonPort *int   `json:"authDaemonPort,omitempty"`
 
-	// Access-control legacy inline fields — kept for backwards
+	// Access-control legacy inline fields - kept for backwards
 	// compatibility on servers that still populate them directly.
 	SSO                   bool    `json:"sso"`
 	SSL                   bool    `json:"ssl"`
@@ -480,25 +480,25 @@ type Resource struct {
 	StickySession         bool    `json:"stickySession"`
 	TLSServerName         *string `json:"tlsServerName"`
 
-	// 1.19 additions — routing / auth
+	// 1.19 additions - routing / auth
 	SetHostHeader *string          `json:"setHostHeader,omitempty"`
 	EnableProxy   *bool            `json:"enableProxy,omitempty"`
 	Headers       []ResourceHeader `json:"headers,omitempty"`
 	SkipToIdpID   *int             `json:"skipToIdpId,omitempty"`
 	PostAuthPath  *string          `json:"postAuthPath,omitempty"`
 
-	// 1.19 additions — proxy-protocol
+	// 1.19 additions - proxy-protocol
 	ProxyProtocol        *bool `json:"proxyProtocol,omitempty"`
 	ProxyProtocolVersion *int  `json:"proxyProtocolVersion,omitempty"`
 
-	// 1.19 additions — maintenance mode
+	// 1.19 additions - maintenance mode
 	MaintenanceModeEnabled   *bool   `json:"maintenanceModeEnabled,omitempty"`
 	MaintenanceModeType      string  `json:"maintenanceModeType,omitempty"`
 	MaintenanceTitle         *string `json:"maintenanceTitle,omitempty"`
 	MaintenanceMessage       *string `json:"maintenanceMessage,omitempty"`
 	MaintenanceEstimatedTime *string `json:"maintenanceEstimatedTime,omitempty"`
 
-	// 1.19 additions — resource-policy backing (read-only; the CRUD
+	// 1.19 additions - resource-policy backing (read-only; the CRUD
 	// routes require a resource-policy-scoped API key and are not
 	// exposed here). `DefaultResourcePolicyID` is auto-assigned by
 	// the server on create; `ResourcePolicyID` is the shared policy
@@ -546,7 +546,7 @@ func (r *Resource) UnmarshalJSON(data []byte) error {
 // `proxyPort` for the L4 modes.
 //
 // PAM / auth-daemon knobs (`pamMode`, `authDaemonMode`,
-// `authDaemonPort`) are **not** accepted at Create — the server
+// `authDaemonPort`) are **not** accepted at Create - the server
 // returns 400 "Unrecognized keys". They belong on the follow-up
 // UpdateResource call, which is what the resource layer does after
 // Create returns.
@@ -661,9 +661,9 @@ type Target struct {
 	Priority             *int    `json:"priority,omitempty"`
 }
 
-// ParseTargetHCHeaders decodes a target's hcHeaders response field —
+// ParseTargetHCHeaders decodes a target's hcHeaders response field -
 // emitted by the server as a JSON-string (e.g. `"[]"` or `"[{\"name\":
-// \"X-Probe\",\"value\":\"yes\"}]"`) — into a typed slice. Target's
+// \"X-Probe\",\"value\":\"yes\"}]"`) - into a typed slice. Target's
 // custom UnmarshalJSON already normalizes the wire-shape asymmetry
 // (string vs native array), so callers only see the string form.
 func ParseTargetHCHeaders(raw *string) ([]TargetHCHeader, error) {
@@ -697,14 +697,14 @@ func (t *Target) UnmarshalJSON(data []byte) error {
 	case len(aux.HCHeaders) == 0, string(aux.HCHeaders) == "null":
 		t.HCHeadersRaw = nil
 	case aux.HCHeaders[0] == '"':
-		// JSON-encoded string form — decode the outer string layer
+		// JSON-encoded string form - decode the outer string layer
 		var s string
 		if err := json.Unmarshal(aux.HCHeaders, &s); err != nil {
 			return fmt.Errorf("decode hcHeaders string: %w", err)
 		}
 		t.HCHeadersRaw = &s
 	default:
-		// Native array (or any other JSON value) — keep verbatim
+		// Native array (or any other JSON value) - keep verbatim
 		s := string(aux.HCHeaders)
 		t.HCHeadersRaw = &s
 	}
@@ -729,7 +729,7 @@ func (c *Client) ListResourceTargets(ctx context.Context, resourceID int) ([]Tar
 }
 
 // ResourceRoleSummary is the slim shape returned by
-// GET /resource/{id}/roles — only four fields per role, not the full
+// GET /resource/{id}/roles - only four fields per role, not the full
 // Role struct.
 type ResourceRoleSummary struct {
 	RoleID      int    `json:"roleId"`
@@ -755,7 +755,7 @@ func (c *Client) ListResourceRoles(ctx context.Context, resourceID int) ([]Resou
 
 // ResourceUserEntry is one entry in the user list returned by
 // GET /resource/{id}/users. Same wire shape as
-// [SiteResourceUserEntry] — kept separate for clarity of domain.
+// [SiteResourceUserEntry] - kept separate for clarity of domain.
 type ResourceUserEntry struct {
 	UserID   string  `json:"userId"`
 	Username string  `json:"username"`
@@ -767,7 +767,7 @@ type ResourceUserEntry struct {
 
 // ListResourceUsers returns the users currently bound to an HTTP
 // resource. Response shape is `{users: [...]}`. Used by the
-// resource_user Read to do real drift detection — the OpenAPI
+// resource_user Read to do real drift detection - the OpenAPI
 // quirk is that this endpoint exists and works fine, despite an
 // earlier (now stale) comment in the provider saying otherwise.
 func (c *Client) ListResourceUsers(ctx context.Context, resourceID int) ([]ResourceUserEntry, error) {
@@ -853,7 +853,7 @@ func (c *Client) GetTarget(ctx context.Context, targetID int) (*Target, error) {
 }
 
 // UpdateTargetRequest is the payload for updating a target. Mirrors
-// the CreateTargetRequest shape — every hc* / routing field is
+// the CreateTargetRequest shape - every hc* / routing field is
 // optional, sent only when the pointer is non-nil.
 type UpdateTargetRequest struct {
 	IP      string `json:"ip"`
@@ -941,7 +941,7 @@ type SiteResource struct {
 	SSL            bool   `json:"ssl"`
 	NetworkID      int    `json:"networkId"`
 
-	// Nullable scalars — wire emits literal `null` when unset.
+	// Nullable scalars - wire emits literal `null` when unset.
 	Scheme           *string `json:"scheme"`
 	ProxyPort        *int    `json:"proxyPort"`
 	DestinationPort  *int    `json:"destinationPort"`
@@ -975,7 +975,7 @@ type SiteResource struct {
 //     auto-filled by the server (`"443,80"` and `""` respectively).
 //
 // `proxyPort` is NOT a valid create input despite appearing on the
-// wire response — the server fills it itself (`null` in every
+// wire response - the server fills it itself (`null` in every
 // observation so far).
 type CreateSiteResourceRequest struct {
 	Name           string   `json:"name"`
@@ -1043,7 +1043,7 @@ func (c *Client) DeleteSiteResource(ctx context.Context, siteResourceID int) err
 // SSH bastion fields are returned by the API. SSHSudoCommandsRaw and
 // SSHUnixGroupsRaw arrive over the wire as JSON-serialized strings
 // (e.g. `"[]"` or `"[\"sudo\",\"wheel\"]"`) even though the input
-// schema accepts native arrays — kept as strings here so callers see
+// schema accepts native arrays - kept as strings here so callers see
 // what the API actually emits. Use ParseSSHList to materialize them
 // into []string.
 type Role struct {
@@ -1055,7 +1055,7 @@ type Role struct {
 	OrgName               string `json:"orgName,omitempty"`
 	RequireDeviceApproval bool   `json:"requireDeviceApproval"`
 	// AllowSSH is a *bool so callers can distinguish "server did not
-	// emit the field" (nil — the 1.19+ Read response no longer surfaces
+	// emit the field" (nil - the 1.19+ Read response no longer surfaces
 	// allowSsh) from an explicit false. The Update/Create requests
 	// keep pointer semantics too, so nil round-trips as "leave alone"
 	// on the wire.
@@ -1114,7 +1114,7 @@ func (c *Client) RemoveUserFromRole(ctx context.Context, roleID int, userID stri
 
 // AddRoleToUser binds an additional role to a user (cumulative).
 // Distinct from AddUserToRole / POST /role/{id}/users/add, which the
-// Pangolin server treats as a single-role assignment endpoint —
+// Pangolin server treats as a single-role assignment endpoint -
 // calling it strips the user's other roles. Use this when you want a
 // user to hold *multiple* roles simultaneously, e.g. Member + Admin.
 func (c *Client) AddRoleToUser(ctx context.Context, userID string, roleID int) error {
@@ -1297,7 +1297,7 @@ type UserRoleBinding struct {
 // User represents a Pangolin user.
 //
 // The list endpoint returns a richer payload than the older provider
-// modeled — IDP linkage, 2FA flag, ownership marker, dateCreated,
+// modeled - IDP linkage, 2FA flag, ownership marker, dateCreated,
 // plus the embedded role bindings. New fields are all omitempty so
 // older create/update responses (which return a subset) keep
 // unmarshalling cleanly.
@@ -1337,7 +1337,7 @@ type UserByUsernameResponse struct {
 
 // GetUserByUsername looks up a user by their username within an
 // organization. The Pangolin API requires the IDP ID alongside the
-// username — usernames are unique only within an IDP, not globally.
+// username - usernames are unique only within an IDP, not globally.
 func (c *Client) GetUserByUsername(ctx context.Context, orgID, username string, idpID int) (*UserByUsernameResponse, error) {
 	values := url.Values{}
 	values.Set("username", username)
@@ -1395,7 +1395,7 @@ func (c *Client) UpdateSite(ctx context.Context, siteID int, req *UpdateSiteRequ
 }
 
 // UpdateResourceRequest is the payload for updating a Pangolin
-// resource. Every field is optional — the server only touches the
+// resource. Every field is optional - the server only touches the
 // keys that are present in the payload. Pre-1.19 servers ignore the
 // 1.19-only fields, so it's safe to always send `omitempty`.
 type UpdateResourceRequest struct {
@@ -1410,7 +1410,7 @@ type UpdateResourceRequest struct {
 	StickySession         *bool   `json:"stickySession,omitempty"`
 	TLSServerName         *string `json:"tlsServerName,omitempty"`
 
-	// 1.19+ additions — routing / auth. `enableProxy`,
+	// 1.19+ additions - routing / auth. `enableProxy`,
 	// `proxyProtocol` and `proxyProtocolVersion` were probed on the
 	// live 1.19 ent server: POST /resource/{id} answers with
 	// `Unrecognized key`. They stay on the wire struct (Read
@@ -1420,14 +1420,14 @@ type UpdateResourceRequest struct {
 	SkipToIdpID   *int              `json:"skipToIdpId,omitempty"`
 	PostAuthPath  *string           `json:"postAuthPath,omitempty"`
 
-	// 1.19+ additions — maintenance mode
+	// 1.19+ additions - maintenance mode
 	MaintenanceModeEnabled   *bool   `json:"maintenanceModeEnabled,omitempty"`
 	MaintenanceModeType      string  `json:"maintenanceModeType,omitempty"`
 	MaintenanceTitle         *string `json:"maintenanceTitle,omitempty"`
 	MaintenanceMessage       *string `json:"maintenanceMessage,omitempty"`
 	MaintenanceEstimatedTime *string `json:"maintenanceEstimatedTime,omitempty"`
 
-	// 1.19+ additions — PAM / auth-daemon (mode is create-only,
+	// 1.19+ additions - PAM / auth-daemon (mode is create-only,
 	// so it is not exposed on Update).
 	PamMode        string `json:"pamMode,omitempty"`
 	AuthDaemonMode string `json:"authDaemonMode,omitempty"`
@@ -1486,7 +1486,7 @@ func (c *Client) UpdateSiteResource(ctx context.Context, siteResourceID int, req
 // --- Roles CRUD ---
 
 // CreateRoleRequest is the payload for creating a role. SSH bastion
-// fields are optional — pointer types so that omitempty drops them when
+// fields are optional - pointer types so that omitempty drops them when
 // the caller does not set them (preserving the server default behavior).
 type CreateRoleRequest struct {
 	Name                  string   `json:"name"`
@@ -1658,7 +1658,7 @@ func (c *Client) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 }
 
 // APIKeyAction is one row of the action list bound to an API key.
-// The wire shape is intentionally minimal — a single `actionId`
+// The wire shape is intentionally minimal - a single `actionId`
 // per row, which is a server-defined camelCase operation name
 // (e.g. `getOrg`, `listSites`, `createResource`). The catalog is
 // closed and not introspectable from the spec; the OpenAPI
@@ -1696,7 +1696,7 @@ func (c *Client) ListAPIKeyActions(ctx context.Context, apiKeyID string) ([]APIK
 //     actions on a key, delete the key instead.
 //   - OpenAPI says `maxItems: 1` but the server happily accepts a
 //     multi-element array and replaces the full set in one call.
-//   - The action IDs are not validated against the OpenAPI routes —
+//   - The action IDs are not validated against the OpenAPI routes -
 //     they form a closed server-side enum (camelCase operation
 //     names like `getOrg`, `listSites`). Unknown IDs return HTTP 400
 //     `One or more actions do not exist`; surface as a plain error
@@ -1797,7 +1797,7 @@ func (c *Client) ListOLMClients(ctx context.Context) ([]OLMClient, error) {
 // live Client rows; nullable upstream fields use pointer types.
 //
 // One field omitted on purpose: `sites: []` is empty in the only
-// live sample we've seen. Its element shape is unknown — could be
+// live sample we've seen. Its element shape is unknown - could be
 // `[]string` (nice IDs), `[]int` (numeric IDs), or `[]SiteRef`. Add
 // it in a follow-up PR once a real value is observable, per the
 // repo's "always probe before typing" rule.
@@ -1840,7 +1840,7 @@ type UserDevicesPage struct {
 
 // ListUserDevicesOptions controls the upstream filter / sort / paging
 // behavior of GET /org/{org}/user-devices. Empty zero values map to
-// "not specified" on the wire — the server then applies its defaults
+// "not specified" on the wire - the server then applies its defaults
 // (pageSize=20, page=1, status=[active,pending], order=asc).
 type ListUserDevicesOptions struct {
 	PageSize int
@@ -1863,7 +1863,7 @@ type ListUserDevicesOptions struct {
 
 	// Status filters by device approval / lifecycle status. Each
 	// entry is one of "active", "pending", "denied", "blocked",
-	// "archived". Comma-joined on the wire — the upstream parses
+	// "archived". Comma-joined on the wire - the upstream parses
 	// the CSV.
 	Status []string
 }
@@ -1871,7 +1871,7 @@ type ListUserDevicesOptions struct {
 // ListUserDevices returns the user-bound device list (page +
 // pagination block). Distinct from [Client.ListOLMClients]: this
 // endpoint lists clients with a user binding (phones, laptops,
-// browsers — see the `agent` enum), while ListOLMClients lists
+// browsers - see the `agent` enum), while ListOLMClients lists
 // org-level OLM clients with no user association.
 func (c *Client) ListUserDevices(ctx context.Context, opts *ListUserDevicesOptions) (*UserDevicesPage, error) {
 	path := fmt.Sprintf("/org/%s/user-devices", c.OrgID)
@@ -2002,14 +2002,14 @@ func (c *Client) RemoveWhitelistFromResource(ctx context.Context, resourceID int
 
 // ListResourceWhitelist returns the email whitelist currently
 // configured on an HTTP resource. The response shape is `{whitelist:
-// [...]}` — the items are either plain email strings or `{email}`
+// [...]}` - the items are either plain email strings or `{email}`
 // objects depending on the server build, so the unmarshaler accepts
 // both forms and normalizes to a `[]string` of emails.
 //
 // Returns an empty slice when the resource has no whitelist
 // configured or when email_whitelist_enabled is off. The 400 error
 // "Email whitelist is not enabled for this resource" only fires on
-// add/remove, not on the GET — confirmed live.
+// add/remove, not on the GET - confirmed live.
 func (c *Client) ListResourceWhitelist(ctx context.Context, resourceID int) ([]string, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/whitelist", resourceID), nil)
 	if err != nil {
@@ -2053,7 +2053,7 @@ func (c *Client) ListResourceWhitelist(ctx context.Context, resourceID int) ([]s
 
 // SetResourceRoles replaces the non-admin role bindings of an HTTP
 // resource with the given set. Quirk observed live: the built-in
-// Admin role is mandatory on every resource — the API rejects any
+// Admin role is mandatory on every resource - the API rejects any
 // roleIds list that *includes* role 1 ("Admin role cannot be
 // assigned to resources") and silently keeps Admin attached when
 // the list does *not* mention it. In practice, callers should pass
@@ -2111,7 +2111,7 @@ func (c *Client) RemoveClientFromSiteResource(ctx context.Context, siteResourceI
 
 // SiteResourceClientEntry is one entry in the client list returned
 // by GET /site-resource/{id}/clients. The slim shape is intentional
-// — the upstream payload only carries clientId / name / subnet.
+// - the upstream payload only carries clientId / name / subnet.
 type SiteResourceClientEntry struct {
 	ClientID int    `json:"clientId"`
 	Name     string `json:"name"`
@@ -2267,13 +2267,13 @@ func (c *Client) ListSiteResources(ctx context.Context) ([]SiteResource, error) 
 }
 
 // ListSiteResourcesForSite returns the private site resources attached
-// to a specific site. The upstream payload leaks the SQL join shape —
+// to a specific site. The upstream payload leaks the SQL join shape -
 // each item is a struct of `{siteNetworks, networks, siteResources}`
 // where the inner `siteResources` key is the actual SiteResource entity.
 // This helper unwraps and returns a clean `[]SiteResource`.
 //
 // Marginal value vs the org-wide [Client.ListSiteResources] for most
-// callers — the same filtering is achievable in HCL via `for x in
+// callers - the same filtering is achievable in HCL via `for x in
 // data.pangolin_site_resources.all.site_resources : x if x.site_id == N`.
 // Exposed mainly to round out coverage of the API surface.
 func (c *Client) ListSiteResourcesForSite(ctx context.Context, siteID int) ([]SiteResource, error) {
@@ -2306,7 +2306,7 @@ type Org struct {
 	UtilitySubnet string `json:"utilitySubnet"`
 	CreatedAt     string `json:"createdAt,omitempty"`
 
-	// Security policies — nullable upstream (null = unset / inherit).
+	// Security policies - nullable upstream (null = unset / inherit).
 	RequireTwoFactor      *bool `json:"requireTwoFactor"`
 	MaxSessionLengthHours *int  `json:"maxSessionLengthHours"`
 	PasswordExpiryDays    *int  `json:"passwordExpiryDays"`
@@ -2317,12 +2317,12 @@ type Org struct {
 	SettingsLogRetentionDaysAction     int `json:"settingsLogRetentionDaysAction"`
 	SettingsLogRetentionDaysConnection int `json:"settingsLogRetentionDaysConnection"`
 
-	// SSH CA — used to sign certificates for SSH bastion access. The
+	// SSH CA - used to sign certificates for SSH bastion access. The
 	// private key is returned in clear by the API; treat as secret.
 	SSHCaPrivateKey string `json:"sshCaPrivateKey,omitempty"`
 	SSHCaPublicKey  string `json:"sshCaPublicKey,omitempty"`
 
-	// Billing — IsBillingOrg=true means this org carries the billing
+	// Billing - IsBillingOrg=true means this org carries the billing
 	// account. BillingOrgID points at the billing org (often itself).
 	IsBillingOrg bool   `json:"isBillingOrg,omitempty"`
 	BillingOrgID string `json:"billingOrgId,omitempty"`
@@ -2404,7 +2404,7 @@ func (c *Client) DeleteOrg(ctx context.Context, orgID string) error {
 // an organization. The endpoint is fire-and-forget (response body is
 // `data: {}`); intended for admin / billing operations and exposed
 // here to round out organization-level coverage. Not surfaced as a
-// Terraform resource — the action is imperative, not declarative.
+// Terraform resource - the action is imperative, not declarative.
 func (c *Client) ResetOrgBandwidth(ctx context.Context, orgID string) error {
 	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/reset-bandwidth", orgID), map[string]any{})
 	return err
@@ -2493,7 +2493,7 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 
 // TwoFAStatus is the trimmed response of POST /user/{id}/2fa.
 // The wire key on the response (`twoFactorRequested`) differs from
-// the request key (`twoFactorSetupRequested`) — kept distinct so
+// the request key (`twoFactorSetupRequested`) - kept distinct so
 // the caller sees what the server actually emitted.
 type TwoFAStatus struct {
 	UserID             string `json:"userId"`
@@ -2502,7 +2502,7 @@ type TwoFAStatus struct {
 
 // SetUser2FAStatus flips the user's 2FA setup flag. Passing `true`
 // marks the user as needing to set up 2FA on next login; passing
-// `false` clears the request. The endpoint is root-only — fails
+// `false` clears the request. The endpoint is root-only - fails
 // with HTTP 403 `Key does not have root access` on a non-admin key.
 //
 // Companion broken endpoint (documented in repo memory): PUT
@@ -2523,7 +2523,7 @@ func (c *Client) SetUser2FAStatus(ctx context.Context, userID string, requested 
 }
 
 // ListOrgs returns every organization visible to the calling key.
-// Root-only — fails with HTTP 403 on a non-admin key. The response
+// Root-only - fails with HTTP 403 on a non-admin key. The response
 // items reuse the existing [Org] struct shape (full payload incl.
 // SSH CA private key, billing fields, log retention settings).
 func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
@@ -2540,20 +2540,20 @@ func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
 	return wrapper.Orgs, nil
 }
 
-// RootUserDetail is the wire shape of GET /user/{userId} — the root
+// RootUserDetail is the wire shape of GET /user/{userId} - the root
 // (cross-org) single-user lookup. Distinct from [User] (per-org list
 // shape) in two ways: it uses `userId` instead of `id` as the JSON
 // key, and it surfaces fields not visible in the org-scoped variants:
 //
-//   - ServerAdmin — true for users with server-admin scope (the
+//   - ServerAdmin - true for users with server-admin scope (the
 //     sentinel identifying a "root" account).
-//   - TwoFactorSetupRequested — the request-side flag flipped by
+//   - TwoFactorSetupRequested - the request-side flag flipped by
 //     [Client.SetUser2FAStatus]; the org-scoped User struct only
 //     carries TwoFactorEnabled (whether 2FA is actually set up).
-//   - IDPName / IDPID — nullable. Internal users have both nil;
+//   - IDPName / IDPID - nullable. Internal users have both nil;
 //     external IDP-provisioned users carry a name + numeric ID.
 //
-// Root-only — fails with HTTP 403 on a non-admin key.
+// Root-only - fails with HTTP 403 on a non-admin key.
 type RootUserDetail struct {
 	UserID                  string  `json:"userId"`
 	Email                   string  `json:"email"`
@@ -2570,7 +2570,7 @@ type RootUserDetail struct {
 }
 
 // GetUserByID retrieves the root (cross-org) detail of a user by ID.
-// Root-only — fails with HTTP 403 on a non-admin key. Distinct from
+// Root-only - fails with HTTP 403 on a non-admin key. Distinct from
 // the org-scoped [Client.GetUser] (`GET /org/{org}/user/{id}`) by
 // the additional fields surfaced on [RootUserDetail] (ServerAdmin,
 // TwoFactorSetupRequested, EmailVerified, DateCreated, IDPName).
@@ -2589,16 +2589,16 @@ func (c *Client) GetUserByID(ctx context.Context, userID string) (*RootUserDetai
 // --- Blueprint ---
 //
 // Blueprints are an append-only audit log of declarative "apply"
-// payloads — each PUT records a new entry with an auto-generated
+// payloads - each PUT records a new entry with an auto-generated
 // pet-name (`productive-defenseless-toothpick`, `linear-general-elver`,
 // …) and never overwrites prior ones. There is no DELETE endpoint;
 // once applied, a blueprint persists. Because of this, the package
 // exposes Apply + Get + List as plain client methods but no
-// Terraform resource — the PUT semantics don't fit declarative state
+// Terraform resource - the PUT semantics don't fit declarative state
 // (every Create would mint a new audit record on every plan).
 
 // Blueprint is the slim row shape returned by
-// GET /org/{org}/blueprints. `CreatedAt` is epoch **seconds** here —
+// GET /org/{org}/blueprints. `CreatedAt` is epoch **seconds** here -
 // distinct from the millisecond timestamps used on every other
 // Pangolin list endpoint (`/access-tokens`, `/api-keys`, …).
 type Blueprint struct {
@@ -2621,7 +2621,7 @@ type BlueprintDetail struct {
 }
 
 // ApplyBlueprintRequest is the wire body for PUT /org/{org}/blueprint.
-// The `Blueprint` field is a base64-encoded JSON document — the
+// The `Blueprint` field is a base64-encoded JSON document - the
 // server decodes, parses, and dispatches it through the same code
 // path the Pangolin UI uses for "apply blueprint".
 type ApplyBlueprintRequest struct {
@@ -2630,7 +2630,7 @@ type ApplyBlueprintRequest struct {
 
 // ApplyBlueprint applies a base64-encoded JSON document to the org.
 // The blueprint mints a new audit record regardless of whether
-// anything actually changes upstream — repeated identical applies
+// anything actually changes upstream - repeated identical applies
 // pile up new entries; there is no idempotency guarantee.
 //
 // The server returns 201 with `data: null` on success; the freshly
@@ -2639,7 +2639,7 @@ type ApplyBlueprintRequest struct {
 // highest `BlueprintID`.
 //
 // Empty / malformed JSON payloads return HTTP 400 with descriptive
-// validation error messages — surfaced as a plain error by
+// validation error messages - surfaced as a plain error by
 // [Client.doRequest].
 func (c *Client) ApplyBlueprint(ctx context.Context, base64JSON string) error {
 	body := ApplyBlueprintRequest{Blueprint: base64JSON}
@@ -2663,7 +2663,7 @@ func (c *Client) GetBlueprint(ctx context.Context, blueprintID int) (*BlueprintD
 }
 
 // ListBlueprints returns every blueprint audit record for the org,
-// in upstream order (not necessarily sorted by ID — observed live as
+// in upstream order (not necessarily sorted by ID - observed live as
 // approximately insertion order but with some interleaving).
 func (c *Client) ListBlueprints(ctx context.Context) ([]Blueprint, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/blueprints", c.OrgID), nil)
@@ -2683,14 +2683,14 @@ func (c *Client) ListBlueprints(ctx context.Context) ([]Blueprint, error) {
 
 // IDP represents a Pangolin Identity Provider.
 //
-// Variant refines Type for OIDC providers — observed values are
+// Variant refines Type for OIDC providers - observed values are
 // "oidc" (generic), "google", "azure". The Pangolin UI uses the
 // variant to pre-fill provider-specific URLs and tweak the consent
 // flow; downstream consumers can branch on it to render different
 // help text.
 //
 // OrgCount comes from the API as a JSON-encoded string (e.g. "0")
-// in the LIST response — kept as string here to match the wire.
+// in the LIST response - kept as string here to match the wire.
 type IDP struct {
 	IDPId              int    `json:"idpId"`
 	Name               string `json:"name"`
@@ -2716,7 +2716,7 @@ type IDPOidcConfig struct {
 }
 
 // CreateIDPRequest is the payload for creating an OIDC IDP.
-// Variant is optional — defaults to "oidc" server-side when omitted.
+// Variant is optional - defaults to "oidc" server-side when omitted.
 type CreateIDPRequest struct {
 	Name           string `json:"name"`
 	ClientID       string `json:"clientId"`
@@ -2844,7 +2844,7 @@ func (c *Client) DeleteIDPOrgPolicy(ctx context.Context, idpID int, orgID string
 
 // --- Org-scoped IDP CRUD ---
 //
-// These are the 5 routes under `/org/{orgId}/idp*` — distinct from the
+// These are the 5 routes under `/org/{orgId}/idp*` - distinct from the
 // system-wide `/idp*` routes already covered above. The org-scoped
 // variants auto-bind the IDP to the calling org at creation time, so
 // they replace the two-step `pangolin_idp` + `pangolin_idp_org`
@@ -2858,7 +2858,7 @@ func (c *Client) DeleteIDPOrgPolicy(ctx context.Context, idpID int, orgID string
 //   - DELETE /org/{org}/idp/{id}   → DeleteOrgIDP
 //
 // The list endpoint emits a slim row shape (no orgCount / autoProvision
-// — see [OrgIDPListItem]). Single GET wraps three blocks together —
+// - see [OrgIDPListItem]). Single GET wraps three blocks together -
 // the org-binding row lives in `idpOrg`.
 
 // OrgIDPListItem is the slim row returned by the org-scoped list.
@@ -2895,7 +2895,7 @@ type OrgIDPBindRow struct {
 }
 
 // CreateOrgIDP creates an OIDC IDP auto-bound to the given org. The
-// request body has the same shape as [CreateIDPRequest] — the only
+// request body has the same shape as [CreateIDPRequest] - the only
 // difference is the path. Response mirrors [CreateIDPResponse]
 // (`{idpId, redirectUrl}`).
 func (c *Client) CreateOrgIDP(ctx context.Context, orgID string, req *CreateIDPRequest) (*CreateIDPResponse, error) {
@@ -2942,7 +2942,7 @@ func (c *Client) GetOrgIDP(ctx context.Context, orgID string, idpID int) (*OrgID
 
 // UpdateOrgIDP updates the OIDC config of an org-scoped IDP. Same
 // body shape as [UpdateIDPRequest]; response is the trimmed
-// `{idpId}` only — fetch with [Client.GetOrgIDP] if the full payload
+// `{idpId}` only - fetch with [Client.GetOrgIDP] if the full payload
 // is needed.
 func (c *Client) UpdateOrgIDP(ctx context.Context, orgID string, idpID int, req *UpdateIDPRequest) error {
 	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/idp/%d/oidc", orgID, idpID), req)
@@ -2995,7 +2995,7 @@ func (c *Client) GetDomainByID(ctx context.Context, domainID string) (*Domain, e
 }
 
 // GetDomain retrieves a domain by ID via the per-id endpoint
-// (GET /org/{org}/domain/{id}) — preferred over GetDomainByID since
+// (GET /org/{org}/domain/{id}) - preferred over GetDomainByID since
 // it avoids fetching the full list.
 func (c *Client) GetDomain(ctx context.Context, orgID, domainID string) (*Domain, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/domain/%s", orgID, domainID), nil)
@@ -3012,10 +3012,10 @@ func (c *Client) GetDomain(ctx context.Context, orgID, domainID string) (*Domain
 // PatchDomainRequest is the body for the narrow PATCH endpoint.
 // The OpenAPI does not advertise a request schema; probed live, the
 // only two accepted keys are `certResolver` (string, nullable) and
-// `preferWildcardCert` (bool). Sending any other key — including
-// `baseDomain` / `type` / `verified` — fails the validator with
+// `preferWildcardCert` (bool). Sending any other key - including
+// `baseDomain` / `type` / `verified` - fails the validator with
 // `Unrecognized key: "..."` (HTTP 400). Pointer types preserve the
-// distinction between "leave unchanged" (nil — omitted from the
+// distinction between "leave unchanged" (nil - omitted from the
 // body) and "set to null/false" (non-nil).
 type PatchDomainRequest struct {
 	CertResolver       *string `json:"certResolver,omitempty"`
@@ -3035,7 +3035,7 @@ type PatchDomainResponse struct {
 // upstream endpoint accepts only `certResolver` and
 // `preferWildcardCert`; everything else is rejected with a 400. Use
 // [Client.GetDomain] after the call if the full updated Domain
-// payload is needed — the PATCH response is intentionally narrow.
+// payload is needed - the PATCH response is intentionally narrow.
 func (c *Client) PatchDomain(ctx context.Context, orgID, domainID string, req *PatchDomainRequest) (*PatchDomainResponse, error) {
 	resp, err := c.doRequest(ctx, "PATCH", fmt.Sprintf("/org/%s/domain/%s", orgID, domainID), req)
 	if err != nil {
@@ -3071,7 +3071,7 @@ func (c *Client) ListDomainDNSRecords(ctx context.Context, orgID, domainID strin
 //   - CREATE (POST /resource/{id}/access-token) returns the freshly
 //     generated `accessToken` (the bearer secret) but **does not**
 //     return `tokenHash` / `resourceName` / `resourceNiceId` / `siteName`.
-//     The secret is only visible here — store it before discarding the
+//     The secret is only visible here - store it before discarding the
 //     response.
 //   - LIST per-resource (GET /resource/{id}/access-tokens) and LIST
 //     org-wide (GET /org/{orgId}/access-tokens) both omit `accessToken`
@@ -3113,7 +3113,7 @@ type CreateResourceAccessTokenRequest struct {
 
 // CreateResourceAccessToken provisions a new access token on an HTTP
 // resource. The returned struct's AccessToken field carries the bearer
-// secret — only visible here. Subsequent reads expose only TokenHash.
+// secret - only visible here. Subsequent reads expose only TokenHash.
 func (c *Client) CreateResourceAccessToken(ctx context.Context, resourceID int, req *CreateResourceAccessTokenRequest) (*ResourceAccessToken, error) {
 	if req == nil {
 		req = &CreateResourceAccessTokenRequest{}
@@ -3142,7 +3142,7 @@ type ResourceAccessTokenListResponse struct {
 
 // ListResourceAccessTokens returns the access tokens bound to a
 // specific HTTP resource. The bearer secrets are not exposed by this
-// endpoint — only TokenHash + enrichment fields.
+// endpoint - only TokenHash + enrichment fields.
 func (c *Client) ListResourceAccessTokens(ctx context.Context, resourceID int) ([]ResourceAccessToken, error) {
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/resource/%d/access-tokens", resourceID), nil)
 	if err != nil {
@@ -3189,7 +3189,7 @@ func (c *Client) GetResourceAccessToken(ctx context.Context, accessTokenID strin
 }
 
 // DeleteResourceAccessToken revokes an access token by its ID.
-// The endpoint is keyed by the token ID alone — no resource scope is
+// The endpoint is keyed by the token ID alone - no resource scope is
 // required.
 func (c *Client) DeleteResourceAccessToken(ctx context.Context, accessTokenID string) error {
 	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/access-token/%s", accessTokenID), nil)
@@ -3368,7 +3368,7 @@ type RequestLogPagination struct {
 }
 
 // RequestLogResourceRef is a tiny {id, name} object embedded in the
-// FilterAttributes.Resources slice — the server returns resource
+// FilterAttributes.Resources slice - the server returns resource
 // references as objects, not bare IDs.
 type RequestLogResourceRef struct {
 	ID   int64  `json:"id"`

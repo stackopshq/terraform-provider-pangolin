@@ -14,7 +14,7 @@ var _ datasource.DataSource = &AccessTokensDataSource{}
 
 // AccessTokensDataSource lists every resource access token in the
 // organization. The bearer secrets are not exposed by the upstream
-// list endpoint — only the SHA-256 token hash and the metadata.
+// list endpoint - only the SHA-256 token hash and the metadata.
 type AccessTokensDataSource struct {
 	client *client.Client
 }
@@ -54,7 +54,7 @@ func (d *AccessTokensDataSource) Metadata(_ context.Context, req datasource.Meta
 func (d *AccessTokensDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Lists every resource access token in the organization.\n\n" +
-			"> **Note:** the bearer secret is never returned by this endpoint — " +
+			"> **Note:** the bearer secret is never returned by this endpoint - " +
 			"only the SHA-256 `token_hash` is exposed. Filter by `resource_id` " +
 			"in HCL to scope to a single resource.",
 		Attributes: map[string]schema.Attribute{

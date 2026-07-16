@@ -132,7 +132,7 @@ func (r *ResourceHeaderAuthResource) Read(ctx context.Context, req resource.Read
 	}
 
 	if authState.HeaderAuthID == nil {
-		// Header auth was removed externally — remove from state.
+		// Header auth was removed externally - remove from state.
 		resp.State.RemoveResource(ctx)
 		return
 	}
