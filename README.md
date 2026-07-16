@@ -95,6 +95,9 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_orgs` | List all organizations visible to the calling key (root-only) |
 | `pangolin_idps` | List all Identity Providers |
 | `pangolin_request_logs` | Query the request audit log |
+| `pangolin_access_logs` | Query the access audit log (per-request access decisions) |
+| `pangolin_action_logs` | Query the action audit log (admin/mutation actions) |
+| `pangolin_connection_logs` | Query the connection audit log (VPN/tunnel lifecycle events) |
 | `pangolin_logs_analytics` | Aggregate analytics rollup (per-country, per-day, totals) |
 | `pangolin_blueprints` | List the blueprint (declarative apply) audit records for the org |
 | `pangolin_blueprint` | Single blueprint lookup by ID (exposes raw `contents` + apply outcome) |

@@ -3504,6 +3504,89 @@ func buildRequestLogQuery(q RequestLogQuery) string {
 	return values.Encode()
 }
 
+// AuditLogKind selects which audit log stream to query. Values match the
+// URL segment used by /org/{org}/logs/{kind}.
+type AuditLogKind string
+
+const (
+	// AuditLogAccess covers per-request access decisions on protected
+	// HTTP resources.
+	AuditLogAccess AuditLogKind = "access"
+	// AuditLogAction covers admin/mutation actions performed via the
+	// Integration API or UI.
+	AuditLogAction AuditLogKind = "action"
+	// AuditLogConnection covers VPN/tunnel connection lifecycle events
+	// from OLM clients and site connectors.
+	AuditLogConnection AuditLogKind = "connection"
+)
+
+// AuditLogQuery filters an access/action/connection audit log query.
+// All fields are optional and are only sent to the server when set.
+// The per-log-kind filter semantics vary but the URL parameter names
+// are stable across the three streams observed on Pangolin enterprise.
+type AuditLogQuery struct {
+	TimeStart  string
+	TimeEnd    string
+	Action     string
+	Actor      string
+	ResourceID string
+	Limit      string
+	Offset     string
+}
+
+// AuditLogsResponse is the wrapper returned by
+// GET /org/{org}/logs/{access,action,connection}. The entry shape is
+// deliberately opaque: on the current server build the log slice is
+// empty across the three streams (no events accumulated on the tested
+// tenant), so we surface each entry as a raw JSON payload and let
+// operators jsondecode() what they need.
+//
+// FilterAttributes also varies per stream (access returns
+// actors/resources/locations, action returns actors/actions, connection
+// returns protocols/destAddrs/clients/resources/users). Modeling it as
+// map[string]RawMessage keeps the client honest about the fact that
+// each stream ships a different set of dimensions.
+type AuditLogsResponse struct {
+	Log              []json.RawMessage          `json:"log"`
+	Pagination       RequestLogPagination       `json:"pagination"`
+	FilterAttributes map[string]json.RawMessage `json:"filterAttributes"`
+}
+
+// ListAuditLogs queries one of the access/action/connection audit log
+// streams for an organization. Returns the raw entries (each a JSON
+// blob preserved verbatim) plus pagination and per-stream filter
+// dimensions. Requires an active subscription on Pangolin Cloud; on
+// self-host enterprise the endpoint is available with an admin token.
+func (c *Client) ListAuditLogs(ctx context.Context, orgID string, kind AuditLogKind, q AuditLogQuery) (*AuditLogsResponse, error) {
+	path := fmt.Sprintf("/org/%s/logs/%s", orgID, kind)
+	values := url.Values{}
+	for k, v := range map[string]string{
+		"timeStart":  q.TimeStart,
+		"timeEnd":    q.TimeEnd,
+		"action":     q.Action,
+		"actor":      q.Actor,
+		"resourceId": q.ResourceID,
+		"limit":      q.Limit,
+		"offset":     q.Offset,
+	} {
+		if v != "" {
+			values.Set(k, v)
+		}
+	}
+	if qs := values.Encode(); qs != "" {
+		path += "?" + qs
+	}
+	resp, err := c.doRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var out AuditLogsResponse
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse %s audit logs: %w", kind, err)
+	}
+	return &out, nil
+}
+
 // --- Invitations ---
 
 // InviteRole is one role binding embedded inside an Invitation list item.

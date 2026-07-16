@@ -223,6 +223,9 @@ func (p *PangolinProvider) DataSources(_ context.Context) []func() datasource.Da
 		datasources.NewUserDevicesDataSource,
 		datasources.NewBlueprintsDataSource,
 		datasources.NewBlueprintDataSource,
+		datasources.NewAccessLogsDataSource,
+		datasources.NewActionLogsDataSource,
+		datasources.NewConnectionLogsDataSource,
 	}
 }
 
