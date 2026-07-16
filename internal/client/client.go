@@ -205,7 +205,8 @@ func (c *Client) doRequestOnce(ctx context.Context, method, path string, bodyByt
 
 	var apiResp APIResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("failed to parse response (status %d, content-type %q): %s",
+			resp.StatusCode, resp.Header.Get("Content-Type"), truncateForDiag(respBody))
 	}
 
 	if apiResp.Error || resp.StatusCode >= 400 {
@@ -242,6 +243,19 @@ func backoffDelay(retryNum int) time.Duration {
 		return retryWaitMax
 	}
 	return wait
+}
+
+// truncateForDiag prepares an untrusted response body for a Terraform
+// diagnostic. It collapses whitespace to a single line and caps the
+// output so an HTML error page, stack trace, or otherwise long payload
+// cannot flood the diag message.
+func truncateForDiag(body []byte) string {
+	const maxDiagBody = 512
+	s := strings.Join(strings.Fields(string(body)), " ")
+	if len(s) > maxDiagBody {
+		return s[:maxDiagBody] + "... [truncated]"
+	}
+	return s
 }
 
 // classifyError maps an HTTP status code to a wrapped sentinel error so
