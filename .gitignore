@@ -8,7 +8,7 @@ dist/
 .vscode/
 .claude
 
-# Credentials and secrets — never commit
+# Credentials and secrets - never commit
 .env
 .envrc
 .api-token*

@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   Replaces the set of actions (permissions) granted to a Pangolin API key.
   The set of valid action IDs is a closed, server-defined enum of camelCase operation names (e.g. getOrg, listSites, createResource). The catalog is not introspectable from the OpenAPI spec; supplying an unknown ID returns a 400 from the upstream API.
-  **Note:** the upstream rejects empty sets. To clear all actions, delete the parent API key instead. `terraform destroy` on this resource only removes it from state — the actions remain bound to the key until the key itself is deleted (typically by the parent `pangolin_api_key` resource).
+  **Note:** the upstream rejects empty sets. To clear all actions, delete the parent API key instead. `terraform destroy` on this resource only removes it from state - the actions remain bound to the key until the key itself is deleted (typically by the parent `pangolin_api_key` resource).
 ---
 
 # pangolin_api_key_actions (Resource)
@@ -14,7 +14,7 @@ Replaces the set of actions (permissions) granted to a Pangolin API key.
 
 The set of valid action IDs is a closed, server-defined enum of camelCase operation names (e.g. `getOrg`, `listSites`, `createResource`). The catalog is not introspectable from the OpenAPI spec; supplying an unknown ID returns a 400 from the upstream API.
 
-> **Note:** the upstream rejects empty sets. To clear all actions, delete the parent API key instead. `terraform destroy` on this resource only removes it from state — the actions remain bound to the key until the key itself is deleted (typically by the parent `pangolin_api_key` resource).
+> **Note:** the upstream rejects empty sets. To clear all actions, delete the parent API key instead. `terraform destroy` on this resource only removes it from state - the actions remain bound to the key until the key itself is deleted (typically by the parent `pangolin_api_key` resource).
 
 ## Example Usage
 

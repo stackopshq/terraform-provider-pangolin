@@ -13,7 +13,7 @@ Manages a Pangolin private site resource (VPN-accessible endpoint).
 ## Example Usage
 
 ```terraform
-# L4 tunnel (cidr / host modes) — requires alias + port ranges.
+# L4 tunnel (cidr / host modes) - requires alias + port ranges.
 resource "pangolin_site_resource" "internal_db" {
   site_id        = pangolin_site.example.id
   name           = "internal-db"
@@ -23,7 +23,7 @@ resource "pangolin_site_resource" "internal_db" {
   tcp_port_range = "5432"
 }
 
-# L7 HTTP proxy (http mode) — requires domain_id + subdomain + scheme + destination_port.
+# L7 HTTP proxy (http mode) - requires domain_id + subdomain + scheme + destination_port.
 resource "pangolin_site_resource" "app_proxy" {
   site_id          = pangolin_site.example.id
   name             = "app-proxy"
@@ -39,7 +39,7 @@ output "app_full_domain" {
   value = pangolin_site_resource.app_proxy.full_domain
 }
 
-# SSH-backed site resource (Pangolin 1.19+) — L4 tunnel with PAM push
+# SSH-backed site resource (Pangolin 1.19+) - L4 tunnel with PAM push
 # notification MFA.
 resource "pangolin_site_resource" "ssh_bastion" {
   site_id        = pangolin_site.example.id
@@ -73,9 +73,9 @@ resource "pangolin_site_resource" "ssh_bastion" {
 - `destination_port` (Number) Backend destination port. Required for `mode = http`; ignored for `cidr` / `host`.
 - `disable_icmp` (Boolean) Whether to disable ICMP. The server defaults to `false` for `cidr` / `host` modes and `true` for `mode = http`; leaving this unset lets the server pick.
 - `domain_id` (String) ID of the parent domain (use the `pangolin_domains` data source to discover). Required for `mode = http`; ignored for `cidr` / `host`.
-- `pam_mode` (String) PAM (Pluggable Authentication Module) mode for SSH-backed site resources. One of `passthrough` or `push`. 1.19+ only — pre-1.19 servers leave this null.
+- `pam_mode` (String) PAM (Pluggable Authentication Module) mode for SSH-backed site resources. One of `passthrough` or `push`. 1.19+ only - pre-1.19 servers leave this null.
 - `scheme` (String) Protocol scheme of the upstream backend. Required for `mode = http`; ignored for `cidr` / `host`. One of `http`, `https`.
-- `subdomain` (String) Subdomain to host the proxy at — combined with `domain_id` to produce `full_domain`. Required for `mode = http`; ignored for `cidr` / `host`.
+- `subdomain` (String) Subdomain to host the proxy at - combined with `domain_id` to produce `full_domain`. Required for `mode = http`; ignored for `cidr` / `host`.
 - `tcp_port_range` (String) TCP port range string. `*` for all, `` for none, or specific ports/ranges (e.g. `80,443,8080-8090`). For `mode = http` the server auto-assigns `"443,80"` and ignores any value set here.
 - `udp_port_range` (String) UDP port range string. '*' for all, '' for none, or specific ports/ranges.
 
@@ -89,7 +89,7 @@ resource "pangolin_site_resource" "ssh_bastion" {
 - `id` (Number) The numeric ID of the site resource.
 - `network_id` (Number) The numeric network ID the resource is bound to.
 - `nice_id` (String) The human-readable ID.
-- `proxy_port` (Number) The proxy-facing port (server-assigned, read-only). The Pangolin API does NOT accept this as a create input — passing it returns `Validation error: Unrecognized key: "proxyPort"`.
+- `proxy_port` (Number) The proxy-facing port (server-assigned, read-only). The Pangolin API does NOT accept this as a create input - passing it returns `Validation error: Unrecognized key: "proxyPort"`.
 - `ssl` (Boolean) Whether SSL is terminated by the proxy in front of this resource.
 
 ## Import

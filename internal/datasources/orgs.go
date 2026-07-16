@@ -13,14 +13,14 @@ import (
 var _ datasource.DataSource = &OrgsDataSource{}
 
 // OrgsDataSource lists every organization visible to the calling key.
-// Root-only — fails with HTTP 403 when the provider's API key is not
+// Root-only - fails with HTTP 403 when the provider's API key is not
 // server-admin scoped. Mirrors [client.ListOrgs].
 type OrgsDataSource struct {
 	client *client.Client
 }
 
 // OrgItemModel describes a single org. SSH CA strings are surfaced
-// here even though `ssh_ca_private_key` is server-issued — callers
+// here even though `ssh_ca_private_key` is server-issued - callers
 // who don't need it should mark this data source's outputs as
 // sensitive or filter it out in HCL.
 type OrgItemModel struct {
@@ -60,7 +60,7 @@ func (d *OrgsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 	resp.Schema = schema.Schema{
 		Description: "Lists every organization visible to the calling API key. " +
 			"Useful for multi-org admin workflows and audit reporting.\n\n" +
-			"> **Note:** root-only — fails with HTTP 403 when the provider's API key " +
+			"> **Note:** root-only - fails with HTTP 403 when the provider's API key " +
 			"is not server-admin scoped. The `ssh_ca_private_key` attribute carries " +
 			"the org's SSH CA private key in clear; treat it as a credential.",
 		Attributes: map[string]schema.Attribute{

@@ -68,7 +68,7 @@ func (p *PangolinProvider) Schema(_ context.Context, _ provider.SchemaRequest, r
 				Optional:    true,
 			},
 			"tls_insecure": schema.BoolAttribute{
-				Description: "Skip TLS certificate verification entirely. Intended for local debugging only — never use against production. Can be set via `PANGOLIN_TLS_INSECURE` env var.",
+				Description: "Skip TLS certificate verification entirely. Intended for local debugging only - never use against production. Can be set via `PANGOLIN_TLS_INSECURE` env var.",
 				Optional:    true,
 			},
 		},
@@ -117,7 +117,7 @@ func (p *PangolinProvider) Configure(ctx context.Context, req provider.Configure
 	if tlsInsecure {
 		resp.Diagnostics.AddWarning(
 			"TLS verification disabled",
-			"'tls_insecure' is enabled — TLS certificate verification is being skipped for every Pangolin API call. Do not use this against a production instance.",
+			"'tls_insecure' is enabled - TLS certificate verification is being skipped for every Pangolin API call. Do not use this against a production instance.",
 		)
 		opts = append(opts, client.WithInsecureTLS())
 	}

@@ -4,7 +4,7 @@ page_title: "pangolin_blueprints Data Source - pangolin"
 subcategory: ""
 description: |-
   Lists every blueprint audit record for the organization.
-  Blueprints are an append-only log of past PUT /org/{org}/blueprint applies (auto-named with Pangolin's pet-name generator). There is no DELETE endpoint — every record persists. Use this data source for audit reporting or to fetch the latest entry by id for inspection via pangolin_blueprint.
+  Blueprints are an append-only log of past PUT /org/{org}/blueprint applies (auto-named with Pangolin's pet-name generator). There is no DELETE endpoint - every record persists. Use this data source for audit reporting or to fetch the latest entry by id for inspection via pangolin_blueprint.
   **Note:** `created_at` is epoch **seconds** on this endpoint, distinct from the milliseconds used elsewhere in the Pangolin API.
 ---
 
@@ -12,7 +12,7 @@ description: |-
 
 Lists every blueprint audit record for the organization.
 
-Blueprints are an append-only log of past `PUT /org/{org}/blueprint` applies (auto-named with Pangolin's pet-name generator). There is no DELETE endpoint — every record persists. Use this data source for audit reporting or to fetch the latest entry by `id` for inspection via `pangolin_blueprint`.
+Blueprints are an append-only log of past `PUT /org/{org}/blueprint` applies (auto-named with Pangolin's pet-name generator). There is no DELETE endpoint - every record persists. Use this data source for audit reporting or to fetch the latest entry by `id` for inspection via `pangolin_blueprint`.
 
 > **Note:** `created_at` is epoch **seconds** on this endpoint, distinct from the milliseconds used elsewhere in the Pangolin API.
 
@@ -31,7 +31,7 @@ output "recent_apply_audit" {
   )
 }
 
-# Failed applies — useful for alerting on broken IaC pushes.
+# Failed applies - useful for alerting on broken IaC pushes.
 output "failed_applies" {
   value = [
     for b in data.pangolin_blueprints.all.blueprints : {

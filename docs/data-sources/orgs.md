@@ -4,14 +4,14 @@ page_title: "pangolin_orgs Data Source - pangolin"
 subcategory: ""
 description: |-
   Lists every organization visible to the calling API key. Useful for multi-org admin workflows and audit reporting.
-  **Note:** root-only — fails with HTTP 403 when the provider's API key is not server-admin scoped. The `ssh_ca_private_key` attribute carries the org's SSH CA private key in clear; treat it as a credential.
+  **Note:** root-only - fails with HTTP 403 when the provider's API key is not server-admin scoped. The `ssh_ca_private_key` attribute carries the org's SSH CA private key in clear; treat it as a credential.
 ---
 
 # pangolin_orgs (Data Source)
 
 Lists every organization visible to the calling API key. Useful for multi-org admin workflows and audit reporting.
 
-> **Note:** root-only — fails with HTTP 403 when the provider's API key is not server-admin scoped. The `ssh_ca_private_key` attribute carries the org's SSH CA private key in clear; treat it as a credential.
+> **Note:** root-only - fails with HTTP 403 when the provider's API key is not server-admin scoped. The `ssh_ca_private_key` attribute carries the org's SSH CA private key in clear; treat it as a credential.
 
 ## Example Usage
 

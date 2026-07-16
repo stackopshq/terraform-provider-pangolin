@@ -111,7 +111,7 @@ func (r *ResourceWhitelistResource) Read(ctx context.Context, req resource.ReadR
 	emails, err := r.client.ListResourceWhitelist(ctx, int(state.ResourceID.ValueInt64()))
 	if err != nil {
 		if errors.Is(err, client.ErrNotFound) {
-			// Parent resource is gone — drop the binding from state.
+			// Parent resource is gone - drop the binding from state.
 			resp.State.RemoveResource(ctx)
 			return
 		}

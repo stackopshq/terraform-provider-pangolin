@@ -4,14 +4,14 @@ page_title: "pangolin_resource_targets Data Source - pangolin"
 subcategory: ""
 description: |-
   Lists the backend targets of a Pangolin HTTP resource, with the full list-view detail (site labels, health-check configuration, path routing) that the per-id GET /target/{id} endpoint does not echo.
-  **Note:** Health-check fields (`hc_*`) and routing fields (`path`, `rewrite_*`, etc.) come back as `null` when no probe / no routing is configured — surfaced as Terraform `null` in those cases.
+  **Note:** Health-check fields (`hc_*`) and routing fields (`path`, `rewrite_*`, etc.) come back as `null` when no probe / no routing is configured - surfaced as Terraform `null` in those cases.
 ---
 
 # pangolin_resource_targets (Data Source)
 
 Lists the backend targets of a Pangolin HTTP resource, with the full list-view detail (site labels, health-check configuration, path routing) that the per-id `GET /target/{id}` endpoint does not echo.
 
-> **Note:** Health-check fields (`hc_*`) and routing fields (`path`, `rewrite_*`, etc.) come back as `null` when no probe / no routing is configured — surfaced as Terraform `null` in those cases.
+> **Note:** Health-check fields (`hc_*`) and routing fields (`path`, `rewrite_*`, etc.) come back as `null` when no probe / no routing is configured - surfaced as Terraform `null` in those cases.
 
 ## Example Usage
 
@@ -57,7 +57,7 @@ Read-Only:
 - `enabled` (Boolean) Whether the target is currently enabled.
 - `hc_enabled` (Boolean) Whether the active health check is enabled.
 - `hc_follow_redirects` (Boolean) Whether the probe follows HTTP redirects.
-- `hc_headers` (Attributes List) Probe request headers — list of `{name, value}` objects. (see [below for nested schema](#nestedatt--targets--hc_headers))
+- `hc_headers` (Attributes List) Probe request headers - list of `{name, value}` objects. (see [below for nested schema](#nestedatt--targets--hc_headers))
 - `hc_health` (String) Current health summary (`unknown`, `healthy`, `unhealthy`).
 - `hc_healthy_threshold` (Number) Consecutive successful probes required to mark the target healthy.
 - `hc_hostname` (String) Hostname used by the health-check probe.
@@ -78,7 +78,7 @@ Read-Only:
 - `path` (String) URL path prefix this target serves.
 - `path_match_type` (String) How `path` is matched (e.g. `prefix`, `exact`, `regex`).
 - `port` (Number) Target port.
-- `priority` (Number) Routing priority — lower numbers win.
+- `priority` (Number) Routing priority - lower numbers win.
 - `resource_id` (Number) ID of the resource this target belongs to.
 - `rewrite_path` (String) Path the request is rewritten to before being forwarded.
 - `rewrite_path_type` (String) Rewrite mode.

@@ -148,7 +148,7 @@ func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 				},
 			},
 			"variant": schema.StringAttribute{
-				Description: "OIDC variant. Refines `type = oidc` to a provider family — Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.",
+				Description: "OIDC variant. Refines `type = oidc` to a provider family - Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
@@ -297,7 +297,7 @@ func (r *IDPResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 
 	err := r.client.DeleteIDP(ctx, int(state.ID.ValueInt64()))
 	if err != nil {
-		// DELETE /idp/{id} is not available on the Integration API — only on the internal admin API.
+		// DELETE /idp/{id} is not available on the Integration API - only on the internal admin API.
 		// Emit a warning and remove from state so Terraform does not block the user.
 		resp.Diagnostics.AddWarning(
 			"IDP deletion not supported via Integration API",

@@ -3,12 +3,12 @@
 page_title: "pangolin_domain_dns_records Data Source - pangolin"
 subcategory: ""
 description: |-
-  Lists the DNS records Pangolin expects (or has verified) for a domain — useful to feed an external DNS-as-code provider that publishes them on your authoritative nameserver.
+  Lists the DNS records Pangolin expects (or has verified) for a domain - useful to feed an external DNS-as-code provider that publishes them on your authoritative nameserver.
 ---
 
 # pangolin_domain_dns_records (Data Source)
 
-Lists the DNS records Pangolin expects (or has verified) for a domain — useful to feed an external DNS-as-code provider that publishes them on your authoritative nameserver.
+Lists the DNS records Pangolin expects (or has verified) for a domain - useful to feed an external DNS-as-code provider that publishes them on your authoritative nameserver.
 
 ## Example Usage
 

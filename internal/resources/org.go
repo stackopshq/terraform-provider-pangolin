@@ -374,7 +374,7 @@ func buildUpdateOrgRequest(plan OrgResourceModel) *client.UpdateOrgRequest {
 }
 
 // hasOrgPolicyChanges reports whether the plan sets any of the
-// policy / retention attributes — used to decide whether Create
+// policy / retention attributes - used to decide whether Create
 // should be followed by an immediate Update.
 func hasOrgPolicyChanges(plan OrgResourceModel) bool {
 	for _, v := range []interface{ IsNull() bool }{

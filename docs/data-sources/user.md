@@ -3,13 +3,13 @@
 page_title: "pangolin_user Data Source - pangolin"
 subcategory: ""
 description: |-
-  Looks up a Pangolin user by their username within an IDP. Usernames are unique only within an IDP, so the idp_id input is required — matching the underlying GET /org/{org}/user-by-username contract.
+  Looks up a Pangolin user by their username within an IDP. Usernames are unique only within an IDP, so the idp_id input is required - matching the underlying GET /org/{org}/user-by-username contract.
   **Note:** This data source returns `null` for `email` and `name` when the user has not yet logged in or did not share these claims with Pangolin. Treat them as eventually-consistent.
 ---
 
 # pangolin_user (Data Source)
 
-Looks up a Pangolin user by their `username` within an IDP. Usernames are unique only within an IDP, so the `idp_id` input is required — matching the underlying `GET /org/{org}/user-by-username` contract.
+Looks up a Pangolin user by their `username` within an IDP. Usernames are unique only within an IDP, so the `idp_id` input is required - matching the underlying `GET /org/{org}/user-by-username` contract.
 
 > **Note:** This data source returns `null` for `email` and `name` when the user has not yet logged in or did not share these claims with Pangolin. Treat them as eventually-consistent.
 
@@ -32,7 +32,7 @@ data "pangolin_user" "deploy_bot" {
   idp_id   = local.authentik_idp_id
 }
 
-# Surface the role IDs currently bound to the user — useful to feed a
+# Surface the role IDs currently bound to the user - useful to feed a
 # pangolin_role_user resource that keeps the binding in lock-step.
 output "deploy_bot_role_ids" {
   value = [for r in data.pangolin_user.deploy_bot.roles : r.role_id]

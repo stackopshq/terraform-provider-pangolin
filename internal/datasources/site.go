@@ -13,7 +13,7 @@ import (
 var _ datasource.DataSource = &SiteDataSource{}
 
 // SiteDataSource exposes a single Pangolin site looked up by nice ID
-// — the human-readable identifier shown in the Pangolin UI. The
+// - the human-readable identifier shown in the Pangolin UI. The
 // per-niceId GET endpoint returns the richer site payload (WireGuard
 // keys, traffic counters, status, endpoint), so this is the preferred
 // way to discover a known site for downstream reference.
@@ -58,7 +58,7 @@ func (d *SiteDataSource) Metadata(_ context.Context, req datasource.MetadataRequ
 func (d *SiteDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Looks up a single Pangolin site by its nice ID (the human-readable identifier shown in the Pangolin UI). " +
-			"Returns the full site payload — traffic counters, WireGuard public keys, last ping, status, etc. — that the list " +
+			"Returns the full site payload - traffic counters, WireGuard public keys, last ping, status, etc. - that the list " +
 			"endpoint does not expose.",
 		Attributes: map[string]schema.Attribute{
 			"nice_id":               schema.StringAttribute{Description: "Nice ID of the site to look up (e.g. `smart-marbled-salamander`).", Required: true},

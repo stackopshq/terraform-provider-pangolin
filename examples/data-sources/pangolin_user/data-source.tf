@@ -14,7 +14,7 @@ data "pangolin_user" "deploy_bot" {
   idp_id   = local.authentik_idp_id
 }
 
-# Surface the role IDs currently bound to the user — useful to feed a
+# Surface the role IDs currently bound to the user - useful to feed a
 # pangolin_role_user resource that keeps the binding in lock-step.
 output "deploy_bot_role_ids" {
   value = [for r in data.pangolin_user.deploy_bot.roles : r.role_id]

@@ -114,7 +114,7 @@ func (r *SiteResourceRoleResource) Read(ctx context.Context, req resource.ReadRe
 			return
 		}
 	}
-	// Binding no longer exists upstream — drop it from state so Terraform recreates it.
+	// Binding no longer exists upstream - drop it from state so Terraform recreates it.
 	resp.State.RemoveResource(ctx)
 }
 

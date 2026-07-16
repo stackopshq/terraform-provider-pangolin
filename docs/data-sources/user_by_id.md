@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   Looks up a Pangolin user by their cross-org user_id.
   Distinct from pangolin_user (keyed by username + idp_id within an org). This data source queries the root-only GET /user/{userId} endpoint and surfaces extra fields not exposed by the org-scoped variant: server_admin, two_factor_setup_requested, email_verified, date_created, idp_name.
-  **Note:** root-only — fails with HTTP 403 when the provider's API key is not server-admin scoped.
+  **Note:** root-only - fails with HTTP 403 when the provider's API key is not server-admin scoped.
 ---
 
 # pangolin_user_by_id (Data Source)
@@ -14,7 +14,7 @@ Looks up a Pangolin user by their cross-org `user_id`.
 
 Distinct from `pangolin_user` (keyed by `username + idp_id` within an org). This data source queries the root-only `GET /user/{userId}` endpoint and surfaces extra fields not exposed by the org-scoped variant: `server_admin`, `two_factor_setup_requested`, `email_verified`, `date_created`, `idp_name`.
 
-> **Note:** root-only — fails with HTTP 403 when the provider's API key is not server-admin scoped.
+> **Note:** root-only - fails with HTTP 403 when the provider's API key is not server-admin scoped.
 
 ## Example Usage
 
@@ -56,5 +56,5 @@ locals {
 - `server_admin` (Boolean) Whether the user holds server-admin (root) scope.
 - `two_factor_enabled` (Boolean) Whether the user has 2FA enrolled and active.
 - `two_factor_setup_requested` (Boolean) Whether the user has been asked to set up 2FA on next login.
-- `type` (String) Account type — `internal` for local accounts, otherwise the IDP variant name.
+- `type` (String) Account type - `internal` for local accounts, otherwise the IDP variant name.
 - `username` (String) The user's username (IDP-issued or local).

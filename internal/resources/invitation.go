@@ -55,7 +55,7 @@ func (r *InvitationResource) Metadata(_ context.Context, req resource.MetadataRe
 func (r *InvitationResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Manages a pending invitation for a user to join the configured organization. " +
-			"Invitations are immutable once created — changing any attribute triggers a destroy + create. " +
+			"Invitations are immutable once created - changing any attribute triggers a destroy + create. " +
 			"Use `terraform destroy` (or removing the resource block) to cancel an open invitation.\n\n" +
 			"> **Note:** `invite_link` carries a single-use token in clear and is stored in state. Treat the state as a secret.",
 		Attributes: map[string]schema.Attribute{
@@ -230,7 +230,7 @@ func (r *InvitationResource) Update(_ context.Context, _ resource.UpdateRequest,
 	// update is reachable. This stub keeps the interface satisfied.
 	resp.Diagnostics.AddError(
 		"Invitation update not supported",
-		"Invitations are immutable in Pangolin. Changing any attribute should trigger a destroy + create — file a bug if you see this error.",
+		"Invitations are immutable in Pangolin. Changing any attribute should trigger a destroy + create - file a bug if you see this error.",
 	)
 }
 
@@ -243,7 +243,7 @@ func (r *InvitationResource) Delete(ctx context.Context, req resource.DeleteRequ
 
 	if err := r.client.DeleteInvitation(ctx, r.client.OrgID, state.ID.ValueString()); err != nil {
 		if errors.Is(err, client.ErrNotFound) {
-			// Already gone — treat as success.
+			// Already gone - treat as success.
 			return
 		}
 		resp.Diagnostics.AddError("Failed to delete invitation", err.Error())
@@ -270,7 +270,7 @@ func (r *InvitationResource) ImportState(ctx context.Context, req resource.Impor
 		ValidHours: types.Int64Null(),
 		SendEmail:  types.BoolValue(false),
 		Regenerate: types.BoolValue(false),
-		// invite_link is not returned by GET — left null on import; the
+		// invite_link is not returned by GET - left null on import; the
 		// user will not be able to re-send the link from this state.
 		InviteLink: types.StringNull(),
 		ExpiresAt:  types.Int64Value(invite.ExpiresAt),

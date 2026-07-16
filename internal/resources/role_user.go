@@ -133,7 +133,7 @@ func (r *RoleUserResource) Read(ctx context.Context, req resource.ReadRequest, r
 		}
 	}
 
-	// Association no longer exists — remove from state.
+	// Association no longer exists - remove from state.
 	resp.State.RemoveResource(ctx)
 }
 

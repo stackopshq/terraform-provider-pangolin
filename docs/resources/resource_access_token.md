@@ -4,7 +4,7 @@ page_title: "pangolin_resource_access_token Resource - pangolin"
 subcategory: ""
 description: |-
   Manages a bearer access token bound to a Pangolin HTTP resource.
-  **Note:** the `token` (bearer secret) is only returned by the API at creation time. After `terraform import`, the `token` attribute is empty by design — the upstream only exposes a `tokenHash` afterwards. Rotate by destroying and recreating the resource.
+  **Note:** the `token` (bearer secret) is only returned by the API at creation time. After `terraform import`, the `token` attribute is empty by design - the upstream only exposes a `tokenHash` afterwards. Rotate by destroying and recreating the resource.
   Every meaningful attribute is RequiresReplace: the Pangolin API does not expose an endpoint to update title / description / lifetime in-place.
 ---
 
@@ -12,7 +12,7 @@ description: |-
 
 Manages a bearer access token bound to a Pangolin HTTP resource.
 
-> **Note:** the `token` (bearer secret) is only returned by the API at creation time. After `terraform import`, the `token` attribute is empty by design — the upstream only exposes a `tokenHash` afterwards. Rotate by destroying and recreating the resource.
+> **Note:** the `token` (bearer secret) is only returned by the API at creation time. After `terraform import`, the `token` attribute is empty by design - the upstream only exposes a `tokenHash` afterwards. Rotate by destroying and recreating the resource.
 
 Every meaningful attribute is `RequiresReplace`: the Pangolin API does not expose an endpoint to update title / description / lifetime in-place.
 

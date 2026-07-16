@@ -45,7 +45,7 @@ func (d *DomainDNSRecordsDataSource) Metadata(_ context.Context, req datasource.
 
 func (d *DomainDNSRecordsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Lists the DNS records Pangolin expects (or has verified) for a domain — useful to feed an external " +
+		Description: "Lists the DNS records Pangolin expects (or has verified) for a domain - useful to feed an external " +
 			"DNS-as-code provider that publishes them on your authoritative nameserver.",
 		Attributes: map[string]schema.Attribute{
 			"domain_id": schema.StringAttribute{

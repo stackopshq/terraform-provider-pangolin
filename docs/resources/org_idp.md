@@ -65,12 +65,12 @@ output "oidc_redirect_url" {
 - `org_mapping` (String) Optional expression mapping a token claim to the org binding. Null when unset.
 - `role_mapping` (String) Optional expression mapping a token claim to a Pangolin role for this org. Null when unset.
 - `tags` (String) Optional tags associated with the IDP.
-- `variant` (String) OIDC variant — refines `type = oidc` to a provider family. One of `oidc` (generic, default), `google`, `azure`.
+- `variant` (String) OIDC variant - refines `type = oidc` to a provider family. One of `oidc` (generic, default), `google`, `azure`.
 
 ### Read-Only
 
 - `id` (Number) The numeric IDP ID.
-- `redirect_url` (String) The OAuth callback URL to configure in your OIDC provider. Only returned on create — empty after import.
+- `redirect_url` (String) The OAuth callback URL to configure in your OIDC provider. Only returned on create - empty after import.
 
 ## Import
 
@@ -81,7 +81,7 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 ```shell
 # Import format: "{org_id}/{idp_id}"
 #
-# Note: `client_secret` cannot be recovered after import — set it
+# Note: `client_secret` cannot be recovered after import - set it
 # manually in config to avoid a spurious diff on the next plan.
 terraform import pangolin_org_idp.authentik my-org/3
 ```

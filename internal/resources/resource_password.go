@@ -111,7 +111,7 @@ func (r *ResourcePasswordResource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	if authState.PasswordID == nil {
-		// Password was removed externally — remove from state.
+		// Password was removed externally - remove from state.
 		resp.State.RemoveResource(ctx)
 		return
 	}

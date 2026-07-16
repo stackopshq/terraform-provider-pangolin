@@ -44,7 +44,7 @@
       "groupName": "go modules (minor + patch)"
     },
     {
-      "description": "Keep gomod major bumps as separate PRs — they often need code changes.",
+      "description": "Keep gomod major bumps as separate PRs - they often need code changes.",
       "matchManagers": [
         "gomod"
       ],
@@ -75,7 +75,7 @@
       "pinDigests": true
     },
     {
-      "description": "Bump Go toolchain via go.mod's `go` directive in patch+minor only — major Go versions need a manual review.",
+      "description": "Bump Go toolchain via go.mod's `go` directive in patch+minor only - major Go versions need a manual review.",
       "matchManagers": [
         "gomod"
       ],
@@ -88,7 +88,7 @@
       "enabled": false
     },
     {
-      "description": "terraform-plugin-framework is the load-bearing dependency for every resource / data source — never silent-merge.",
+      "description": "terraform-plugin-framework is the load-bearing dependency for every resource / data source - never silent-merge.",
       "matchPackageNames": [
         "github.com/hashicorp/terraform-plugin-framework",
         "github.com/hashicorp/terraform-plugin-framework-validators",

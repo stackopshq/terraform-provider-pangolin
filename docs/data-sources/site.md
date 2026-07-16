@@ -3,19 +3,19 @@
 page_title: "pangolin_site Data Source - pangolin"
 subcategory: ""
 description: |-
-  Looks up a single Pangolin site by its nice ID (the human-readable identifier shown in the Pangolin UI). Returns the full site payload — traffic counters, WireGuard public keys, last ping, status, etc. — that the list endpoint does not expose.
+  Looks up a single Pangolin site by its nice ID (the human-readable identifier shown in the Pangolin UI). Returns the full site payload - traffic counters, WireGuard public keys, last ping, status, etc. - that the list endpoint does not expose.
 ---
 
 # pangolin_site (Data Source)
 
-Looks up a single Pangolin site by its nice ID (the human-readable identifier shown in the Pangolin UI). Returns the full site payload — traffic counters, WireGuard public keys, last ping, status, etc. — that the list endpoint does not expose.
+Looks up a single Pangolin site by its nice ID (the human-readable identifier shown in the Pangolin UI). Returns the full site payload - traffic counters, WireGuard public keys, last ping, status, etc. - that the list endpoint does not expose.
 
 ## Example Usage
 
 ```terraform
 # Look up a Pangolin site by its human-readable nice ID (the slug shown
-# in the Pangolin UI). Returns the full live payload — WireGuard
-# tunnel info, traffic counters, status — that the list endpoint
+# in the Pangolin UI). Returns the full live payload - WireGuard
+# tunnel info, traffic counters, status - that the list endpoint
 # does not expose.
 data "pangolin_site" "main" {
   nice_id = "smart-marbled-salamander"

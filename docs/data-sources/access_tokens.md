@@ -4,14 +4,14 @@ page_title: "pangolin_access_tokens Data Source - pangolin"
 subcategory: ""
 description: |-
   Lists every resource access token in the organization.
-  **Note:** the bearer secret is never returned by this endpoint — only the SHA-256 `token_hash` is exposed. Filter by `resource_id` in HCL to scope to a single resource.
+  **Note:** the bearer secret is never returned by this endpoint - only the SHA-256 `token_hash` is exposed. Filter by `resource_id` in HCL to scope to a single resource.
 ---
 
 # pangolin_access_tokens (Data Source)
 
 Lists every resource access token in the organization.
 
-> **Note:** the bearer secret is never returned by this endpoint — only the SHA-256 `token_hash` is exposed. Filter by `resource_id` in HCL to scope to a single resource.
+> **Note:** the bearer secret is never returned by this endpoint - only the SHA-256 `token_hash` is exposed. Filter by `resource_id` in HCL to scope to a single resource.
 
 ## Example Usage
 
