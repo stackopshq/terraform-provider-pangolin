@@ -169,6 +169,71 @@ func TestDoRequest_ParseErrorIncludesStatus(t *testing.T) {
 	}
 }
 
+func TestDoRequest_ParseErrorTruncatesLongHTMLBody(t *testing.T) {
+	longBody := "<html><body>" + strings.Repeat("A", 10000) + "</body></html>"
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, longBody)
+	})
+	_, err := c.doRequest(context.Background(), "GET", "/x", nil)
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "text/html") {
+		t.Errorf("error should surface content-type, got: %q", msg)
+	}
+	if !strings.Contains(msg, "[truncated]") {
+		t.Errorf("error should be truncated for long body, got %d chars", len(msg))
+	}
+	if len(msg) > 1024 {
+		t.Errorf("truncated diag still too long: %d chars", len(msg))
+	}
+}
+
+func TestTruncateForDiag(t *testing.T) {
+	tests := []struct {
+		name  string
+		in    string
+		check func(t *testing.T, out string)
+	}{
+		{
+			name: "short body kept as-is",
+			in:   "short error",
+			check: func(t *testing.T, out string) {
+				if out != "short error" {
+					t.Errorf("got %q", out)
+				}
+			},
+		},
+		{
+			name: "whitespace collapsed",
+			in:   "line1\n\n  line2\t\ttail",
+			check: func(t *testing.T, out string) {
+				if out != "line1 line2 tail" {
+					t.Errorf("got %q", out)
+				}
+			},
+		},
+		{
+			name: "long body truncated",
+			in:   strings.Repeat("x", 1000),
+			check: func(t *testing.T, out string) {
+				if !strings.HasSuffix(out, "[truncated]") {
+					t.Errorf("expected truncation marker, got %q ...", out[:min(60, len(out))])
+				}
+				if len(out) > 550 {
+					t.Errorf("truncated output too long: %d", len(out))
+				}
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) { tc.check(t, truncateForDiag([]byte(tc.in))) })
+	}
+}
+
 func TestDoRequest_TransportError(t *testing.T) {
 	disableRetryBackoff(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
