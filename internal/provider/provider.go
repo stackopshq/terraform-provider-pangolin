@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"os"
 	"strconv"
 
@@ -123,6 +124,44 @@ func (p *PangolinProvider) Configure(ctx context.Context, req provider.Configure
 	}
 
 	c := client.NewClient(url, apiKey, orgID, opts...)
+
+	// Bootstrap probe: hit the org-scoped endpoint once so a bad URL,
+	// unreachable server, wrong API key, or missing org fails fast at
+	// plan/apply configure time instead of during the first resource
+	// operation. Auth/permission/org-lookup errors are fatal (nothing
+	// downstream will work). Transient errors (transport, 5xx) surface
+	// as warnings so a Pangolin blip doesn't block "terraform plan".
+	// The probe can be disabled by setting PANGOLIN_SKIP_HEALTH_PROBE=1
+	// (useful in CI or offline planning).
+	if os.Getenv("PANGOLIN_SKIP_HEALTH_PROBE") != "1" {
+		if _, err := c.GetOrg(ctx, orgID); err != nil {
+			switch {
+			case errors.Is(err, client.ErrUnauthorized):
+				resp.Diagnostics.AddError(
+					"Pangolin authentication failed",
+					"The provider's API key was rejected by Pangolin (401). Check `api_key` / PANGOLIN_API_KEY.\n\nUnderlying error: "+err.Error(),
+				)
+				return
+			case errors.Is(err, client.ErrForbidden):
+				resp.Diagnostics.AddError(
+					"Pangolin API key lacks access",
+					"The provider's API key was accepted but is not authorized on organization "+orgID+" (403). Check `org_id` / PANGOLIN_ORG_ID and the API key's org scope.\n\nUnderlying error: "+err.Error(),
+				)
+				return
+			case errors.Is(err, client.ErrNotFound):
+				resp.Diagnostics.AddError(
+					"Pangolin organization not found",
+					"Organization `"+orgID+"` was not found on the target Pangolin instance (404). Check `org_id` / PANGOLIN_ORG_ID.\n\nUnderlying error: "+err.Error(),
+				)
+				return
+			default:
+				resp.Diagnostics.AddWarning(
+					"Pangolin health probe failed",
+					"Could not reach the Pangolin API during provider configuration. Plans will still be built but apply may fail if the server stays unreachable. Set PANGOLIN_SKIP_HEALTH_PROBE=1 to silence this probe.\n\nUnderlying error: "+err.Error(),
+				)
+			}
+		}
+	}
 
 	resp.DataSourceData = c
 	resp.ResourceData = c
