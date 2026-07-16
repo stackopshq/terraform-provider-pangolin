@@ -13,7 +13,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -234,12 +233,11 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"hc_headers": schema.ListNestedAttribute{
-				Description: "Request headers to set on the probe - list of `{name, value}` objects.",
-				Optional:    true,
-				Computed:    true,
-				PlanModifiers: []planmodifier.List{
-					listplanmodifier.UseStateForUnknown(),
-				},
+				Description: "Request headers to set on the probe - list of `{name, value}` objects. " +
+					"Leave unset (or `[]`) to keep the server default (no probe headers). Cannot be marked " +
+					"Computed because the Go slice model type in the plugin framework does not carry an " +
+					"\"unknown\" sentinel.",
+				Optional: true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"name":  schema.StringAttribute{Description: "Header name.", Required: true},
@@ -561,11 +559,18 @@ func applyTargetHCFields(
 // server-side payload, which is the wrong tradeoff here.
 func targetToModel(t *client.Target, prior TargetResourceModel) TargetResourceModel {
 	headers, _ := client.ParseTargetHCHeaders(t.HCHeadersRaw)
-	hcHeaders := make([]TargetHCHeaderModel, len(headers))
-	for i, h := range headers {
-		hcHeaders[i] = TargetHCHeaderModel{
-			Name:  types.StringValue(h.Name),
-			Value: types.StringValue(h.Value),
+	// When the server returns no probe headers, leave the state
+	// attribute nil (= null in the plan) rather than an empty slice.
+	// hc_headers is Optional-only (not Computed) so state must exactly
+	// mirror config semantics: absent = null, [] = empty list.
+	var hcHeaders []TargetHCHeaderModel
+	if len(headers) > 0 {
+		hcHeaders = make([]TargetHCHeaderModel, len(headers))
+		for i, h := range headers {
+			hcHeaders[i] = TargetHCHeaderModel{
+				Name:  types.StringValue(h.Name),
+				Value: types.StringValue(h.Value),
+			}
 		}
 	}
 	_ = prior
