@@ -45,6 +45,11 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+      - name: Set up Terraform (for tfplugindocs schema export)
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
       - name: Verify tfplugindocs is idempotent
         run: |
           go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs generate --provider-name pangolin
