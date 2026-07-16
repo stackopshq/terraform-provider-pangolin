@@ -90,7 +90,7 @@ func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
 	// ImportState builds the model with empty ClientSecret and
 	// empty RedirectURL because neither is recoverable after import.
 	idp := &client.IDP{
-		IDPId: 5, Name: "n", Type: "oidc", Variant: "oidc",
+		IDPId: 5, Name: "n", Variant: "oidc",
 		AutoProvision: false, Tags: "",
 	}
 	cfg := &client.IDPOidcConfig{
@@ -113,6 +113,44 @@ func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
 		NamePath:       types.StringValue(cfg.NamePath),
 		Scopes:         types.StringValue(cfg.Scopes),
 		RedirectURL:    types.StringValue(""), // not returned by GET
+	}
+	// Assert every field on the imported state matches its source,
+	// plus the two non-recoverable secret contracts.
+	if got := state.ID.ValueInt64(); got != int64(idp.IDPId) {
+		t.Errorf("ID = %d, want %d", got, idp.IDPId)
+	}
+	if got := state.Name.ValueString(); got != idp.Name {
+		t.Errorf("Name = %q, want %q", got, idp.Name)
+	}
+	if got := state.AutoProvision.ValueBool(); got != idp.AutoProvision {
+		t.Errorf("AutoProvision = %v, want %v", got, idp.AutoProvision)
+	}
+	if got := state.Tags.ValueString(); got != idp.Tags {
+		t.Errorf("Tags = %q, want %q", got, idp.Tags)
+	}
+	if got := state.Variant.ValueString(); got != idp.Variant {
+		t.Errorf("Variant = %q, want %q", got, idp.Variant)
+	}
+	if got := state.ClientID.ValueString(); got != cfg.ClientID {
+		t.Errorf("ClientID = %q, want %q", got, cfg.ClientID)
+	}
+	if got := state.AuthURL.ValueString(); got != cfg.AuthURL {
+		t.Errorf("AuthURL = %q, want %q", got, cfg.AuthURL)
+	}
+	if got := state.TokenURL.ValueString(); got != cfg.TokenURL {
+		t.Errorf("TokenURL = %q, want %q", got, cfg.TokenURL)
+	}
+	if got := state.IdentifierPath.ValueString(); got != cfg.IdentifierPath {
+		t.Errorf("IdentifierPath = %q, want %q", got, cfg.IdentifierPath)
+	}
+	if got := state.EmailPath.ValueString(); got != cfg.EmailPath {
+		t.Errorf("EmailPath = %q, want %q", got, cfg.EmailPath)
+	}
+	if got := state.NamePath.ValueString(); got != cfg.NamePath {
+		t.Errorf("NamePath = %q, want %q", got, cfg.NamePath)
+	}
+	if got := state.Scopes.ValueString(); got != cfg.Scopes {
+		t.Errorf("Scopes = %q, want %q", got, cfg.Scopes)
 	}
 	if state.ClientSecret.ValueString() != "" {
 		t.Errorf("ClientSecret must be empty after import")

@@ -192,6 +192,27 @@ func TestAccessToken_ImportShape_NullsSensitive(t *testing.T) {
 		TokenHash:       types.StringValue(tok.TokenHash),
 		Token:           types.StringValue(""),
 	}
+	if got := state.ID.ValueString(); got != tok.AccessTokenID {
+		t.Errorf("ID = %q, want %q", got, tok.AccessTokenID)
+	}
+	if got := state.ResourceID.ValueInt64(); got != int64(tok.ResourceID) {
+		t.Errorf("ResourceID = %d, want %d", got, tok.ResourceID)
+	}
+	if got := state.Title.ValueString(); got != *tok.Title {
+		t.Errorf("Title = %q, want %q", got, *tok.Title)
+	}
+	if got := state.SessionLength.ValueInt64(); got != tok.SessionLength {
+		t.Errorf("SessionLength = %d, want %d", got, tok.SessionLength)
+	}
+	if !state.ExpiresAt.IsNull() {
+		t.Errorf("ExpiresAt should stay null when server returned nil, got %v", state.ExpiresAt)
+	}
+	if got := state.CreatedAt.ValueInt64(); got != tok.CreatedAt {
+		t.Errorf("CreatedAt = %d, want %d", got, tok.CreatedAt)
+	}
+	if got := state.TokenHash.ValueString(); got != tok.TokenHash {
+		t.Errorf("TokenHash = %q, want %q", got, tok.TokenHash)
+	}
 	if state.Token.ValueString() != "" {
 		t.Errorf("Token after import must be empty")
 	}

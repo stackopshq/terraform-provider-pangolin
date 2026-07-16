@@ -126,8 +126,9 @@ func TestSite_ImportStateShapeHasNullNewtSecret(t *testing.T) {
 		Address:             "10.0.0.5/24",
 		DockerSocketEnabled: true,
 	}
-	// This is the exact state ImportState builds; assert the
-	// null-secret contract we advertise in the schema description.
+	// This is the exact state ImportState builds; assert the whole
+	// shape (including the null-secret contract advertised in the
+	// schema description).
 	state := SiteResourceModel{
 		ID:                  types.Int64Value(int64(site.SiteID)),
 		NiceID:              types.StringValue(site.NiceID),
@@ -138,6 +139,27 @@ func TestSite_ImportStateShapeHasNullNewtSecret(t *testing.T) {
 		NewtID:              types.StringNull(),
 		NewtSecret:          types.StringNull(),
 		DockerSocketEnabled: types.BoolValue(site.DockerSocketEnabled),
+	}
+	if got := state.ID.ValueInt64(); got != int64(site.SiteID) {
+		t.Errorf("ID = %d, want %d", got, site.SiteID)
+	}
+	if got := state.NiceID.ValueString(); got != site.NiceID {
+		t.Errorf("NiceID = %q, want %q", got, site.NiceID)
+	}
+	if got := state.Name.ValueString(); got != site.Name {
+		t.Errorf("Name = %q, want %q", got, site.Name)
+	}
+	if got := state.Type.ValueString(); got != site.Type {
+		t.Errorf("Type = %q, want %q", got, site.Type)
+	}
+	if got := state.Online.ValueBool(); got != site.Online {
+		t.Errorf("Online = %v, want %v", got, site.Online)
+	}
+	if got := state.Address.ValueString(); got != site.Address {
+		t.Errorf("Address = %q, want %q", got, site.Address)
+	}
+	if got := state.DockerSocketEnabled.ValueBool(); got != site.DockerSocketEnabled {
+		t.Errorf("DockerSocketEnabled = %v, want %v", got, site.DockerSocketEnabled)
 	}
 	if !state.NewtSecret.IsNull() {
 		t.Errorf("post-import NewtSecret must be null")
