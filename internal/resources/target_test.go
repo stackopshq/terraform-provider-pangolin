@@ -154,12 +154,35 @@ func TestTargetToModel_MinimalPayload(t *testing.T) {
 			t.Errorf("%s expected null", name)
 		}
 	}
-	// Empty HCHeaders slice, not nil (targetToModel always allocates).
-	if m.HCHeaders == nil {
-		t.Errorf("HCHeaders expected non-nil empty slice")
+	// HCHeaders must be nil (not [{}]) when the server returned no
+	// probe headers. hc_headers is Optional-only in the schema, so a
+	// nil slice becomes tfsdk null (matching an absent config block)
+	// instead of drifting to an empty computed list.
+	if m.HCHeaders != nil {
+		t.Errorf("HCHeaders expected nil when server has none, got %v", m.HCHeaders)
 	}
-	if len(m.HCHeaders) != 0 {
-		t.Errorf("HCHeaders len = %d, want 0", len(m.HCHeaders))
+}
+
+// TestApplyTargetHCFields_HCEnabledWithoutHeaders reproduces the user
+// report where a plan sets hc_enabled=true and hc_path but omits
+// hc_headers entirely. The Go slice HCHeaders is nil in that plan;
+// applyTargetHCFields must forward the health-check config and leave
+// req.HCHeaders nil so the wire body omits the key.
+func TestApplyTargetHCFields_HCEnabledWithoutHeaders(t *testing.T) {
+	plan := TargetResourceModel{
+		HCEnabled: types.BoolValue(true),
+		HCPath:    types.StringValue("/healthz"),
+		// HCHeaders left nil - reproduces the user config.
+	}
+	req := invokeApplyTargetHCFields(plan)
+	if req.HCEnabled == nil || !*req.HCEnabled {
+		t.Errorf("HCEnabled must forward true")
+	}
+	if req.HCPath == nil || *req.HCPath != "/healthz" {
+		t.Errorf("HCPath must forward /healthz, got %v", req.HCPath)
+	}
+	if req.HCHeaders != nil {
+		t.Errorf("HCHeaders must stay nil when plan omits hc_headers, got %v", req.HCHeaders)
 	}
 }
 
