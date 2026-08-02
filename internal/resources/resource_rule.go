@@ -75,10 +75,10 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"match": schema.StringAttribute{
-				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, or `ASN`.",
+				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, `COUNTRY_IS_NOT`, `REGION`, or `ASN`.",
 				Required:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "ASN"),
+					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "COUNTRY_IS_NOT", "REGION", "ASN"),
 				},
 			},
 			"value": schema.StringAttribute{

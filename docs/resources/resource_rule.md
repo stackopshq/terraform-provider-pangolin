@@ -39,7 +39,7 @@ resource "pangolin_resource_rule" "block_country" {
 ### Required
 
 - `action` (String) The rule action: `ACCEPT`, `DROP`, or `PASS`.
-- `match` (String) The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, or `ASN`.
+- `match` (String) The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, `COUNTRY_IS_NOT`, `REGION`, or `ASN`.
 - `priority` (Number) The rule priority (lower number = higher priority).
 - `resource_id` (Number) The ID of the resource this rule belongs to.
 - `value` (String) The value to match against (e.g. CIDR range, IP address, path prefix, country code, ASN).
