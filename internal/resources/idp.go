@@ -58,7 +58,8 @@ func (r *IDPResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Manages a Pangolin OIDC Identity Provider.\n\n" +
-			"> **Note:** `client_secret` cannot be recovered after import and must be set manually.",
+			"> **Note:** `client_secret` is imported from Pangolin's OIDC configuration response. " +
+			"The resulting Terraform state contains sensitive material and must be protected accordingly.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric IDP ID.",
@@ -321,14 +322,22 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &IDPResourceModel{
+	state := applyIDPImportResponse(idp, oidcCfg)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// applyIDPImportResponse maps the complete import response into state. Pangolin
+// returns the existing OIDC client secret from this endpoint, so preserving it
+// avoids an immediate post-import update and keeps adoption non-destructive.
+func applyIDPImportResponse(idp *client.IDP, oidcCfg *client.IDPOidcConfig) IDPResourceModel {
+	return IDPResourceModel{
 		ID:             types.Int64Value(int64(idp.IDPId)),
 		Name:           types.StringValue(idp.Name),
 		AutoProvision:  types.BoolValue(idp.AutoProvision),
 		Tags:           types.StringValue(idp.Tags),
 		Variant:        types.StringValue(idp.Variant),
 		ClientID:       types.StringValue(oidcCfg.ClientID),
-		ClientSecret:   types.StringValue(""), // not recoverable after import
+		ClientSecret:   types.StringValue(oidcCfg.ClientSecret),
 		AuthURL:        types.StringValue(oidcCfg.AuthURL),
 		TokenURL:       types.StringValue(oidcCfg.TokenURL),
 		IdentifierPath: types.StringValue(oidcCfg.IdentifierPath),
@@ -336,5 +345,5 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		NamePath:       types.StringValue(oidcCfg.NamePath),
 		Scopes:         types.StringValue(oidcCfg.Scopes),
 		RedirectURL:    types.StringValue(""), // not returned by GET
-	})...)
+	}
 }
