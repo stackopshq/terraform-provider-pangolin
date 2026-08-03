@@ -4,14 +4,14 @@ page_title: "pangolin_idp Resource - pangolin"
 subcategory: ""
 description: |-
   Manages a Pangolin OIDC Identity Provider.
-  **Note:** `client_secret` cannot be recovered after import and must be set manually.
+  **Note:** `client_secret` is imported from Pangolin's OIDC configuration response. The resulting Terraform state contains sensitive material and must be protected accordingly.
 ---
 
 # pangolin_idp (Resource)
 
 Manages a Pangolin OIDC Identity Provider.
 
-> **Note:** `client_secret` cannot be recovered after import and must be set manually.
+> **Note:** `client_secret` is imported from Pangolin's OIDC configuration response. The resulting Terraform state contains sensitive material and must be protected accordingly.
 
 ## Example Usage
 

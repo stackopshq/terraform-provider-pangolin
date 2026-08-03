@@ -86,36 +86,21 @@ func TestIDP_ReadMapping_PreservesClientSecret(t *testing.T) {
 	}
 }
 
-func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
-	// ImportState builds the model with empty ClientSecret and
-	// empty RedirectURL because neither is recoverable after import.
+func TestIDP_ImportState_RecoversClientSecret(t *testing.T) {
+	// ImportState recovers ClientSecret from the OIDC configuration returned by
+	// Pangolin. RedirectURL remains empty because GET does not return it.
 	idp := &client.IDP{
 		IDPId: 5, Name: "n", Variant: "oidc",
 		AutoProvision: false, Tags: "",
 	}
 	cfg := &client.IDPOidcConfig{
-		ClientID: "cid", AuthURL: "a", TokenURL: "t",
+		ClientID: "cid", ClientSecret: "existing-secret", AuthURL: "a", TokenURL: "t",
 		IdentifierPath: "sub", EmailPath: "email", NamePath: "name",
 		Scopes: "openid",
 	}
-	state := IDPResourceModel{
-		ID:             types.Int64Value(int64(idp.IDPId)),
-		Name:           types.StringValue(idp.Name),
-		AutoProvision:  types.BoolValue(idp.AutoProvision),
-		Tags:           types.StringValue(idp.Tags),
-		Variant:        types.StringValue(idp.Variant),
-		ClientID:       types.StringValue(cfg.ClientID),
-		ClientSecret:   types.StringValue(""), // not recoverable
-		AuthURL:        types.StringValue(cfg.AuthURL),
-		TokenURL:       types.StringValue(cfg.TokenURL),
-		IdentifierPath: types.StringValue(cfg.IdentifierPath),
-		EmailPath:      types.StringValue(cfg.EmailPath),
-		NamePath:       types.StringValue(cfg.NamePath),
-		Scopes:         types.StringValue(cfg.Scopes),
-		RedirectURL:    types.StringValue(""), // not returned by GET
-	}
+	state := applyIDPImportResponse(idp, cfg)
 	// Assert every field on the imported state matches its source,
-	// plus the two non-recoverable secret contracts.
+	// plus the secret recovery and non-recoverable redirect contracts.
 	if got := state.ID.ValueInt64(); got != int64(idp.IDPId) {
 		t.Errorf("ID = %d, want %d", got, idp.IDPId)
 	}
@@ -152,8 +137,8 @@ func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
 	if got := state.Scopes.ValueString(); got != cfg.Scopes {
 		t.Errorf("Scopes = %q, want %q", got, cfg.Scopes)
 	}
-	if state.ClientSecret.ValueString() != "" {
-		t.Errorf("ClientSecret must be empty after import")
+	if state.ClientSecret.ValueString() != cfg.ClientSecret {
+		t.Errorf("ClientSecret = %q, want recovered API value", state.ClientSecret.ValueString())
 	}
 	if state.RedirectURL.ValueString() != "" {
 		t.Errorf("RedirectURL must be empty after import (not returned by GET)")

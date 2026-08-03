@@ -473,6 +473,7 @@ type Resource struct {
 	Subdomain    string `json:"subdomain"`
 	FullDomain   string `json:"fullDomain"`
 	DomainID     string `json:"domainId"`
+	Protocol     string `json:"protocol,omitempty"`
 	Wildcard     bool   `json:"wildcard,omitempty"`
 	Health       string `json:"health,omitempty"`
 
