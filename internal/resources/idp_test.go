@@ -19,7 +19,7 @@ func applyIDPReadResponse(prior IDPResourceModel, idp *client.IDP, cfg *client.I
 	prior.Name = types.StringValue(idp.Name)
 	prior.AutoProvision = types.BoolValue(idp.AutoProvision)
 	prior.Tags = types.StringValue(idp.Tags)
-	prior.Variant = types.StringValue(idp.Variant)
+	prior.Variant = types.StringValue(normalizeIDPVariant(idp.Variant))
 	prior.ClientID = types.StringValue(cfg.ClientID)
 	prior.AuthURL = types.StringValue(cfg.AuthURL)
 	prior.TokenURL = types.StringValue(cfg.TokenURL)
@@ -86,36 +86,21 @@ func TestIDP_ReadMapping_PreservesClientSecret(t *testing.T) {
 	}
 }
 
-func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
-	// ImportState builds the model with empty ClientSecret and
-	// empty RedirectURL because neither is recoverable after import.
+func TestIDP_ImportState_RecoversClientSecret(t *testing.T) {
+	// ImportState recovers ClientSecret from the OIDC configuration returned by
+	// Pangolin. RedirectURL remains empty because GET does not return it.
 	idp := &client.IDP{
-		IDPId: 5, Name: "n", Variant: "oidc",
+		IDPId: 5, Name: "n", Variant: "",
 		AutoProvision: false, Tags: "",
 	}
 	cfg := &client.IDPOidcConfig{
-		ClientID: "cid", AuthURL: "a", TokenURL: "t",
+		ClientID: "cid", ClientSecret: "existing-secret", AuthURL: "a", TokenURL: "t",
 		IdentifierPath: "sub", EmailPath: "email", NamePath: "name",
 		Scopes: "openid",
 	}
-	state := IDPResourceModel{
-		ID:             types.Int64Value(int64(idp.IDPId)),
-		Name:           types.StringValue(idp.Name),
-		AutoProvision:  types.BoolValue(idp.AutoProvision),
-		Tags:           types.StringValue(idp.Tags),
-		Variant:        types.StringValue(idp.Variant),
-		ClientID:       types.StringValue(cfg.ClientID),
-		ClientSecret:   types.StringValue(""), // not recoverable
-		AuthURL:        types.StringValue(cfg.AuthURL),
-		TokenURL:       types.StringValue(cfg.TokenURL),
-		IdentifierPath: types.StringValue(cfg.IdentifierPath),
-		EmailPath:      types.StringValue(cfg.EmailPath),
-		NamePath:       types.StringValue(cfg.NamePath),
-		Scopes:         types.StringValue(cfg.Scopes),
-		RedirectURL:    types.StringValue(""), // not returned by GET
-	}
+	state := applyIDPImportResponse(idp, cfg)
 	// Assert every field on the imported state matches its source,
-	// plus the two non-recoverable secret contracts.
+	// plus the secret recovery and non-recoverable redirect contracts.
 	if got := state.ID.ValueInt64(); got != int64(idp.IDPId) {
 		t.Errorf("ID = %d, want %d", got, idp.IDPId)
 	}
@@ -128,8 +113,8 @@ func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
 	if got := state.Tags.ValueString(); got != idp.Tags {
 		t.Errorf("Tags = %q, want %q", got, idp.Tags)
 	}
-	if got := state.Variant.ValueString(); got != idp.Variant {
-		t.Errorf("Variant = %q, want %q", got, idp.Variant)
+	if got := state.Variant.ValueString(); got != "oidc" {
+		t.Errorf("Variant = %q, want normalized generic oidc", got)
 	}
 	if got := state.ClientID.ValueString(); got != cfg.ClientID {
 		t.Errorf("ClientID = %q, want %q", got, cfg.ClientID)
@@ -152,11 +137,31 @@ func TestIDP_ImportState_NullSensitiveFields(t *testing.T) {
 	if got := state.Scopes.ValueString(); got != cfg.Scopes {
 		t.Errorf("Scopes = %q, want %q", got, cfg.Scopes)
 	}
-	if state.ClientSecret.ValueString() != "" {
-		t.Errorf("ClientSecret must be empty after import")
+	if state.ClientSecret.ValueString() != cfg.ClientSecret {
+		t.Errorf("ClientSecret = %q, want recovered API value", state.ClientSecret.ValueString())
 	}
 	if state.RedirectURL.ValueString() != "" {
 		t.Errorf("RedirectURL must be empty after import (not returned by GET)")
+	}
+}
+
+func TestNormalizeIDPVariant(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "omitted generic", in: "", want: "oidc"},
+		{name: "explicit generic", in: "oidc", want: "oidc"},
+		{name: "google", in: "google", want: "google"},
+		{name: "azure", in: "azure", want: "azure"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeIDPVariant(tt.in); got != tt.want {
+				t.Fatalf("normalizeIDPVariant(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

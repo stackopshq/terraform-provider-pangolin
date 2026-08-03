@@ -721,6 +721,15 @@ func applyHTTPResourceResponse(m HTTPResourceModel, res *client.Resource) HTTPRe
 	m.Name = types.StringValue(res.Name)
 	m.FullDomain = types.StringValue(res.FullDomain)
 	m.DomainID = types.StringValue(res.DomainID)
+	// Pangolin omits the legacy protocol field for HTTP resources and some
+	// newer server builds represent the transport only through mode. Keep the
+	// imported/refreshed value aligned with the schema's "tcp" default while
+	// still preserving UDP resources.
+	protocol := "tcp"
+	if res.Protocol == "udp" || res.Mode == "udp" {
+		protocol = "udp"
+	}
+	m.Protocol = types.StringValue(protocol)
 	if res.Subdomain != "" {
 		m.Subdomain = types.StringValue(res.Subdomain)
 	} else {

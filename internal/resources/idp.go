@@ -58,7 +58,8 @@ func (r *IDPResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Manages a Pangolin OIDC Identity Provider.\n\n" +
-			"> **Note:** `client_secret` cannot be recovered after import and must be set manually.",
+			"> **Note:** `client_secret` is imported from Pangolin's OIDC configuration response. " +
+			"The resulting Terraform state contains sensitive material and must be protected accordingly.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Description: "The numeric IDP ID.",
@@ -148,7 +149,7 @@ func (r *IDPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 				},
 			},
 			"variant": schema.StringAttribute{
-				Description: "OIDC variant. Refines `type = oidc` to a provider family - Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.",
+				Description: "OIDC variant. Refines `type = oidc` to a provider family - Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`. An omitted generic variant in the API response is normalized to `oidc`.",
 				Optional:    true,
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
@@ -219,7 +220,7 @@ func (r *IDPResource) Create(ctx context.Context, req resource.CreateRequest, re
 	plan.Name = types.StringValue(idp.Name)
 	plan.AutoProvision = types.BoolValue(idp.AutoProvision)
 	plan.Tags = types.StringValue(idp.Tags)
-	plan.Variant = types.StringValue(idp.Variant)
+	plan.Variant = types.StringValue(normalizeIDPVariant(idp.Variant))
 	plan.EmailPath = types.StringValue(oidcCfg.EmailPath)
 	plan.NamePath = types.StringValue(oidcCfg.NamePath)
 
@@ -246,7 +247,7 @@ func (r *IDPResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	state.Name = types.StringValue(idp.Name)
 	state.AutoProvision = types.BoolValue(idp.AutoProvision)
 	state.Tags = types.StringValue(idp.Tags)
-	state.Variant = types.StringValue(idp.Variant)
+	state.Variant = types.StringValue(normalizeIDPVariant(idp.Variant))
 	state.ClientID = types.StringValue(oidcCfg.ClientID)
 	// ClientSecret is not returned masked from API; preserve existing state value.
 	state.AuthURL = types.StringValue(oidcCfg.AuthURL)
@@ -321,14 +322,22 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &IDPResourceModel{
+	state := applyIDPImportResponse(idp, oidcCfg)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// applyIDPImportResponse maps the complete import response into state. Pangolin
+// returns the existing OIDC client secret from this endpoint, so preserving it
+// avoids an immediate post-import update and keeps adoption non-destructive.
+func applyIDPImportResponse(idp *client.IDP, oidcCfg *client.IDPOidcConfig) IDPResourceModel {
+	return IDPResourceModel{
 		ID:             types.Int64Value(int64(idp.IDPId)),
 		Name:           types.StringValue(idp.Name),
 		AutoProvision:  types.BoolValue(idp.AutoProvision),
 		Tags:           types.StringValue(idp.Tags),
-		Variant:        types.StringValue(idp.Variant),
+		Variant:        types.StringValue(normalizeIDPVariant(idp.Variant)),
 		ClientID:       types.StringValue(oidcCfg.ClientID),
-		ClientSecret:   types.StringValue(""), // not recoverable after import
+		ClientSecret:   types.StringValue(oidcCfg.ClientSecret),
 		AuthURL:        types.StringValue(oidcCfg.AuthURL),
 		TokenURL:       types.StringValue(oidcCfg.TokenURL),
 		IdentifierPath: types.StringValue(oidcCfg.IdentifierPath),
@@ -336,5 +345,15 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		NamePath:       types.StringValue(oidcCfg.NamePath),
 		Scopes:         types.StringValue(oidcCfg.Scopes),
 		RedirectURL:    types.StringValue(""), // not returned by GET
-	})...)
+	}
+}
+
+// normalizeIDPVariant maps Pangolin's omitted generic OIDC variant to the
+// provider's explicit generic value. This keeps imports and subsequent reads
+// aligned with configuration that declares variant = "oidc".
+func normalizeIDPVariant(variant string) string {
+	if variant == "" {
+		return "oidc"
+	}
+	return variant
 }
