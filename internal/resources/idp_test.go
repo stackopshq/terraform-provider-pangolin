@@ -19,7 +19,7 @@ func applyIDPReadResponse(prior IDPResourceModel, idp *client.IDP, cfg *client.I
 	prior.Name = types.StringValue(idp.Name)
 	prior.AutoProvision = types.BoolValue(idp.AutoProvision)
 	prior.Tags = types.StringValue(idp.Tags)
-	prior.Variant = types.StringValue(idp.Variant)
+	prior.Variant = types.StringValue(normalizeIDPVariant(idp.Variant))
 	prior.ClientID = types.StringValue(cfg.ClientID)
 	prior.AuthURL = types.StringValue(cfg.AuthURL)
 	prior.TokenURL = types.StringValue(cfg.TokenURL)
@@ -90,7 +90,7 @@ func TestIDP_ImportState_RecoversClientSecret(t *testing.T) {
 	// ImportState recovers ClientSecret from the OIDC configuration returned by
 	// Pangolin. RedirectURL remains empty because GET does not return it.
 	idp := &client.IDP{
-		IDPId: 5, Name: "n", Variant: "oidc",
+		IDPId: 5, Name: "n", Variant: "",
 		AutoProvision: false, Tags: "",
 	}
 	cfg := &client.IDPOidcConfig{
@@ -113,8 +113,8 @@ func TestIDP_ImportState_RecoversClientSecret(t *testing.T) {
 	if got := state.Tags.ValueString(); got != idp.Tags {
 		t.Errorf("Tags = %q, want %q", got, idp.Tags)
 	}
-	if got := state.Variant.ValueString(); got != idp.Variant {
-		t.Errorf("Variant = %q, want %q", got, idp.Variant)
+	if got := state.Variant.ValueString(); got != "oidc" {
+		t.Errorf("Variant = %q, want normalized generic oidc", got)
 	}
 	if got := state.ClientID.ValueString(); got != cfg.ClientID {
 		t.Errorf("ClientID = %q, want %q", got, cfg.ClientID)
@@ -142,6 +142,26 @@ func TestIDP_ImportState_RecoversClientSecret(t *testing.T) {
 	}
 	if state.RedirectURL.ValueString() != "" {
 		t.Errorf("RedirectURL must be empty after import (not returned by GET)")
+	}
+}
+
+func TestNormalizeIDPVariant(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "omitted generic", in: "", want: "oidc"},
+		{name: "explicit generic", in: "oidc", want: "oidc"},
+		{name: "google", in: "google", want: "google"},
+		{name: "azure", in: "azure", want: "azure"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeIDPVariant(tt.in); got != tt.want {
+				t.Fatalf("normalizeIDPVariant(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 
