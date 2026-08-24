@@ -243,14 +243,21 @@ func (r *ResourceRuleResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 
-	// The list endpoint's rule projection does NOT include resourceId (server
-	// selects only ruleId/enabled/priority/action/match/value), so
-	// rule.ResourceID is always the zero value here. Use the resource ID parsed
-	// from the import address instead -- otherwise resource_id imports as 0 and
-	// the follow-up Read does GET /resource/0/rules, finds nothing, and removes
-	// the resource, which Terraform surfaces as "Cannot import non-existent
-	// remote object".
-	resp.Diagnostics.Append(resp.State.Set(ctx, &ResourceRuleModel{
+	state := resourceRuleStateFromImport(rule, resourceID)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// resourceRuleStateFromImport maps an imported rule onto the state model.
+//
+// The list endpoint's rule projection does NOT include resourceId (server
+// selects only ruleId/enabled/priority/action/match/value), so rule.ResourceID
+// is always the zero value here. The resource ID parsed from the import
+// address is authoritative -- otherwise resource_id imports as 0 and the
+// follow-up Read does GET /resource/0/rules, finds nothing, and removes the
+// resource, which Terraform surfaces as "Cannot import non-existent remote
+// object".
+func resourceRuleStateFromImport(rule *client.ResourceRule, resourceID int64) ResourceRuleModel {
+	return ResourceRuleModel{
 		ID:         types.Int64Value(int64(rule.RuleID)),
 		ResourceID: types.Int64Value(resourceID),
 		Action:     types.StringValue(rule.Action),
@@ -258,5 +265,5 @@ func (r *ResourceRuleResource) ImportState(ctx context.Context, req resource.Imp
 		Value:      types.StringValue(rule.Value),
 		Priority:   types.Int64Value(int64(rule.Priority)),
 		Enabled:    types.BoolValue(rule.Enabled),
-	})...)
+	}
 }
