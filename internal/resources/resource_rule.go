@@ -75,14 +75,14 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"match": schema.StringAttribute{
-				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, or `ASN`.",
+				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, `COUNTRY_IS_NOT`, `REGION`, or `ASN`.",
 				Required:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "ASN"),
+					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "COUNTRY_IS_NOT", "REGION", "ASN"),
 				},
 			},
 			"value": schema.StringAttribute{
-				Description: "The value to match against (e.g. CIDR range, IP address, path prefix, country code, ASN).",
+				Description: "The value to match against. The accepted form depends on `match`: a CIDR range for `CIDR`, an IP address for `IP`, a path prefix for `PATH`, a two-letter ISO 3166-1 country code for `COUNTRY` and `COUNTRY_IS_NOT`, a UN M.49 region or sub-region code (for example `150` for Europe or `019` for the Americas) for `REGION`, and an AS number for `ASN`.",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
@@ -243,13 +243,27 @@ func (r *ResourceRuleResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &ResourceRuleModel{
+	state := resourceRuleStateFromImport(rule, resourceID)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// resourceRuleStateFromImport maps an imported rule onto the state model.
+//
+// The list endpoint's rule projection does NOT include resourceId (server
+// selects only ruleId/enabled/priority/action/match/value), so rule.ResourceID
+// is always the zero value here. The resource ID parsed from the import
+// address is authoritative -- otherwise resource_id imports as 0 and the
+// follow-up Read does GET /resource/0/rules, finds nothing, and removes the
+// resource, which Terraform surfaces as "Cannot import non-existent remote
+// object".
+func resourceRuleStateFromImport(rule *client.ResourceRule, resourceID int64) ResourceRuleModel {
+	return ResourceRuleModel{
 		ID:         types.Int64Value(int64(rule.RuleID)),
-		ResourceID: types.Int64Value(int64(rule.ResourceID)),
+		ResourceID: types.Int64Value(resourceID),
 		Action:     types.StringValue(rule.Action),
 		Match:      types.StringValue(rule.Match),
 		Value:      types.StringValue(rule.Value),
 		Priority:   types.Int64Value(int64(rule.Priority)),
 		Enabled:    types.BoolValue(rule.Enabled),
-	})...)
+	}
 }
