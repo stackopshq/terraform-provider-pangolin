@@ -4409,3 +4409,50 @@ func extractParam(rawQuery, key string) string {
 	}
 	return ""
 }
+
+// --- IDP variant nesting ---------------------------------------------------
+
+// TestGetIDP_VariantNestedInOidcConfig pins the shape of the single
+// GET. Upstream stores `variant` as a column of the `idpOidcConfig`
+// table and `getIdp.ts` runs an unprojected join, so the field comes
+// back nested and never on the `idp` block. The LIST endpoints project
+// it up to the top level instead (see TestListIDPs_VariantField), which
+// is why IDP.Variant exists at all - decoding the two shapes with the
+// same struct silently yields an empty variant for every provider.
+func TestGetIDP_VariantNestedInOidcConfig(t *testing.T) {
+	const raw = `{
+		"data": {
+			"idp": {"idpId":5,"name":"Google Workspace","type":"oidc","autoProvision":true,"tags":""},
+			"idpOidcConfig": {
+				"idpId":5,"variant":"google","clientId":"cid","clientSecret":"decrypted-by-server",
+				"authUrl":"https://accounts.example/auth","tokenUrl":"https://accounts.example/token",
+				"identifierPath":"sub","emailPath":"email","namePath":"name","scopes":"openid email profile"
+			}
+		},
+		"success": true, "error": false, "message": "Idp retrieved successfully", "status": 200
+	}`
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/idp/5" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(raw)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	})
+
+	idp, cfg, err := c.GetIDP(context.Background(), 5)
+	if err != nil {
+		t.Fatalf("GetIDP: %v", err)
+	}
+	if cfg.Variant != "google" {
+		t.Errorf("IDPOidcConfig.Variant = %q, want google", cfg.Variant)
+	}
+	if idp.Variant != "" {
+		t.Errorf("IDP.Variant = %q, want empty on a single GET", idp.Variant)
+	}
+	if cfg.ClientSecret != "decrypted-by-server" {
+		t.Errorf("ClientSecret = %q", cfg.ClientSecret)
+	}
+}

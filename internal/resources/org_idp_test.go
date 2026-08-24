@@ -18,11 +18,14 @@ func TestHydrateOrgIDPState_Full(t *testing.T) {
 			IDPId:         5,
 			Name:          "google",
 			Type:          "oidc",
-			Variant:       "google",
 			AutoProvision: true,
 			Tags:          "prod",
 		},
 		IDPOidcConfig: client.IDPOidcConfig{
+			// variant is a column of idpOidcConfig upstream, and the
+			// org-scoped single GET returns it nested here rather than
+			// on the idp block.
+			Variant:        "google",
 			ClientID:       "cid",
 			ClientSecret:   "secret", // API sometimes returns it - we ignore.
 			AuthURL:        "https://a",
@@ -190,5 +193,26 @@ func TestOrgIDP_BuildCreateRequestFromModel(t *testing.T) {
 	want := `{"name":"n","clientId":"cid","clientSecret":"secret","authUrl":"https://a","tokenUrl":"https://t","identifierPath":"sub","emailPath":"email","namePath":"name","scopes":"openid email","autoProvision":true,"tags":"prod","variant":"google"}`
 	if string(raw) != want {
 		t.Errorf("payload = %s", raw)
+	}
+}
+
+// TestHydrateOrgIDPState_VariantFromOidcConfig guards the org-scoped
+// half of the same defect. getOrgIdp.ts joins the three tables without
+// a projection, so variant arrives under idpOidcConfig exactly as it
+// does on the system-wide GET.
+func TestHydrateOrgIDPState_VariantFromOidcConfig(t *testing.T) {
+	for _, variant := range []string{"oidc", "google", "azure"} {
+		t.Run(variant, func(t *testing.T) {
+			detail := &client.OrgIDPDetail{
+				IDP:           client.IDP{IDPId: 5, Name: "n", Type: "oidc"},
+				IDPOidcConfig: client.IDPOidcConfig{Variant: variant, ClientID: "cid"},
+				IDPOrg:        client.OrgIDPBindRow{IDPId: 5, OrgID: "org1"},
+			}
+			var state OrgIDPResourceModel
+			hydrateOrgIDPState(&state, detail)
+			if got := state.Variant.ValueString(); got != variant {
+				t.Errorf("Variant = %q, want %q", got, variant)
+			}
+		})
 	}
 }

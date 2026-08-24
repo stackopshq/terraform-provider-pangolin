@@ -2703,6 +2703,10 @@ func (c *Client) ListBlueprints(ctx context.Context) ([]Blueprint, error) {
 // flow; downstream consumers can branch on it to render different
 // help text.
 //
+// Variant is only populated by the LIST endpoints, which project it
+// up from the `idpOidcConfig` table. It is always empty on a single
+// GET - use [IDPOidcConfig.Variant] there.
+//
 // OrgCount comes from the API as a JSON-encoded string (e.g. "0")
 // in the LIST response - kept as string here to match the wire.
 type IDP struct {
@@ -2718,9 +2722,17 @@ type IDP struct {
 }
 
 // IDPOidcConfig represents the OIDC configuration of an IDP.
+//
+// Variant lives here and not on [IDP]: upstream stores it as a column
+// of the `idpOidcConfig` table. The LIST endpoints flatten it to the
+// top level with an explicit projection, but the single GETs
+// (`/idp/{id}` and `/org/{org}/idp/{id}`) run an unprojected join and
+// return it nested under `idpOidcConfig`. Read it from here whenever
+// the payload came from a single GET.
 type IDPOidcConfig struct {
 	ClientID       string `json:"clientId"`
 	ClientSecret   string `json:"clientSecret"`
+	Variant        string `json:"variant,omitempty"`
 	AuthURL        string `json:"authUrl"`
 	TokenURL       string `json:"tokenUrl"`
 	IdentifierPath string `json:"identifierPath"`

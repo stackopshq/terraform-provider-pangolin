@@ -219,7 +219,7 @@ func (r *IDPResource) Create(ctx context.Context, req resource.CreateRequest, re
 	plan.Name = types.StringValue(idp.Name)
 	plan.AutoProvision = types.BoolValue(idp.AutoProvision)
 	plan.Tags = types.StringValue(idp.Tags)
-	plan.Variant = types.StringValue(idp.Variant)
+	plan.Variant = types.StringValue(oidcCfg.Variant)
 	plan.EmailPath = types.StringValue(oidcCfg.EmailPath)
 	plan.NamePath = types.StringValue(oidcCfg.NamePath)
 
@@ -246,7 +246,7 @@ func (r *IDPResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	state.Name = types.StringValue(idp.Name)
 	state.AutoProvision = types.BoolValue(idp.AutoProvision)
 	state.Tags = types.StringValue(idp.Tags)
-	state.Variant = types.StringValue(idp.Variant)
+	state.Variant = types.StringValue(oidcCfg.Variant)
 	state.ClientID = types.StringValue(oidcCfg.ClientID)
 	// ClientSecret is not returned masked from API; preserve existing state value.
 	state.AuthURL = types.StringValue(oidcCfg.AuthURL)
@@ -326,7 +326,7 @@ func (r *IDPResource) ImportState(ctx context.Context, req resource.ImportStateR
 		Name:           types.StringValue(idp.Name),
 		AutoProvision:  types.BoolValue(idp.AutoProvision),
 		Tags:           types.StringValue(idp.Tags),
-		Variant:        types.StringValue(idp.Variant),
+		Variant:        types.StringValue(oidcCfg.Variant),
 		ClientID:       types.StringValue(oidcCfg.ClientID),
 		ClientSecret:   types.StringValue(""), // not recoverable after import
 		AuthURL:        types.StringValue(oidcCfg.AuthURL),
