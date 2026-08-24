@@ -42,7 +42,7 @@ resource "pangolin_resource_rule" "block_country" {
 - `match` (String) The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, `COUNTRY_IS_NOT`, `REGION`, or `ASN`.
 - `priority` (Number) The rule priority (lower number = higher priority).
 - `resource_id` (Number) The ID of the resource this rule belongs to.
-- `value` (String) The value to match against (e.g. CIDR range, IP address, path prefix, country code, ASN).
+- `value` (String) The value to match against. The accepted form depends on `match`: a CIDR range for `CIDR`, an IP address for `IP`, a path prefix for `PATH`, a two-letter ISO 3166-1 country code for `COUNTRY` and `COUNTRY_IS_NOT`, a UN M.49 region or sub-region code (for example `150` for Europe or `019` for the Americas) for `REGION`, and an AS number for `ASN`.
 
 ### Optional
 

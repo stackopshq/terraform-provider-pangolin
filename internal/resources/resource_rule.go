@@ -82,7 +82,7 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"value": schema.StringAttribute{
-				Description: "The value to match against (e.g. CIDR range, IP address, path prefix, country code, ASN).",
+				Description: "The value to match against. The accepted form depends on `match`: a CIDR range for `CIDR`, an IP address for `IP`, a path prefix for `PATH`, a two-letter ISO 3166-1 country code for `COUNTRY` and `COUNTRY_IS_NOT`, a UN M.49 region or sub-region code (for example `150` for Europe or `019` for the Americas) for `REGION`, and an AS number for `ASN`.",
 				Required:    true,
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
