@@ -130,7 +130,7 @@ resource "pangolin_resource" "under_maintenance" {
 - `ssl` (Boolean) Enable SSL towards the backend.
 - `sso` (Boolean) Enable Pangolin SSO authentication on this resource. Set to false to make the resource publicly accessible.
 - `sticky_session` (Boolean) Enable sticky sessions (persistent sessions) on this resource.
-- `subdomain` (String) The subdomain for the resource. Only used when `mode = "http"`; ignored for L4 modes. Set to null to use the base domain.
+- `subdomain` (String) The subdomain for the resource. Only used when `mode = "http"`; ignored for L4 modes. May be multi-label (`"grafana.internal"`) or a wildcard (`"*"` or `"*.apps"`). Set to null to use the base domain.
 - `tls_server_name` (String) TLS server name for the backend. Set to null to clear.
 
 ### Read-Only

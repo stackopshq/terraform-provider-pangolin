@@ -530,3 +530,31 @@ func TestIsUnknownList(t *testing.T) {
 		t.Errorf("populated slice is not unknown")
 	}
 }
+
+func TestSubdomainRegex(t *testing.T) {
+	valid := []string{
+		// single RFC 1123 labels (the only shape accepted before this fix)
+		"app", "grafana-01", "a", "0", "a0",
+		// multi-label: the server's subdomainSchema allows dots
+		"actual.pangolin", "ha.pangolin", "a.b.c", "openweb-ui.pangolin",
+		// wildcards: the server's wildcardSubdomainSchema
+		"*", "*.apps", "*.apps.internal",
+	}
+	invalid := []string{
+		"", ".", "-app", "app-", "app..b", ".app", "app.",
+		"App",           // uppercase: server lowercases on write -> inconsistent result
+		"*app", "a.*.b", // "*" only valid alone or as a leading "*." prefix
+		"**", "*.",
+		"app_1", // underscore is not a hostname character
+	}
+	for _, s := range valid {
+		if !subdomainRegex.MatchString(s) {
+			t.Errorf("subdomainRegex rejected valid subdomain %q", s)
+		}
+	}
+	for _, s := range invalid {
+		if subdomainRegex.MatchString(s) {
+			t.Errorf("subdomainRegex accepted invalid subdomain %q", s)
+		}
+	}
+}
