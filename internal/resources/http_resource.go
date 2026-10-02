@@ -23,6 +23,13 @@ import (
 	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
+// subdomainRegex mirrors the server's accepted subdomain shapes
+// (subdomainSchema | wildcardSubdomainSchema in server/lib/schemas.ts):
+// dot-separated RFC 1123 labels, optionally "*."-prefixed, or a bare "*".
+var subdomainRegex = regexp.MustCompile(
+	`^(\*|(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$`,
+)
+
 var (
 	_ resource.Resource                = &HTTPResource{}
 	_ resource.ResourceWithImportState = &HTTPResource{}
@@ -137,14 +144,20 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			},
 			"subdomain": schema.StringAttribute{
 				Description: "The subdomain for the resource. Only used when `mode = \"http\"`; ignored " +
-					"for L4 modes. Set to null to use the base domain.",
+					"for L4 modes. May be multi-label (`\"grafana.internal\"`) or a wildcard " +
+					"(`\"*\"` or `\"*.apps\"`). Set to null to use the base domain.",
 				Optional: true,
 				Validators: []validator.String{
-					// RFC 1123 label: lowercase letters, digits, hyphens; cannot
-					// start or end with a hyphen; max 63 characters.
+					// Mirrors the server's subdomainSchema | wildcardSubdomainSchema
+					// (server/lib/schemas.ts): one or more dot-separated RFC 1123
+					// labels (lowercase letters, digits, hyphens; no leading or
+					// trailing hyphen; max 63 chars each), optionally prefixed by
+					// "*." for a wildcard, or a bare "*". Lowercase only: the server
+					// lowercases on write, so uppercase input would produce an
+					// inconsistent result after apply.
 					stringvalidator.RegexMatches(
-						regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
-						"must be a valid DNS label (lowercase letters, digits and hyphens; cannot start or end with a hyphen)",
+						subdomainRegex,
+						"must be one or more dot-separated DNS labels (lowercase letters, digits and hyphens; no leading/trailing hyphen), optionally a wildcard (\"*\" or \"*.<labels>\")",
 					),
 				},
 			},
