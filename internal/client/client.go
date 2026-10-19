@@ -992,13 +992,17 @@ type SiteResource struct {
 // wire response - the server fills it itself (`null` in every
 // observation so far).
 type CreateSiteResourceRequest struct {
-	Name           string   `json:"name"`
-	SiteID         int      `json:"siteId"`
-	Mode           string   `json:"mode"`
-	Destination    string   `json:"destination"`
-	Alias          string   `json:"alias,omitempty"`
-	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
-	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
+	Name        string `json:"name"`
+	SiteID      int    `json:"siteId"`
+	Mode        string `json:"mode"`
+	Destination string `json:"destination"`
+	Alias       string `json:"alias,omitempty"`
+	// Port ranges are pointers so that "" (no ports) is sent as-is.
+	// With a plain string and omitempty, "" was dropped from the request
+	// and the server stored its default "*" (all ports). nil leaves the
+	// field out so the server default applies.
+	TCPPortRange   *string  `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange   *string  `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
 	PamMode        string   `json:"pamMode,omitempty"`
@@ -1463,12 +1467,16 @@ func (c *Client) UpdateResource(ctx context.Context, resourceID int, req *Update
 
 // UpdateSiteResourceRequest is the payload for updating a private site resource.
 type UpdateSiteResourceRequest struct {
-	Name           string   `json:"name"`
-	SiteID         int      `json:"siteId"`
-	Destination    string   `json:"destination"`
-	Alias          string   `json:"alias,omitempty"`
-	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
-	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
+	Name        string `json:"name"`
+	SiteID      int    `json:"siteId"`
+	Destination string `json:"destination"`
+	Alias       string `json:"alias,omitempty"`
+	// Port ranges are pointers so that "" (no ports) is sent as-is.
+	// With a plain string and omitempty, "" was dropped from the request
+	// and the server stored its default "*" (all ports). nil leaves the
+	// field out so the server default applies.
+	TCPPortRange   *string  `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange   *string  `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
 	PamMode        string   `json:"pamMode,omitempty"`
@@ -1482,6 +1490,46 @@ type UpdateSiteResourceRequest struct {
 	Subdomain       string `json:"subdomain,omitempty"`
 	Scheme          string `json:"scheme,omitempty"`
 	DestinationPort int    `json:"destinationPort,omitempty"`
+}
+
+// SiteResourceAccess is the set of roles, users and clients granted on a
+// private site resource.
+type SiteResourceAccess struct {
+	RoleIDs   []int
+	UserIDs   []string
+	ClientIDs []int
+}
+
+// GetSiteResourceAccess returns the roles, users and clients currently
+// granted on a private site resource. The update endpoint replaces these
+// lists wholesale, so an update must send them back unchanged or every
+// grant made through pangolin_site_resource_role / _user / _client (or the
+// UI) is removed.
+func (c *Client) GetSiteResourceAccess(ctx context.Context, siteResourceID int) (*SiteResourceAccess, error) {
+	roles, err := c.ListSiteResourceRoles(ctx, siteResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing roles: %w", err)
+	}
+	users, err := c.ListSiteResourceUsers(ctx, siteResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing users: %w", err)
+	}
+	clients, err := c.ListSiteResourceClients(ctx, siteResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing clients: %w", err)
+	}
+
+	access := &SiteResourceAccess{RoleIDs: []int{}, UserIDs: []string{}, ClientIDs: []int{}}
+	for _, r := range roles {
+		access.RoleIDs = append(access.RoleIDs, r.RoleID)
+	}
+	for _, u := range users {
+		access.UserIDs = append(access.UserIDs, u.UserID)
+	}
+	for _, cl := range clients {
+		access.ClientIDs = append(access.ClientIDs, cl.ClientID)
+	}
+	return access, nil
 }
 
 // UpdateSiteResource updates a private site resource by ID.
