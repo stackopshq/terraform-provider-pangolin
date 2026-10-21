@@ -108,7 +108,6 @@ export PANGOLIN_ORG_ID="your-org-id"
 # Create a site (Newt tunnel connector)
 resource "pangolin_site" "homelab" {
   name = "homelab"
-  type = "newt"
 }
 
 # Expose an app publicly via HTTP reverse proxy

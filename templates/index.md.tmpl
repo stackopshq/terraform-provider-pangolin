@@ -25,7 +25,6 @@ provider "pangolin" {
 # Create a site (tunnel connector)
 resource "pangolin_site" "main" {
   name = "prod-site"
-  type = "newt"
 }
 
 # Create an HTTP resource
