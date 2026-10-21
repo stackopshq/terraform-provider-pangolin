@@ -19,7 +19,7 @@ terraform {
   required_providers {
     pangolin = {
       source  = "stackopshq/pangolin"
-      version = "~> 1.5"
+      version = "~> 1.6"
     }
   }
 }

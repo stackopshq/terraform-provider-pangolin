@@ -11,7 +11,7 @@ terraform {
   required_providers {
     pangolin = {
       source  = "stackopshq/pangolin"
-      version = "~> 1.3"
+      version = "~> 1.6"
     }
   }
 }
@@ -37,6 +37,7 @@ resource "pangolin_resource" "app" {
 # Attach a backend target
 resource "pangolin_target" "app" {
   resource_id = pangolin_resource.app.id
+  site_id     = pangolin_site.main.id
   ip          = "192.168.1.10"
   port        = 8080
 }
