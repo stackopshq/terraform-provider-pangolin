@@ -529,14 +529,26 @@ type Resource struct {
 //
 // Zero → false, non-zero → true. Older builds emit bool directly and
 // pass through unchanged.
+//
+// It also fills Headers from `requestHeaders`, which newer servers
+// return in place of `headers`: an array on GET, a JSON-encoded
+// string on update.
 func (r *Resource) UnmarshalJSON(data []byte) error {
 	type resourceAlias Resource
 	aux := struct {
-		SSO json.RawMessage `json:"sso"`
+		SSO            json.RawMessage `json:"sso"`
+		RequestHeaders json.RawMessage `json:"requestHeaders"`
 		*resourceAlias
 	}{resourceAlias: (*resourceAlias)(r)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
+	}
+	if len(r.Headers) == 0 {
+		hs, err := decodeResourceHeaders(aux.RequestHeaders)
+		if err != nil {
+			return err
+		}
+		r.Headers = hs
 	}
 	if len(aux.SSO) == 0 || string(aux.SSO) == "null" {
 		return nil
@@ -552,6 +564,29 @@ func (r *Resource) UnmarshalJSON(data []byte) error {
 	}
 	r.SSO = n != 0
 	return nil
+}
+
+// decodeResourceHeaders decodes `requestHeaders` sent as an array or
+// as a JSON-encoded string.
+func decodeResourceHeaders(raw json.RawMessage) ([]ResourceHeader, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, fmt.Errorf("resource.requestHeaders: decode string: %w", err)
+		}
+		if s == "" {
+			return nil, nil
+		}
+		raw = json.RawMessage(s)
+	}
+	var hs []ResourceHeader
+	if err := json.Unmarshal(raw, &hs); err != nil {
+		return nil, fmt.Errorf("resource.requestHeaders: %w", err)
+	}
+	return hs, nil
 }
 
 // CreateResourceRequest is the payload for creating a Pangolin
