@@ -132,6 +132,8 @@ func (r *OLMClientResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
+	r.client.AddressMu.Lock()
+	defer r.client.AddressMu.Unlock()
 	defaults, err := r.client.GetClientDefaults(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get client defaults", err.Error())

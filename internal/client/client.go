@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -61,6 +62,12 @@ type Client struct {
 	APIKey     string
 	OrgID      string
 	HTTPClient *http.Client
+
+	// AddressMu serializes picking a site or client address and creating
+	// the object with it: pick-site-defaults and pick-client-defaults hand
+	// out the same free address until it is used, so parallel creates
+	// collide with a 409 "Subnet ... already exists".
+	AddressMu sync.Mutex
 }
 
 // listPageSize is the page size requested from Pangolin's paginated list
