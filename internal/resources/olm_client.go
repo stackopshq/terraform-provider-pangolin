@@ -133,9 +133,9 @@ func (r *OLMClientResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	r.client.AddressMu.Lock()
-	defer r.client.AddressMu.Unlock()
 	defaults, err := r.client.GetClientDefaults(ctx)
 	if err != nil {
+		r.client.AddressMu.Unlock()
 		resp.Diagnostics.AddError("Failed to get client defaults", err.Error())
 		return
 	}
@@ -147,6 +147,7 @@ func (r *OLMClientResource) Create(ctx context.Context, req resource.CreateReque
 		Subnet: defaults.Subnet,
 		Type:   "olm",
 	})
+	r.client.AddressMu.Unlock() // address is taken (or the create failed); the lifecycle calls below need no lock
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create OLM client", err.Error())
 		return
