@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -532,5 +534,86 @@ func TestRoleToModel_ReplacementRoleIDFromPrior(t *testing.T) {
 	m, _ = roleToModel(context.Background(), role, RoleResourceModel{})
 	if !m.ReplacementRoleID.IsNull() {
 		t.Errorf("import: replacement_role_id = %v, want null", m.ReplacementRoleID)
+	}
+}
+
+// updateRole5 runs Update from a full state of role 5 to a plan built by
+// edit, against a server answering the update and the re-read. It returns
+// the requests the server received and the resulting state.
+func updateRole5(t *testing.T, edit func(*RoleResourceModel)) ([]string, RoleResourceModel) {
+	t.Helper()
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"roleId":5,"orgId":"org","name":"Devs","description":"new","isAdmin":null,"sshSudoMode":"none","sshSudoCommands":"[]","sshUnixGroups":"[]"},"success":true,"error":false,"message":"ok","status":200}`))
+	}))
+	t.Cleanup(srv.Close)
+	r := &RoleResource{client: client.NewClient(srv.URL, "k", "org")}
+
+	ctx := context.Background()
+	var sresp resource.SchemaResponse
+	r.Schema(ctx, resource.SchemaRequest{}, &sresp)
+	empty, _ := types.ListValueFrom(ctx, types.StringType, []string{})
+	prior := RoleResourceModel{
+		ID: types.Int64Value(5), Name: types.StringValue("Devs"), Description: types.StringValue("old"),
+		RequireDeviceApproval: types.BoolValue(false), AllowSSH: types.BoolValue(false),
+		SSHSudoMode: types.StringValue("none"), SSHSudoCommands: empty, SSHCreateHomeDir: types.BoolValue(false),
+		SSHUnixGroups: empty, IsAdmin: types.BoolValue(false), OrgName: types.StringValue("Org"),
+		ReplacementRoleID: types.Int64Null(),
+	}
+	planned := prior
+	edit(&planned)
+	state := tfsdk.State{Schema: sresp.Schema}
+	plan := tfsdk.Plan{Schema: sresp.Schema}
+	if d := state.Set(ctx, &prior); d.HasError() {
+		t.Fatalf("set state: %v", d)
+	}
+	if d := plan.Set(ctx, &planned); d.HasError() {
+		t.Fatalf("set plan: %v", d)
+	}
+	resp := resource.UpdateResponse{State: state}
+	r.Update(ctx, resource.UpdateRequest{State: state, Plan: plan}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("update: %v", resp.Diagnostics)
+	}
+	var got RoleResourceModel
+	resp.Diagnostics.Append(resp.State.Get(ctx, &got)...)
+	return calls, got
+}
+
+func TestRoleUpdate_OnlyReplacementRoleIDMakesNoCall(t *testing.T) {
+	calls, got := updateRole5(t, func(m *RoleResourceModel) { m.ReplacementRoleID = types.Int64Value(7) })
+	if len(calls) != 0 {
+		t.Errorf("requests = %v, want none (a full update resends allow_ssh)", calls)
+	}
+	if !got.ReplacementRoleID.Equal(types.Int64Value(7)) {
+		t.Errorf("replacement_role_id = %v, want 7", got.ReplacementRoleID)
+	}
+}
+
+func TestRoleUpdate_OtherFieldStillUpdates(t *testing.T) {
+	calls, got := updateRole5(t, func(m *RoleResourceModel) {
+		m.ReplacementRoleID = types.Int64Value(7)
+		m.Description = types.StringValue("new")
+	})
+	if len(calls) == 0 || calls[0] != "POST /v1/role/5" {
+		t.Errorf("requests = %v, want the role update first", calls)
+	}
+	if !got.ReplacementRoleID.Equal(types.Int64Value(7)) || got.Description.ValueString() != "new" {
+		t.Errorf("state = %v / %v, want 7 / new", got.ReplacementRoleID, got.Description)
+	}
+}
+
+func TestRoleSchema_ReplacementRoleIDAtLeastOne(t *testing.T) {
+	var sresp resource.SchemaResponse
+	(&RoleResource{}).Schema(context.Background(), resource.SchemaRequest{}, &sresp)
+	attr := sresp.Schema.Attributes["replacement_role_id"].(schema.Int64Attribute)
+	vresp := validator.Int64Response{}
+	for _, v := range attr.Validators {
+		v.ValidateInt64(context.Background(), validator.Int64Request{Path: path.Root("replacement_role_id"), ConfigValue: types.Int64Value(0)}, &vresp)
+	}
+	if !vresp.Diagnostics.HasError() {
+		t.Error("replacement_role_id = 0 must be refused")
 	}
 }

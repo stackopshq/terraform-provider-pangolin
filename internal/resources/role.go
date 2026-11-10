@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -16,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
@@ -150,9 +153,12 @@ func (r *RoleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"replacement_role_id": schema.Int64Attribute{
 				Description: "ID of the role that receives the members of this role when it is deleted. " +
 					"It must be another non-admin role of the organization, or the destroy fails without deleting anything. " +
-					"Unset: the first non-admin role by name. Only used on destroy: changing it leaves the role unchanged on the server. " +
+					"Unset: the first non-admin role by name. Only used on destroy: changing it alone makes no API call. " +
 					"When it references another `pangolin_role` (`pangolin_role.other.id`), Terraform destroys this role first, so the replacement still exists.",
 				Optional: true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
 			},
 			// Read-only org context
 			"is_admin": schema.BoolAttribute{
@@ -254,6 +260,19 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	// replacement_role_id alone changed: no API call. A full update would
+	// resend allow_ssh from the state, which the server does not return,
+	// and could revoke an SSH access granted outside Terraform.
+	onlyReplacement := tfsdk.State{Schema: req.State.Schema, Raw: req.State.Raw.Copy()}
+	resp.Diagnostics.Append(onlyReplacement.SetAttribute(ctx, path.Root("replacement_role_id"), plan.ReplacementRoleID)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if onlyReplacement.Raw.Equal(req.Plan.Raw) {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
+
 	updateReq := &client.UpdateRoleRequest{
 		Name:        plan.Name.ValueString(),
 		Description: plan.Description.ValueString(),
@@ -331,7 +350,8 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	if replacement == nil && wantID != 0 {
 		resp.Diagnostics.AddError("Invalid replacement_role_id",
 			fmt.Sprintf("replacement_role_id %d must be another non-admin role of the organization %q, "+
-				"and role %d is not: nothing was deleted. Fix it with an apply, then destroy again.", wantID, r.client.OrgID, wantID))
+				"and role %d is not: nothing was deleted. Set a valid value and apply (put the resource back in the configuration first if it was removed), "+
+				"or delete the role from the Pangolin interface and remove it from the state with `terraform state rm`.", wantID, r.client.OrgID, wantID))
 		return
 	}
 	if replacement == nil {

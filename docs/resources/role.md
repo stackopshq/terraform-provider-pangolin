@@ -55,7 +55,7 @@ resource "pangolin_role" "auditors" {
 
 - `allow_ssh` (Boolean) Whether members of this role may open SSH sessions through the Pangolin bastion.
 - `description` (String) The description of the role.
-- `replacement_role_id` (Number) ID of the role that receives the members of this role when it is deleted. It must be another non-admin role of the organization, or the destroy fails without deleting anything. Unset: the first non-admin role by name. Only used on destroy: changing it leaves the role unchanged on the server. When it references another `pangolin_role` (`pangolin_role.other.id`), Terraform destroys this role first, so the replacement still exists.
+- `replacement_role_id` (Number) ID of the role that receives the members of this role when it is deleted. It must be another non-admin role of the organization, or the destroy fails without deleting anything. Unset: the first non-admin role by name. Only used on destroy: changing it alone makes no API call. When it references another `pangolin_role` (`pangolin_role.other.id`), Terraform destroys this role first, so the replacement still exists.
 - `require_device_approval` (Boolean) Require an administrator to approve each new device before its user can use this role.
 - `ssh_create_home_dir` (Boolean) Whether to create the user's home directory on the host when they first log in.
 - `ssh_sudo_commands` (List of String) List of sudo command patterns allowed when `ssh_sudo_mode = "restricted"`. Ignored otherwise.
