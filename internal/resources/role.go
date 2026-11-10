@@ -47,6 +47,9 @@ type RoleResourceModel struct {
 	// Read-only org context
 	IsAdmin types.Bool   `tfsdk:"is_admin"`
 	OrgName types.String `tfsdk:"org_name"`
+
+	// Delete-only, never sent to nor read from the API.
+	ReplacementRoleID types.Int64 `tfsdk:"replacement_role_id"`
 }
 
 // NewRoleResource returns a new resource factory.
@@ -143,6 +146,13 @@ func (r *RoleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				PlanModifiers: []planmodifier.List{
 					listplanmodifier.UseStateForUnknown(),
 				},
+			},
+			"replacement_role_id": schema.Int64Attribute{
+				Description: "ID of the role that receives the members of this role when it is deleted. " +
+					"It must be another non-admin role of the organization, or the destroy fails without deleting anything. " +
+					"Unset: the first non-admin role by name. Only used on destroy: changing it leaves the role unchanged on the server. " +
+					"When it references another `pangolin_role` (`pangolin_role.other.id`), Terraform destroys this role first, so the replacement still exists.",
+				Optional: true,
 			},
 			// Read-only org context
 			"is_admin": schema.BoolAttribute{
@@ -291,6 +301,7 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	roleID := int(state.ID.ValueInt64())
+	wantID := int(state.ReplacementRoleID.ValueInt64()) // 0 when unset
 	found := false
 	var replacement *client.Role
 	for i, role := range roles {
@@ -299,7 +310,7 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 			continue
 		}
 		// The server stores isAdmin only on the Admin role: null means non-admin.
-		if replacement == nil && (role.IsAdmin == nil || !*role.IsAdmin) {
+		if replacement == nil && (wantID == 0 || role.RoleID == wantID) && (role.IsAdmin == nil || !*role.IsAdmin) {
 			replacement = &roles[i]
 		}
 	}
@@ -315,6 +326,12 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 				roleID, got.OrgID, r.client.OrgID)
 		}
 		resp.Diagnostics.AddError("Failed to delete role", err.Error())
+		return
+	}
+	if replacement == nil && wantID != 0 {
+		resp.Diagnostics.AddError("Invalid replacement_role_id",
+			fmt.Sprintf("replacement_role_id %d must be another non-admin role of the organization %q, "+
+				"and role %d is not: nothing was deleted. Fix it with an apply, then destroy again.", wantID, r.client.OrgID, wantID))
 		return
 	}
 	if replacement == nil {
@@ -460,5 +477,6 @@ func roleToModel(ctx context.Context, role *client.Role, prior RoleResourceModel
 		SSHUnixGroups:         unixGroupsList,
 		IsAdmin:               isAdmin,
 		OrgName:               types.StringValue(role.OrgName),
+		ReplacementRoleID:     prior.ReplacementRoleID,
 	}, allDiags
 }

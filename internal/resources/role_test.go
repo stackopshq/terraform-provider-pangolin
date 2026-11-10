@@ -399,12 +399,24 @@ func roleDeleteTestServer(t *testing.T, rolesJSON, rolesAfterDelete string, dele
 
 func deleteRole5(t *testing.T, r *RoleResource) diag.Diagnostics {
 	t.Helper()
+	return deleteRole5With(t, r, 0)
+}
+
+// deleteRole5With destroys role 5 with replacement_role_id set in the
+// state, or unset when replacementID is 0.
+func deleteRole5With(t *testing.T, r *RoleResource, replacementID int64) diag.Diagnostics {
+	t.Helper()
 	ctx := context.Background()
 	var sresp resource.SchemaResponse
 	r.Schema(ctx, resource.SchemaRequest{}, &sresp)
 	state := tfsdk.State{Schema: sresp.Schema, Raw: tftypes.NewValue(sresp.Schema.Type().TerraformType(ctx), nil)}
 	if d := state.SetAttribute(ctx, path.Root("id"), int64(5)); d.HasError() {
 		t.Fatalf("set state: %v", d)
+	}
+	if replacementID != 0 {
+		if d := state.SetAttribute(ctx, path.Root("replacement_role_id"), replacementID); d.HasError() {
+			t.Fatalf("set state: %v", d)
+		}
 	}
 	resp := resource.DeleteResponse{State: state}
 	r.Delete(ctx, resource.DeleteRequest{State: state}, &resp)
@@ -475,5 +487,50 @@ func TestRoleDelete_NotInProviderOrg(t *testing.T) {
 				t.Errorf("DELETE sent with replacement %q, want none", deleted)
 			}
 		})
+	}
+}
+
+func TestRoleDelete_ReplacementRoleID(t *testing.T) {
+	roleOps := `{"roleId":7,"orgId":"org","name":"Ops","isAdmin":null}`
+	list := `[` + roleAdmin + `,` + roleDevs + `,` + roleMember + `,` + roleOps + `]`
+	for _, tc := range []struct {
+		name    string
+		id      int64
+		want    string // replacement role ID sent, "" for no DELETE
+		wantErr bool
+	}{
+		{"valid, not the default choice", 7, "7", false},
+		{"unset keeps the first non-admin by name", 0, "2", false},
+		{"admin role", 1, "", true},
+		{"the deleted role itself", 5, "", true},
+		{"unknown role", 99, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, list, "[]", http.StatusOK, "", &deleted)
+			if got := deleteRole5With(t, r, tc.id).HasError(); got != tc.wantErr {
+				t.Errorf("error = %v, want %v", got, tc.wantErr)
+			}
+			if deleted != tc.want {
+				t.Errorf("replacement role = %q, want %q", deleted, tc.want)
+			}
+		})
+	}
+}
+
+// replacement_role_id is not returned by the API: Read keeps the state value
+// (no diff), import starts from an empty model and leaves it null.
+func TestRoleToModel_ReplacementRoleIDFromPrior(t *testing.T) {
+	role := &client.Role{RoleID: 5, Name: "Devs"}
+	m, diags := roleToModel(context.Background(), role, RoleResourceModel{ReplacementRoleID: types.Int64Value(7)})
+	if diags.HasError() {
+		t.Fatalf("diags: %v", diags)
+	}
+	if !m.ReplacementRoleID.Equal(types.Int64Value(7)) {
+		t.Errorf("read: replacement_role_id = %v, want 7", m.ReplacementRoleID)
+	}
+	m, _ = roleToModel(context.Background(), role, RoleResourceModel{})
+	if !m.ReplacementRoleID.IsNull() {
+		t.Errorf("import: replacement_role_id = %v, want null", m.ReplacementRoleID)
 	}
 }
