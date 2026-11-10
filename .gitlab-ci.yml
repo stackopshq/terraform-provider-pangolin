@@ -1,0 +1,60 @@
+# Merge request checks on GitLab, where the code now lives (moved from Gitea on
+# 2026-11-10). GitHub stays a public mirror pushed from here, and publishing
+# (releases, registries) stays on GitHub Actions there: this pipeline only
+# checks, and never publishes.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # No branch pipeline on top of an MR pipeline for the same commit.
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - verify
+  - security
+
+default:
+  tags: [linux]
+  interruptible: true
+  timeout: 20m
+
+variables:
+  GOCACHE: /tmp/go-cache
+  GOMODCACHE: /tmp/go-mod
+
+test:
+  stage: verify
+  image: docker.io/library/golang:1.25-trixie
+  script:
+    - |
+      out=$(gofmt -l .)
+      if [ -n "$out" ]; then echo "gofmt found unformatted files:"; echo "$out"; exit 1; fi
+    - |
+      if hits=$(grep -rlP '[\x{2013}\x{2014}]' --exclude-dir=.git --exclude-dir=vendor .); then
+        echo "em-dash or en-dash found, use an ASCII hyphen:"; echo "$hits"; exit 1
+      fi
+    - go vet ./...
+    - go build -v ./...
+    - go test -v ./...
+
+# The tfplugindocs drift check needs the Terraform CLI: it stays on GitHub Actions.
+lint:
+  stage: verify
+  image: docker.io/golangci/golangci-lint:v2.5.0
+  script:
+    - golangci-lint run --timeout=5m
+
+gitleaks:
+  stage: security
+  needs: []
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1
+    entrypoint: [""]
+  variables:
+    # Full history: the scan covers every commit, not the tip.
+    GIT_DEPTH: 0
+  script:
+    - gitleaks detect --source . --no-banner --redact --exit-code 1
