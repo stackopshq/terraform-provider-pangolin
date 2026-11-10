@@ -2,10 +2,18 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
 
@@ -330,4 +338,142 @@ func derefString(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// Role list fixtures in the server's shape: sorted by name, isAdmin true on
+// the Admin role and null on every other one (createOrg / createRole never
+// set it, and the column has no default).
+const (
+	roleAdmin  = `{"roleId":1,"orgId":"org","name":"Admin","isAdmin":true}`
+	roleDevs   = `{"roleId":5,"orgId":"org","name":"Devs","isAdmin":null}`
+	roleMember = `{"roleId":2,"orgId":"org","name":"Member","isAdmin":null}`
+)
+
+// roleDeleteTestServer lists roles (JSON array bodies: before, then after
+// the DELETE), answers DELETE /role/5 with deleteStatus and records the
+// replacement role ID sent with it. GET /role/5 answers getRole5, or 404
+// when empty (a re-read then goes through the list).
+func roleDeleteTestServer(t *testing.T, rolesJSON, rolesAfterDelete string, deleteStatus int, getRole5 string, deleted *string) *RoleResource {
+	t.Helper()
+	notFound := func(w http.ResponseWriter, msg string) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprintf(w, `{"data":null,"success":false,"error":true,"message":%q,"status":404}`, msg)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/org/org/roles":
+			list := rolesJSON
+			if *deleted != "" {
+				list = rolesAfterDelete
+			}
+			var items []json.RawMessage
+			if err := json.Unmarshal([]byte(list), &items); err != nil {
+				t.Errorf("roles fixture: %v", err)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"data":{"roles":%s,"pagination":{"total":%d,"page":1,"pageSize":1000}},"success":true,"error":false,"message":"Roles retrieved successfully","status":200}`, list, len(items))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/role/5":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			*deleted = body["roleId"]
+			if deleteStatus != http.StatusOK {
+				notFound(w, "Role with ID "+body["roleId"]+" not found")
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":null,"success":true,"error":false,"message":"Role deleted successfully","status":200}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/role/5":
+			if getRole5 == "" {
+				notFound(w, "Role with ID 5 not found")
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"data":%s,"success":true,"error":false,"message":"Role retrieved successfully","status":200}`, getRole5)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return &RoleResource{client: client.NewClient(srv.URL, "k", "org")}
+}
+
+func deleteRole5(t *testing.T, r *RoleResource) diag.Diagnostics {
+	t.Helper()
+	ctx := context.Background()
+	var sresp resource.SchemaResponse
+	r.Schema(ctx, resource.SchemaRequest{}, &sresp)
+	state := tfsdk.State{Schema: sresp.Schema, Raw: tftypes.NewValue(sresp.Schema.Type().TerraformType(ctx), nil)}
+	if d := state.SetAttribute(ctx, path.Root("id"), int64(5)); d.HasError() {
+		t.Fatalf("set state: %v", d)
+	}
+	resp := resource.DeleteResponse{State: state}
+	r.Delete(ctx, resource.DeleteRequest{State: state}, &resp)
+	return resp.Diagnostics
+}
+
+func TestRoleDelete_Replacement(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		roles   string
+		want    string // replacement role ID sent, "" for no DELETE
+		wantErr bool
+	}{
+		{"null isAdmin is non-admin, Admin first is skipped", `[` + roleAdmin + `,` + roleDevs + `,` + roleMember + `]`, "2", false},
+		{"explicit false is non-admin", `[` + roleAdmin + `,` + roleDevs + `,{"roleId":2,"orgId":"org","name":"Member","isAdmin":false}]`, "2", false},
+		{"only Admin left: no promotion", `[` + roleAdmin + `,` + roleDevs + `]`, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, tc.roles, "[]", http.StatusOK, "", &deleted)
+			if got := deleteRole5(t, r).HasError(); got != tc.wantErr {
+				t.Errorf("error = %v, want %v", got, tc.wantErr)
+			}
+			if deleted != tc.want {
+				t.Errorf("replacement role = %q, want %q", deleted, tc.want)
+			}
+		})
+	}
+}
+
+func TestRoleDelete_404(t *testing.T) {
+	before := `[` + roleAdmin + `,` + roleDevs + `,` + roleMember + `]`
+	for _, tc := range []struct {
+		name      string
+		after     string
+		wantError bool
+	}{
+		{"role already gone", `[` + roleAdmin + `,` + roleMember + `]`, false},
+		{"replacement gone, role still there", `[` + roleAdmin + `,` + roleDevs + `]`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, before, tc.after, http.StatusNotFound, "", &deleted)
+			if got := deleteRole5(t, r).HasError(); got != tc.wantError {
+				t.Errorf("error = %v, want %v", got, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestRoleDelete_NotInProviderOrg(t *testing.T) {
+	list := `[` + roleAdmin + `,` + roleMember + `]`
+	for _, tc := range []struct {
+		name      string
+		getRole5  string
+		wantError bool
+	}{
+		{"gone", "", false},
+		{"role of another org", `{"roleId":5,"orgId":"other","name":"Devs","isAdmin":null}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, list, list, http.StatusOK, tc.getRole5, &deleted)
+			if got := deleteRole5(t, r).HasError(); got != tc.wantError {
+				t.Errorf("error = %v, want %v", got, tc.wantError)
+			}
+			if deleted != "" {
+				t.Errorf("DELETE sent with replacement %q, want none", deleted)
+			}
+		})
+	}
 }

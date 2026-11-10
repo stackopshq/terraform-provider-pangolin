@@ -281,8 +281,9 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	// The Pangolin API requires a replacement role for any users currently
-	// assigned this role. Pick the first available role that is not the
-	// one being deleted.
+	// assigned this role. Pick the first non-admin role that is not the
+	// one being deleted: the list is sorted by name, so "Admin" usually
+	// comes first and would silently promote every member.
 	roles, err := r.client.ListRoles(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list roles for deletion", err.Error())
@@ -290,17 +291,55 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	roleID := int(state.ID.ValueInt64())
-	replacementID := roleID
-	for _, role := range roles {
-		if role.RoleID != roleID {
-			replacementID = role.RoleID
-			break
+	found := false
+	var replacement *client.Role
+	for i, role := range roles {
+		if role.RoleID == roleID {
+			found = true
+			continue
+		}
+		// The server stores isAdmin only on the Admin role: null means non-admin.
+		if replacement == nil && (role.IsAdmin == nil || !*role.IsAdmin) {
+			replacement = &roles[i]
 		}
 	}
-
-	if err := r.client.DeleteRole(ctx, roleID, replacementID); err != nil {
+	if !found {
+		// Gone, or a role of another org (imported with a root key).
+		var got *client.Role
+		got, err = r.client.GetRoleByID(ctx, roleID)
+		if errors.Is(err, client.ErrNotFound) {
+			return
+		}
+		if err == nil {
+			err = fmt.Errorf("role %d belongs to org %q, not to the org %q of the provider: delete it with a provider configured for its org",
+				roleID, got.OrgID, r.client.OrgID)
+		}
 		resp.Diagnostics.AddError("Failed to delete role", err.Error())
 		return
+	}
+	if replacement == nil {
+		resp.Diagnostics.AddError("No replacement role for deletion",
+			fmt.Sprintf("Pangolin moves the members of role %d to a replacement role when it is deleted, "+
+				"but the organization has no other non-admin role. Create one (for example \"Member\") and retry: "+
+				"the provider never moves members to an admin role.", roleID))
+		return
+	}
+
+	err = r.client.DeleteRole(ctx, roleID, replacement.RoleID)
+	if errors.Is(err, client.ErrNotFound) {
+		// The server answers 404 both when the role is gone and when the
+		// replacement vanished meanwhile: only the first is a success.
+		_, err = r.client.GetRoleByID(ctx, roleID)
+		if errors.Is(err, client.ErrNotFound) {
+			return
+		}
+		if err == nil {
+			err = fmt.Errorf("role %d still exists: the replacement role %d (%s) disappeared during the deletion, retry the destroy",
+				roleID, replacement.RoleID, replacement.Name)
+		}
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to delete role", err.Error())
 	}
 }
 
