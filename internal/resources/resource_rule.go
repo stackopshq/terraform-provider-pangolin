@@ -75,10 +75,10 @@ func (r *ResourceRuleResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"match": schema.StringAttribute{
-				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, or `ASN`.",
+				Description: "The match type: `CIDR`, `IP`, `PATH`, `COUNTRY`, `COUNTRY_IS_NOT`, `REGION`, or `ASN`.",
 				Required:    true,
 				Validators: []validator.String{
-					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "ASN"),
+					stringvalidator.OneOf("CIDR", "IP", "PATH", "COUNTRY", "COUNTRY_IS_NOT", "REGION", "ASN"),
 				},
 			},
 			"value": schema.StringAttribute{
@@ -243,9 +243,16 @@ func (r *ResourceRuleResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 
+	// The list endpoint's rule projection does NOT include resourceId (server
+	// selects only ruleId/enabled/priority/action/match/value), so
+	// rule.ResourceID is always the zero value here. Use the resource ID parsed
+	// from the import address instead -- otherwise resource_id imports as 0 and
+	// the follow-up Read does GET /resource/0/rules, finds nothing, and removes
+	// the resource, which Terraform surfaces as "Cannot import non-existent
+	// remote object".
 	resp.Diagnostics.Append(resp.State.Set(ctx, &ResourceRuleModel{
 		ID:         types.Int64Value(int64(rule.RuleID)),
-		ResourceID: types.Int64Value(int64(rule.ResourceID)),
+		ResourceID: types.Int64Value(resourceID),
 		Action:     types.StringValue(rule.Action),
 		Match:      types.StringValue(rule.Match),
 		Value:      types.StringValue(rule.Value),
