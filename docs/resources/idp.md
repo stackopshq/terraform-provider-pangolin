@@ -4,14 +4,14 @@ page_title: "pangolin_idp Resource - pangolin"
 subcategory: ""
 description: |-
   Manages a Pangolin OIDC Identity Provider.
-  **Note:** `client_secret` cannot be recovered after import and must be set manually.
+  **Note:** `client_secret` is imported from Pangolin's OIDC configuration response. The resulting Terraform state contains sensitive material and must be protected accordingly.
 ---
 
 # pangolin_idp (Resource)
 
 Manages a Pangolin OIDC Identity Provider.
 
-> **Note:** `client_secret` cannot be recovered after import and must be set manually.
+> **Note:** `client_secret` is imported from Pangolin's OIDC configuration response. The resulting Terraform state contains sensitive material and must be protected accordingly.
 
 ## Example Usage
 
@@ -67,7 +67,7 @@ output "redirect_url" {
 - `email_path` (String) The path in the ID token for the user email.
 - `name_path` (String) The path in the ID token for the user display name.
 - `tags` (String) Optional tags associated with the IDP.
-- `variant` (String) OIDC variant. Refines `type = oidc` to a provider family - Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`.
+- `variant` (String) OIDC variant. Refines `type = oidc` to a provider family - Pangolin uses this to pre-fill default URLs and tweak the consent flow. One of `oidc` (generic, default), `google`, `azure`. An omitted generic variant in the API response is normalized to `oidc`.
 
 ### Read-Only
 

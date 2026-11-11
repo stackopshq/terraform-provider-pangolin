@@ -28,6 +28,7 @@ func TestApplyHTTPResourceResponse_NominalHTTP(t *testing.T) {
 		Subdomain:                "app",
 		FullDomain:               "app.example.com",
 		DomainID:                 "dom-1",
+		Protocol:                 "tcp",
 		Wildcard:                 true,
 		Health:                   "healthy",
 		Mode:                     "http",
@@ -74,6 +75,9 @@ func TestApplyHTTPResourceResponse_NominalHTTP(t *testing.T) {
 	}
 	if got := m.DomainID.ValueString(); got != "dom-1" {
 		t.Errorf("DomainID = %q", got)
+	}
+	if got := m.Protocol.ValueString(); got != "tcp" {
+		t.Errorf("Protocol = %q, want tcp", got)
 	}
 	if !m.SSO.ValueBool() || !m.SSL.ValueBool() || !m.Enabled.ValueBool() {
 		t.Errorf("SSO/SSL/Enabled expected true, got %v/%v/%v",
@@ -173,6 +177,9 @@ func TestApplyHTTPResourceResponse_NilPointersAreNull(t *testing.T) {
 	if got := m.Mode.ValueString(); got != "http" {
 		t.Errorf("Mode default = %q, want http", got)
 	}
+	if got := m.Protocol.ValueString(); got != "tcp" {
+		t.Errorf("Protocol default = %q, want tcp", got)
+	}
 	if !m.PamMode.IsNull() {
 		t.Errorf("PamMode expected null")
 	}
@@ -259,6 +266,19 @@ func TestApplyHTTPResourceResponse_L4TCPMode(t *testing.T) {
 	}
 	if got := m.AuthDaemonPort.ValueInt64(); got != 9000 {
 		t.Errorf("AuthDaemonPort = %d", got)
+	}
+}
+
+func TestApplyHTTPResourceResponse_L4UDPModeNormalizesProtocol(t *testing.T) {
+	res := &client.Resource{
+		ResourceID: 56,
+		NiceID:     "udp-x",
+		Name:       "udp-service",
+		Mode:       "udp",
+	}
+	m := applyHTTPResourceResponse(HTTPResourceModel{ID: types.Int64Value(56)}, res)
+	if got := m.Protocol.ValueString(); got != "udp" {
+		t.Errorf("Protocol = %q, want udp", got)
 	}
 }
 
