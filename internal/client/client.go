@@ -62,6 +62,49 @@ type Client struct {
 	HTTPClient *http.Client
 }
 
+// listPageSize is the page size requested from Pangolin's paginated list
+// endpoints. The server defaults to 20 items per page, so a single request
+// silently truncates larger orgs.
+const listPageSize = 100
+
+// listPagination is the pagination block Pangolin returns alongside the items
+// of a paginated list endpoint.
+type listPagination struct {
+	Pagination *struct {
+		Total int `json:"total"`
+	} `json:"pagination"`
+}
+
+// listAllPages calls a paginated list endpoint page by page until the total
+// the server reports has been collected. collect parses one page's data and
+// returns how many items it took from it. A response without a pagination
+// block is treated as complete.
+func (c *Client) listAllPages(ctx context.Context, path string, collect func(data json.RawMessage) (int, error)) error {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	seen := 0
+	for page := 1; ; page++ {
+		resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("%s%spage=%d&pageSize=%d", path, sep, page, listPageSize), nil)
+		if err != nil {
+			return err
+		}
+		n, err := collect(resp.Data)
+		if err != nil {
+			return err
+		}
+		seen += n
+		var p listPagination
+		if err := json.Unmarshal(resp.Data, &p); err != nil || p.Pagination == nil {
+			return nil
+		}
+		if n == 0 || seen >= p.Pagination.Total {
+			return nil
+		}
+	}
+}
+
 // APIResponse is the standard Pangolin API response wrapper.
 type APIResponse struct {
 	Data    json.RawMessage `json:"data"`
@@ -1103,16 +1146,19 @@ type RolesResponse struct {
 
 // ListRoles retrieves all roles for the organization.
 func (c *Client) ListRoles(ctx context.Context) ([]Role, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/roles", c.OrgID), nil)
+	var all []Role
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/roles", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page RolesResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse roles: %w", err)
+		}
+		all = append(all, page.Roles...)
+		return len(page.Roles), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	var rolesResp RolesResponse
-	if err := json.Unmarshal(resp.Data, &rolesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse roles: %w", err)
-	}
-	return rolesResp.Roles, nil
+	return all, nil
 }
 
 // AddUserToRole assigns a user to a role at organization level.
@@ -1376,16 +1422,19 @@ type UsersResponse struct {
 
 // ListUsers retrieves all users for the organization.
 func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/users", c.OrgID), nil)
+	var all []User
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/users", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page UsersResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse users: %w", err)
+		}
+		all = append(all, page.Users...)
+		return len(page.Users), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	var usersResp UsersResponse
-	if err := json.Unmarshal(resp.Data, &usersResp); err != nil {
-		return nil, fmt.Errorf("failed to parse users: %w", err)
-	}
-	return usersResp.Users, nil
+	return all, nil
 }
 
 // --- Update operations ---
@@ -1790,15 +1839,19 @@ func (c *Client) CreateOLMClient(ctx context.Context, req *CreateOLMClientReques
 
 // ListOLMClients retrieves all OLM clients for the organization.
 func (c *Client) ListOLMClients(ctx context.Context) ([]OLMClient, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/clients", c.OrgID), nil)
+	var all []OLMClient
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/clients", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page OLMClientsResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse OLM clients: %w", err)
+		}
+		all = append(all, page.Clients...)
+		return len(page.Clients), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var clientsResp OLMClientsResponse
-	if err := json.Unmarshal(resp.Data, &clientsResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OLM clients: %w", err)
-	}
-	return clientsResp.Clients, nil
+	return all, nil
 }
 
 // UserDevice is the wire shape of an entry returned by
@@ -2234,15 +2287,19 @@ type SitesResponse struct {
 
 // ListSites retrieves all sites for the organization.
 func (c *Client) ListSites(ctx context.Context) ([]Site, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/sites", c.OrgID), nil)
+	var all []Site
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/sites", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page SitesResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse sites: %w", err)
+		}
+		all = append(all, page.Sites...)
+		return len(page.Sites), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var sitesResp SitesResponse
-	if err := json.Unmarshal(resp.Data, &sitesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse sites: %w", err)
-	}
-	return sitesResp.Sites, nil
+	return all, nil
 }
 
 // ResourcesResponse wraps the resources list response.
@@ -2252,15 +2309,19 @@ type ResourcesResponse struct {
 
 // ListResources retrieves all HTTP resources for the organization.
 func (c *Client) ListResources(ctx context.Context) ([]Resource, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
+	var all []Resource
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/resources", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page ResourcesResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse resources: %w", err)
+		}
+		all = append(all, page.Resources...)
+		return len(page.Resources), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var resourcesResp ResourcesResponse
-	if err := json.Unmarshal(resp.Data, &resourcesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse resources: %w", err)
-	}
-	return resourcesResp.Resources, nil
+	return all, nil
 }
 
 // SiteResourcesListResponse wraps the site resources list response.
@@ -2270,15 +2331,19 @@ type SiteResourcesListResponse struct {
 
 // ListSiteResources retrieves all private site resources for the organization.
 func (c *Client) ListSiteResources(ctx context.Context) ([]SiteResource, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/site-resources", c.OrgID), nil)
+	var all []SiteResource
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/site-resources", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page SiteResourcesListResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse site resources: %w", err)
+		}
+		all = append(all, page.SiteResources...)
+		return len(page.SiteResources), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var siteResourcesResp SiteResourcesListResponse
-	if err := json.Unmarshal(resp.Data, &siteResourcesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse site resources: %w", err)
-	}
-	return siteResourcesResp.SiteResources, nil
+	return all, nil
 }
 
 // ListSiteResourcesForSite returns the private site resources attached
