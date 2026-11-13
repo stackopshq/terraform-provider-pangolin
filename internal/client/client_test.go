@@ -4409,3 +4409,98 @@ func extractParam(rawQuery, key string) string {
 	}
 	return ""
 }
+
+func TestCreateSiteResource_PortRangePointers(t *testing.T) {
+	// An explicit "" means "no ports" and must reach the server; with a
+	// plain string + omitempty it was dropped and the server stored its
+	// default "*" (all ports). nil must still leave the field out.
+	empty := ""
+	tcp := "8123"
+	cases := []struct {
+		name    string
+		udp     *string
+		wantUDP any // nil means the key must be absent
+	}{
+		{name: "explicit empty is sent", udp: &empty, wantUDP: ""},
+		{name: "nil is omitted", udp: nil, wantUDP: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]any
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				writeEnvelope(t, w, http.StatusOK, SiteResource{SiteResourceID: 1})
+			})
+			_, err := c.CreateSiteResource(context.Background(), &CreateSiteResourceRequest{
+				Name: "r", SiteID: 1, Mode: "host", Destination: "10.0.0.1", Alias: "r.internal",
+				TCPPortRange: &tcp, UDPPortRange: tc.udp,
+				RoleIDs: []int{}, UserIDs: []string{}, ClientIDs: []int{},
+			})
+			if err != nil {
+				t.Fatalf("CreateSiteResource: %v", err)
+			}
+			if body["tcpPortRangeString"] != "8123" {
+				t.Errorf("tcpPortRangeString = %v, want 8123", body["tcpPortRangeString"])
+			}
+			got, present := body["udpPortRangeString"]
+			if tc.wantUDP == nil {
+				if present {
+					t.Errorf("udpPortRangeString should be omitted, got %v", got)
+				}
+			} else if !present || got != tc.wantUDP {
+				t.Errorf("udpPortRangeString = %v (present %v), want %q", got, present, tc.wantUDP)
+			}
+		})
+	}
+}
+
+func TestGetSiteResourceAccess(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/site-resource/7/roles":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"roles": []SiteResourceRoleEntry{{RoleID: 1, IsAdmin: true}}})
+		case "/v1/site-resource/7/users":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"users": []SiteResourceUserEntry{{UserID: "u1"}}})
+		case "/v1/site-resource/7/clients":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"clients": []SiteResourceClientEntry{{ClientID: 3}, {ClientID: 4}}})
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			writeEnvelope(t, w, http.StatusNotFound, nil)
+		}
+	})
+
+	got, err := c.GetSiteResourceAccess(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetSiteResourceAccess: %v", err)
+	}
+	if len(got.RoleIDs) != 1 || got.RoleIDs[0] != 1 {
+		t.Errorf("RoleIDs = %v, want [1]", got.RoleIDs)
+	}
+	if len(got.UserIDs) != 1 || got.UserIDs[0] != "u1" {
+		t.Errorf("UserIDs = %v, want [u1]", got.UserIDs)
+	}
+	if len(got.ClientIDs) != 2 || got.ClientIDs[0] != 3 || got.ClientIDs[1] != 4 {
+		t.Errorf("ClientIDs = %v, want [3 4]", got.ClientIDs)
+	}
+}
+
+func TestGetSiteResourceAccess_EmptyListsAreNonNil(t *testing.T) {
+	// The update endpoint requires the arrays to be present; nil slices
+	// would marshal as null and fail validation.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		key := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		writeEnvelope(t, w, http.StatusOK, map[string]any{key: []any{}})
+	})
+	got, err := c.GetSiteResourceAccess(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetSiteResourceAccess: %v", err)
+	}
+	b, _ := json.Marshal(UpdateSiteResourceRequest{RoleIDs: got.RoleIDs, UserIDs: got.UserIDs, ClientIDs: got.ClientIDs})
+	for _, k := range []string{`"roleIds":[]`, `"userIds":[]`, `"clientIds":[]`} {
+		if !strings.Contains(string(b), k) {
+			t.Errorf("update body %s missing %s", b, k)
+		}
+	}
+}
