@@ -43,7 +43,7 @@ test:
 # The tfplugindocs drift check needs the Terraform CLI: it stays on GitHub Actions.
 lint:
   stage: verify
-  image: docker.io/golangci/golangci-lint:v2.5.0
+  image: docker.io/golangci/golangci-lint:v2.15.0
   script:
     - golangci-lint run --timeout=5m
 
