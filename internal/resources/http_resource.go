@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -31,8 +33,9 @@ var subdomainRegex = regexp.MustCompile(
 )
 
 var (
-	_ resource.Resource                = &HTTPResource{}
-	_ resource.ResourceWithImportState = &HTTPResource{}
+	_ resource.Resource                   = &HTTPResource{}
+	_ resource.ResourceWithImportState    = &HTTPResource{}
+	_ resource.ResourceWithValidateConfig = &HTTPResource{}
 )
 
 // HTTPResource defines the resource implementation.
@@ -179,8 +182,12 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				},
 			},
 			"protocol": schema.StringAttribute{
-				Description: "The L4 protocol (tcp or udp). Only meaningful for the `ssh` / `rdp` / `vnc` / " +
-					"`tcp` / `udp` L4 modes; ignored for `http`. Defaults to `tcp`.",
+				Description: "**Deprecated:** use `mode` instead. Legacy L4 protocol (tcp or udp) from the " +
+					"pre-1.19 API. For `mode = \"tcp\"` / `\"udp\"` the server follows `mode` and " +
+					"ignores this attribute; for `mode = \"http\"` it must stay `tcp`. Defaults to `tcp`. " +
+					"Will be removed in the next major version.",
+				DeprecationMessage: "The protocol attribute is deprecated: Pangolin now selects the transport with mode. " +
+					"Remove protocol from your configuration and set mode = \"tcp\" or mode = \"udp\" for L4 resources.",
 				Optional: true,
 				Computed: true,
 				Default:  stringdefault.StaticString("tcp"),
@@ -433,6 +440,40 @@ func (r *HTTPResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			},
 		},
 	}
+}
+
+// ValidateConfig warns when the deprecated protocol attribute contradicts
+// mode. The server ignores protocol whenever mode is sent, so such a
+// configuration silently does something other than what it reads as. It is
+// a warning rather than an error so existing configurations keep planning.
+func (r *HTTPResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var protocol, mode types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("protocol"), &protocol)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("mode"), &mode)...)
+	if resp.Diagnostics.HasError() || protocol.IsNull() || protocol.IsUnknown() || mode.IsUnknown() {
+		return
+	}
+	if msg := protocolModeConflict(mode.ValueString(), protocol.ValueString()); msg != "" {
+		resp.Diagnostics.AddAttributeWarning(path.Root("protocol"), "protocol contradicts mode", msg)
+	}
+}
+
+// protocolModeConflict returns a warning message when an explicitly set
+// protocol contradicts mode (an empty mode means the "http" default), or ""
+// when they agree.
+func protocolModeConflict(mode, protocol string) string {
+	if mode == "" {
+		mode = "http"
+	}
+	switch {
+	case mode == "http" && protocol == "udp":
+		return "protocol = \"udp\" is not valid for an HTTP resource (mode = \"http\"). " +
+			"For a UDP resource set mode = \"udp\" and remove protocol."
+	case (mode == "tcp" || mode == "udp") && protocol != mode:
+		return fmt.Sprintf("protocol = %q is ignored: Pangolin uses mode = %q, so this resource is %s. "+
+			"Remove protocol and set mode to the transport you want.", protocol, mode, strings.ToUpper(mode))
+	}
+	return ""
 }
 
 func (r *HTTPResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
