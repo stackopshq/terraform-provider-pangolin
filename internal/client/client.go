@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -60,6 +61,49 @@ type Client struct {
 	APIKey     string
 	OrgID      string
 	HTTPClient *http.Client
+}
+
+// listPageSize is the page size requested from Pangolin's paginated list
+// endpoints. The server defaults to 20 items per page, so a single request
+// silently truncates larger orgs.
+const listPageSize = 100
+
+// listPagination is the pagination block Pangolin returns alongside the items
+// of a paginated list endpoint.
+type listPagination struct {
+	Pagination *struct {
+		Total int `json:"total"`
+	} `json:"pagination"`
+}
+
+// listAllPages calls a paginated list endpoint page by page until the total
+// the server reports has been collected. collect parses one page's data and
+// returns how many items it took from it. A response without a pagination
+// block is treated as complete.
+func (c *Client) listAllPages(ctx context.Context, path string, collect func(data json.RawMessage) (int, error)) error {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	seen := 0
+	for page := 1; ; page++ {
+		resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("%s%spage=%d&pageSize=%d", path, sep, page, listPageSize), nil)
+		if err != nil {
+			return err
+		}
+		n, err := collect(resp.Data)
+		if err != nil {
+			return err
+		}
+		seen += n
+		var p listPagination
+		if err := json.Unmarshal(resp.Data, &p); err != nil || p.Pagination == nil {
+			return nil
+		}
+		if n == 0 || seen >= p.Pagination.Total {
+			return nil
+		}
+	}
 }
 
 // APIResponse is the standard Pangolin API response wrapper.
@@ -124,7 +168,8 @@ func (c *Client) tlsConfig() *tls.Config {
 // doRequest performs an HTTP request with retries on transient failures
 // (5xx, 429, transport errors) for idempotent methods, and returns the
 // parsed API response. POST requests are never retried because they are
-// assumed to be resource creations.
+// assumed to be resource creations; creates sent as PUT go through
+// doRequestNoRetry instead.
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*APIResponse, error) {
 	var bodyBytes []byte
 	if body != nil {
@@ -161,6 +206,83 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		}
 	}
 	return lastResp, lastErr
+}
+
+// doRequestNoRetry sends a non-idempotent request. Pangolin creates most
+// objects with PUT, which doRequest retries: replaying a create whose
+// response was lost (connection reset, proxy 502) would leave a duplicate
+// on the server. Only failures proving the server did not process the
+// request are retried: HTTP 429 and a connection that was never opened.
+func (c *Client) doRequestNoRetry(ctx context.Context, method, path string, body interface{}) (*APIResponse, error) {
+	var bodyBytes []byte
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyBytes = b
+	}
+
+	var (
+		lastResp *APIResponse
+		lastErr  error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			wait := backoffDelay(attempt - 1)
+			tflog.Debug(ctx, "pangolin: retrying unsent HTTP request", map[string]any{
+				"method":  method,
+				"path":    path,
+				"attempt": attempt,
+				"wait_ms": wait.Milliseconds(),
+			})
+			select {
+			case <-ctx.Done():
+				return lastResp, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+
+		lastResp, lastErr = c.doRequestOnce(ctx, method, path, bodyBytes)
+		if !shouldRetryUnsent(lastErr) {
+			return lastResp, lastErr
+		}
+	}
+	return lastResp, lastErr
+}
+
+// shouldRetryUnsent reports whether err proves the request never reached
+// the server's handler: a 429 rate limit, or a dial failure (including a
+// failed dial to an HTTP(S) proxy).
+func shouldRetryUnsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return true
+	}
+	return isDialError(err)
+}
+
+// isDialError walks the whole error tree, so a dial *net.OpError wrapped
+// in a "proxyconnect" one or in a multi-%w error is still found.
+func isDialError(err error) bool {
+	if opErr, ok := err.(*net.OpError); ok && opErr.Op == "dial" {
+		return true
+	}
+	switch u := err.(type) {
+	case interface{ Unwrap() error }:
+		if inner := u.Unwrap(); inner != nil {
+			return isDialError(inner)
+		}
+	case interface{ Unwrap() []error }:
+		for _, inner := range u.Unwrap() {
+			if isDialError(inner) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // doRequestOnce performs a single HTTP attempt. bodyBytes may be nil.
@@ -348,7 +470,7 @@ type CreateSiteRequest struct {
 
 // CreateSite creates a new site in the organization.
 func (c *Client) CreateSite(ctx context.Context, req *CreateSiteRequest) (*Site, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -530,14 +652,26 @@ type Resource struct {
 //
 // Zero → false, non-zero → true. Older builds emit bool directly and
 // pass through unchanged.
+//
+// It also fills Headers from `requestHeaders`, which newer servers
+// return in place of `headers`: an array on GET, a JSON-encoded
+// string on update.
 func (r *Resource) UnmarshalJSON(data []byte) error {
 	type resourceAlias Resource
 	aux := struct {
-		SSO json.RawMessage `json:"sso"`
+		SSO            json.RawMessage `json:"sso"`
+		RequestHeaders json.RawMessage `json:"requestHeaders"`
 		*resourceAlias
 	}{resourceAlias: (*resourceAlias)(r)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
+	}
+	if len(r.Headers) == 0 {
+		hs, err := decodeResourceHeaders(aux.RequestHeaders)
+		if err != nil {
+			return err
+		}
+		r.Headers = hs
 	}
 	if len(aux.SSO) == 0 || string(aux.SSO) == "null" {
 		return nil
@@ -553,6 +687,29 @@ func (r *Resource) UnmarshalJSON(data []byte) error {
 	}
 	r.SSO = n != 0
 	return nil
+}
+
+// decodeResourceHeaders decodes `requestHeaders` sent as an array or
+// as a JSON-encoded string.
+func decodeResourceHeaders(raw json.RawMessage) ([]ResourceHeader, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, fmt.Errorf("resource.requestHeaders: decode string: %w", err)
+		}
+		if s == "" {
+			return nil, nil
+		}
+		raw = json.RawMessage(s)
+	}
+	var hs []ResourceHeader
+	if err := json.Unmarshal(raw, &hs); err != nil {
+		return nil, fmt.Errorf("resource.requestHeaders: %w", err)
+	}
+	return hs, nil
 }
 
 // CreateResourceRequest is the payload for creating a Pangolin
@@ -584,7 +741,7 @@ type CreateResourceRequest struct {
 
 // CreateResource creates a new HTTP resource.
 func (c *Client) CreateResource(ctx context.Context, req *CreateResourceRequest) (*Resource, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -841,7 +998,7 @@ type CreateTargetRequest struct {
 
 // CreateTarget creates a new target for a resource.
 func (c *Client) CreateTarget(ctx context.Context, resourceID int, req *CreateTargetRequest) (*Target, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -993,13 +1150,17 @@ type SiteResource struct {
 // wire response - the server fills it itself (`null` in every
 // observation so far).
 type CreateSiteResourceRequest struct {
-	Name           string   `json:"name"`
-	SiteID         int      `json:"siteId"`
-	Mode           string   `json:"mode"`
-	Destination    string   `json:"destination"`
-	Alias          string   `json:"alias,omitempty"`
-	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
-	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
+	Name        string `json:"name"`
+	SiteID      int    `json:"siteId"`
+	Mode        string `json:"mode"`
+	Destination string `json:"destination"`
+	Alias       string `json:"alias,omitempty"`
+	// Port ranges are pointers so that "" (no ports) is sent as-is.
+	// With a plain string and omitempty, "" was dropped from the request
+	// and the server stored its default "*" (all ports). nil leaves the
+	// field out so the server default applies.
+	TCPPortRange   *string  `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange   *string  `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
 	PamMode        string   `json:"pamMode,omitempty"`
@@ -1016,7 +1177,7 @@ type CreateSiteResourceRequest struct {
 
 // CreateSiteResource creates a new private site resource.
 func (c *Client) CreateSiteResource(ctx context.Context, req *CreateSiteResourceRequest) (*SiteResource, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1103,16 +1264,19 @@ type RolesResponse struct {
 
 // ListRoles retrieves all roles for the organization.
 func (c *Client) ListRoles(ctx context.Context) ([]Role, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/roles", c.OrgID), nil)
+	var all []Role
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/roles", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page RolesResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse roles: %w", err)
+		}
+		all = append(all, page.Roles...)
+		return len(page.Roles), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	var rolesResp RolesResponse
-	if err := json.Unmarshal(resp.Data, &rolesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse roles: %w", err)
-	}
-	return rolesResp.Roles, nil
+	return all, nil
 }
 
 // AddUserToRole assigns a user to a role at organization level.
@@ -1376,16 +1540,19 @@ type UsersResponse struct {
 
 // ListUsers retrieves all users for the organization.
 func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/users", c.OrgID), nil)
+	var all []User
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/users", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page UsersResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse users: %w", err)
+		}
+		all = append(all, page.Users...)
+		return len(page.Users), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	var usersResp UsersResponse
-	if err := json.Unmarshal(resp.Data, &usersResp); err != nil {
-		return nil, fmt.Errorf("failed to parse users: %w", err)
-	}
-	return usersResp.Users, nil
+	return all, nil
 }
 
 // --- Update operations ---
@@ -1464,12 +1631,16 @@ func (c *Client) UpdateResource(ctx context.Context, resourceID int, req *Update
 
 // UpdateSiteResourceRequest is the payload for updating a private site resource.
 type UpdateSiteResourceRequest struct {
-	Name           string   `json:"name"`
-	SiteID         int      `json:"siteId"`
-	Destination    string   `json:"destination"`
-	Alias          string   `json:"alias,omitempty"`
-	TCPPortRange   string   `json:"tcpPortRangeString,omitempty"`
-	UDPPortRange   string   `json:"udpPortRangeString,omitempty"`
+	Name        string `json:"name"`
+	SiteID      int    `json:"siteId"`
+	Destination string `json:"destination"`
+	Alias       string `json:"alias,omitempty"`
+	// Port ranges are pointers so that "" (no ports) is sent as-is.
+	// With a plain string and omitempty, "" was dropped from the request
+	// and the server stored its default "*" (all ports). nil leaves the
+	// field out so the server default applies.
+	TCPPortRange   *string  `json:"tcpPortRangeString,omitempty"`
+	UDPPortRange   *string  `json:"udpPortRangeString,omitempty"`
 	DisableICMP    bool     `json:"disableIcmp,omitempty"`
 	AuthDaemonMode string   `json:"authDaemonMode,omitempty"`
 	PamMode        string   `json:"pamMode,omitempty"`
@@ -1483,6 +1654,46 @@ type UpdateSiteResourceRequest struct {
 	Subdomain       string `json:"subdomain,omitempty"`
 	Scheme          string `json:"scheme,omitempty"`
 	DestinationPort int    `json:"destinationPort,omitempty"`
+}
+
+// SiteResourceAccess is the set of roles, users and clients granted on a
+// private site resource.
+type SiteResourceAccess struct {
+	RoleIDs   []int
+	UserIDs   []string
+	ClientIDs []int
+}
+
+// GetSiteResourceAccess returns the roles, users and clients currently
+// granted on a private site resource. The update endpoint replaces these
+// lists wholesale, so an update must send them back unchanged or every
+// grant made through pangolin_site_resource_role / _user / _client (or the
+// UI) is removed.
+func (c *Client) GetSiteResourceAccess(ctx context.Context, siteResourceID int) (*SiteResourceAccess, error) {
+	roles, err := c.ListSiteResourceRoles(ctx, siteResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing roles: %w", err)
+	}
+	users, err := c.ListSiteResourceUsers(ctx, siteResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing users: %w", err)
+	}
+	clients, err := c.ListSiteResourceClients(ctx, siteResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("listing clients: %w", err)
+	}
+
+	access := &SiteResourceAccess{RoleIDs: []int{}, UserIDs: []string{}, ClientIDs: []int{}}
+	for _, r := range roles {
+		access.RoleIDs = append(access.RoleIDs, r.RoleID)
+	}
+	for _, u := range users {
+		access.UserIDs = append(access.UserIDs, u.UserID)
+	}
+	for _, cl := range clients {
+		access.ClientIDs = append(access.ClientIDs, cl.ClientID)
+	}
+	return access, nil
 }
 
 // UpdateSiteResource updates a private site resource by ID.
@@ -1516,7 +1727,7 @@ type CreateRoleRequest struct {
 
 // CreateRole creates a new role in the organization.
 func (c *Client) CreateRole(ctx context.Context, req *CreateRoleRequest) (*Role, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,7 +1838,7 @@ type CreateAPIKeyRequest struct {
 
 // CreateAPIKey creates a new API key for the organization.
 func (c *Client) CreateAPIKey(ctx context.Context, req *CreateAPIKeyRequest) (*APIKey, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1777,7 +1988,7 @@ type UpdateOLMClientRequest struct {
 
 // CreateOLMClient creates a new OLM client device.
 func (c *Client) CreateOLMClient(ctx context.Context, req *CreateOLMClientRequest) (*OLMClient, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1790,15 +2001,19 @@ func (c *Client) CreateOLMClient(ctx context.Context, req *CreateOLMClientReques
 
 // ListOLMClients retrieves all OLM clients for the organization.
 func (c *Client) ListOLMClients(ctx context.Context) ([]OLMClient, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/clients", c.OrgID), nil)
+	var all []OLMClient
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/clients", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page OLMClientsResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse OLM clients: %w", err)
+		}
+		all = append(all, page.Clients...)
+		return len(page.Clients), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var clientsResp OLMClientsResponse
-	if err := json.Unmarshal(resp.Data, &clientsResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OLM clients: %w", err)
-	}
-	return clientsResp.Clients, nil
+	return all, nil
 }
 
 // UserDevice is the wire shape of an entry returned by
@@ -2234,15 +2449,19 @@ type SitesResponse struct {
 
 // ListSites retrieves all sites for the organization.
 func (c *Client) ListSites(ctx context.Context) ([]Site, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/sites", c.OrgID), nil)
+	var all []Site
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/sites", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page SitesResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse sites: %w", err)
+		}
+		all = append(all, page.Sites...)
+		return len(page.Sites), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var sitesResp SitesResponse
-	if err := json.Unmarshal(resp.Data, &sitesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse sites: %w", err)
-	}
-	return sitesResp.Sites, nil
+	return all, nil
 }
 
 // ResourcesResponse wraps the resources list response.
@@ -2252,15 +2471,19 @@ type ResourcesResponse struct {
 
 // ListResources retrieves all HTTP resources for the organization.
 func (c *Client) ListResources(ctx context.Context) ([]Resource, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/resources", c.OrgID), nil)
+	var all []Resource
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/resources", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page ResourcesResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse resources: %w", err)
+		}
+		all = append(all, page.Resources...)
+		return len(page.Resources), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var resourcesResp ResourcesResponse
-	if err := json.Unmarshal(resp.Data, &resourcesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse resources: %w", err)
-	}
-	return resourcesResp.Resources, nil
+	return all, nil
 }
 
 // SiteResourcesListResponse wraps the site resources list response.
@@ -2270,15 +2493,19 @@ type SiteResourcesListResponse struct {
 
 // ListSiteResources retrieves all private site resources for the organization.
 func (c *Client) ListSiteResources(ctx context.Context) ([]SiteResource, error) {
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/site-resources", c.OrgID), nil)
+	var all []SiteResource
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/site-resources", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page SiteResourcesListResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse site resources: %w", err)
+		}
+		all = append(all, page.SiteResources...)
+		return len(page.SiteResources), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var siteResourcesResp SiteResourcesListResponse
-	if err := json.Unmarshal(resp.Data, &siteResourcesResp); err != nil {
-		return nil, fmt.Errorf("failed to parse site resources: %w", err)
-	}
-	return siteResourcesResp.SiteResources, nil
+	return all, nil
 }
 
 // ListSiteResourcesForSite returns the private site resources attached
@@ -2353,7 +2580,7 @@ type CreateOrgRequest struct {
 
 // CreateOrg creates a new organization.
 func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*Org, error) {
-	resp, err := c.doRequest(ctx, "PUT", "/org", req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", "/org", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2444,7 +2671,7 @@ type UpdateUserRequest struct {
 
 // CreateUser creates a new user in the organization.
 func (c *Client) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -2655,10 +2882,10 @@ type ApplyBlueprintRequest struct {
 //
 // Empty / malformed JSON payloads return HTTP 400 with descriptive
 // validation error messages - surfaced as a plain error by
-// [Client.doRequest].
+// [Client.doRequestNoRetry]. The create is never replayed on a 5xx.
 func (c *Client) ApplyBlueprint(ctx context.Context, base64JSON string) error {
 	body := ApplyBlueprintRequest{Blueprint: base64JSON}
-	_, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/blueprint", c.OrgID), body)
+	_, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/blueprint", c.OrgID), body)
 	return err
 }
 
@@ -2771,7 +2998,7 @@ type CreateIDPResponse struct {
 
 // CreateIDP creates a new OIDC IDP.
 func (c *Client) CreateIDP(ctx context.Context, req *CreateIDPRequest) (*CreateIDPResponse, error) {
-	resp, err := c.doRequest(ctx, "PUT", "/idp/oidc", req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", "/idp/oidc", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2839,7 +3066,9 @@ type SetIDPOrgPolicyRequest struct {
 	OrgMapping  string `json:"orgMapping,omitempty"`
 }
 
-// CreateIDPOrgPolicy creates an IDP policy for an org.
+// CreateIDPOrgPolicy creates an IDP policy for an org. The path names the
+// single (idp, org) row, so a replay cannot duplicate it and the call
+// keeps doRequest's retries.
 func (c *Client) CreateIDPOrgPolicy(ctx context.Context, idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
 	_, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
 	return err
@@ -2914,7 +3143,7 @@ type OrgIDPBindRow struct {
 // difference is the path. Response mirrors [CreateIDPResponse]
 // (`{idpId, redirectUrl}`).
 func (c *Client) CreateOrgIDP(ctx context.Context, orgID string, req *CreateIDPRequest) (*CreateIDPResponse, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/idp/oidc", orgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/idp/oidc", orgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -3235,7 +3464,7 @@ type SetResourceRuleRequest struct {
 
 // CreateResourceRule creates a new rule for a resource.
 func (c *Client) CreateResourceRule(ctx context.Context, resourceID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -4395,6 +4396,73 @@ func TestResource_DecodesPost119WireShape(t *testing.T) {
 	}
 }
 
+// TestResource_DecodesRequestHeaders covers the GET shape on newer
+// servers: `headers` is null and the values are in `requestHeaders`.
+func TestResource_DecodesRequestHeaders(t *testing.T) {
+	raw := `{
+		"resourceId": 19,
+		"name": "Homepage",
+		"sso": true,
+		"headers": null,
+		"requestHeaders": [{"name": "X-Homepage-View", "value": "public"}],
+		"responseHeaders": null
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(r.Headers) != 1 || r.Headers[0].Name != "X-Homepage-View" || r.Headers[0].Value != "public" {
+		t.Errorf("requestHeaders should fold into Headers, got %+v", r.Headers)
+	}
+	if !r.SSO {
+		t.Errorf("sso should still decode, got %v", r.SSO)
+	}
+}
+
+// TestResource_DecodesRequestHeadersAsString covers the update
+// response, where `requestHeaders` is a JSON-encoded string.
+func TestResource_DecodesRequestHeadersAsString(t *testing.T) {
+	raw := `{
+		"resourceId": 19,
+		"headers": null,
+		"requestHeaders": "[{\"name\":\"X-Homepage-View\",\"value\":\"public\"}]"
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(r.Headers) != 1 || r.Headers[0].Name != "X-Homepage-View" || r.Headers[0].Value != "public" {
+		t.Errorf("string-encoded requestHeaders should fold into Headers, got %+v", r.Headers)
+	}
+}
+
+func TestResource_RequestHeadersInvalid(t *testing.T) {
+	for _, raw := range []string{
+		`{"requestHeaders": 42}`,
+		`{"requestHeaders": "not json"}`,
+	} {
+		var r Resource
+		if err := json.Unmarshal([]byte(raw), &r); err == nil {
+			t.Errorf("expected error for %s, got %+v", raw, r.Headers)
+		}
+	}
+}
+
+func TestResource_HeadersWinOverRequestHeaders(t *testing.T) {
+	raw := `{
+		"resourceId": 19,
+		"headers": [{"name": "X-Legacy", "value": "1"}],
+		"requestHeaders": [{"name": "X-New", "value": "2"}]
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(r.Headers) != 1 || r.Headers[0].Name != "X-Legacy" {
+		t.Errorf("headers should be kept when present, got %+v", r.Headers)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
@@ -4408,4 +4476,186 @@ func extractParam(rawQuery, key string) string {
 		}
 	}
 	return ""
+}
+
+// Pangolin's org-scoped list endpoints return 20 items per page unless asked
+// otherwise. The client must follow the pages until the reported total.
+func TestListSiteResources_FollowsPagination(t *testing.T) {
+	const total, serverPageSize = 45, 20
+	var requests int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		if r.URL.Path != "/v1/org/test-org/site-resources" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		page := 1
+		if v := r.URL.Query().Get("page"); v != "" {
+			if _, err := fmt.Sscan(v, &page); err != nil {
+				t.Errorf("page = %q", v)
+			}
+		}
+		// Ignore the requested pageSize to also cover servers that cap it.
+		start := (page - 1) * serverPageSize
+		items := []SiteResource{}
+		for i := start; i < total && i < start+serverPageSize; i++ {
+			items = append(items, SiteResource{SiteResourceID: i + 1})
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"siteResources": items,
+			"pagination":    map[string]int{"total": total, "pageSize": serverPageSize, "page": page},
+		})
+	})
+
+	got, err := c.ListSiteResources(context.Background())
+	if err != nil {
+		t.Fatalf("ListSiteResources: %v", err)
+	}
+	if len(got) != total {
+		t.Fatalf("got %d site resources, want %d", len(got), total)
+	}
+	if got[total-1].SiteResourceID != total {
+		t.Errorf("last id = %d, want %d", got[total-1].SiteResourceID, total)
+	}
+	if n := atomic.LoadInt32(&requests); n != 3 {
+		t.Errorf("requests = %d, want 3", n)
+	}
+}
+
+// A list response without a pagination block (older servers) is one page.
+func TestListSites_UnpaginatedResponseIsComplete(t *testing.T) {
+	var requests int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"sites": []Site{{SiteID: 1}, {SiteID: 2}},
+		})
+	})
+
+	got, err := c.ListSites(context.Background())
+	if err != nil {
+		t.Fatalf("ListSites: %v", err)
+	}
+	if len(got) != 2 || atomic.LoadInt32(&requests) != 1 {
+		t.Errorf("got %d sites in %d requests, want 2 in 1", len(got), requests)
+	}
+}
+
+// A failure on a later page must fail the whole list rather than return the
+// pages read so far as if they were everything.
+func TestListResources_ErrorOnLaterPageFails(t *testing.T) {
+	disableRetryBackoff(t)
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			writeEnvelope(t, w, http.StatusInternalServerError, nil)
+			return
+		}
+		items := make([]Resource, 20)
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"resources":  items,
+			"pagination": map[string]int{"total": 22, "pageSize": 20, "page": 1},
+		})
+	})
+
+	got, err := c.ListResources(context.Background())
+	if err == nil {
+		t.Fatalf("ListResources: got %d resources and no error, want an error", len(got))
+	}
+	if got != nil {
+		t.Errorf("got %d resources alongside the error, want none", len(got))
+	}
+}
+
+func TestCreateSiteResource_PortRangePointers(t *testing.T) {
+	// An explicit "" means "no ports" and must reach the server; with a
+	// plain string + omitempty it was dropped and the server stored its
+	// default "*" (all ports). nil must still leave the field out.
+	empty := ""
+	tcp := "8123"
+	cases := []struct {
+		name    string
+		udp     *string
+		wantUDP any // nil means the key must be absent
+	}{
+		{name: "explicit empty is sent", udp: &empty, wantUDP: ""},
+		{name: "nil is omitted", udp: nil, wantUDP: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]any
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				writeEnvelope(t, w, http.StatusOK, SiteResource{SiteResourceID: 1})
+			})
+			_, err := c.CreateSiteResource(context.Background(), &CreateSiteResourceRequest{
+				Name: "r", SiteID: 1, Mode: "host", Destination: "10.0.0.1", Alias: "r.internal",
+				TCPPortRange: &tcp, UDPPortRange: tc.udp,
+				RoleIDs: []int{}, UserIDs: []string{}, ClientIDs: []int{},
+			})
+			if err != nil {
+				t.Fatalf("CreateSiteResource: %v", err)
+			}
+			if body["tcpPortRangeString"] != "8123" {
+				t.Errorf("tcpPortRangeString = %v, want 8123", body["tcpPortRangeString"])
+			}
+			got, present := body["udpPortRangeString"]
+			if tc.wantUDP == nil {
+				if present {
+					t.Errorf("udpPortRangeString should be omitted, got %v", got)
+				}
+			} else if !present || got != tc.wantUDP {
+				t.Errorf("udpPortRangeString = %v (present %v), want %q", got, present, tc.wantUDP)
+			}
+		})
+	}
+}
+
+func TestGetSiteResourceAccess(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/site-resource/7/roles":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"roles": []SiteResourceRoleEntry{{RoleID: 1, IsAdmin: true}}})
+		case "/v1/site-resource/7/users":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"users": []SiteResourceUserEntry{{UserID: "u1"}}})
+		case "/v1/site-resource/7/clients":
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"clients": []SiteResourceClientEntry{{ClientID: 3}, {ClientID: 4}}})
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			writeEnvelope(t, w, http.StatusNotFound, nil)
+		}
+	})
+
+	got, err := c.GetSiteResourceAccess(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetSiteResourceAccess: %v", err)
+	}
+	if len(got.RoleIDs) != 1 || got.RoleIDs[0] != 1 {
+		t.Errorf("RoleIDs = %v, want [1]", got.RoleIDs)
+	}
+	if len(got.UserIDs) != 1 || got.UserIDs[0] != "u1" {
+		t.Errorf("UserIDs = %v, want [u1]", got.UserIDs)
+	}
+	if len(got.ClientIDs) != 2 || got.ClientIDs[0] != 3 || got.ClientIDs[1] != 4 {
+		t.Errorf("ClientIDs = %v, want [3 4]", got.ClientIDs)
+	}
+}
+
+func TestGetSiteResourceAccess_EmptyListsAreNonNil(t *testing.T) {
+	// The update endpoint requires the arrays to be present; nil slices
+	// would marshal as null and fail validation.
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		key := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		writeEnvelope(t, w, http.StatusOK, map[string]any{key: []any{}})
+	})
+	got, err := c.GetSiteResourceAccess(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetSiteResourceAccess: %v", err)
+	}
+	b, _ := json.Marshal(UpdateSiteResourceRequest{RoleIDs: got.RoleIDs, UserIDs: got.UserIDs, ClientIDs: got.ClientIDs})
+	for _, k := range []string{`"roleIds":[]`, `"userIds":[]`, `"clientIds":[]`} {
+		if !strings.Contains(string(b), k) {
+			t.Errorf("update body %s missing %s", b, k)
+		}
+	}
 }
