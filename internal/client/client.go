@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -167,7 +168,8 @@ func (c *Client) tlsConfig() *tls.Config {
 // doRequest performs an HTTP request with retries on transient failures
 // (5xx, 429, transport errors) for idempotent methods, and returns the
 // parsed API response. POST requests are never retried because they are
-// assumed to be resource creations.
+// assumed to be resource creations; creates sent as PUT go through
+// doRequestNoRetry instead.
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*APIResponse, error) {
 	var bodyBytes []byte
 	if body != nil {
@@ -204,6 +206,83 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		}
 	}
 	return lastResp, lastErr
+}
+
+// doRequestNoRetry sends a non-idempotent request. Pangolin creates most
+// objects with PUT, which doRequest retries: replaying a create whose
+// response was lost (connection reset, proxy 502) would leave a duplicate
+// on the server. Only failures proving the server did not process the
+// request are retried: HTTP 429 and a connection that was never opened.
+func (c *Client) doRequestNoRetry(ctx context.Context, method, path string, body interface{}) (*APIResponse, error) {
+	var bodyBytes []byte
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyBytes = b
+	}
+
+	var (
+		lastResp *APIResponse
+		lastErr  error
+	)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			wait := backoffDelay(attempt - 1)
+			tflog.Debug(ctx, "pangolin: retrying unsent HTTP request", map[string]any{
+				"method":  method,
+				"path":    path,
+				"attempt": attempt,
+				"wait_ms": wait.Milliseconds(),
+			})
+			select {
+			case <-ctx.Done():
+				return lastResp, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+
+		lastResp, lastErr = c.doRequestOnce(ctx, method, path, bodyBytes)
+		if !shouldRetryUnsent(lastErr) {
+			return lastResp, lastErr
+		}
+	}
+	return lastResp, lastErr
+}
+
+// shouldRetryUnsent reports whether err proves the request never reached
+// the server's handler: a 429 rate limit, or a dial failure (including a
+// failed dial to an HTTP(S) proxy).
+func shouldRetryUnsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrRateLimited) {
+		return true
+	}
+	return isDialError(err)
+}
+
+// isDialError walks the whole error tree, so a dial *net.OpError wrapped
+// in a "proxyconnect" one or in a multi-%w error is still found.
+func isDialError(err error) bool {
+	if opErr, ok := err.(*net.OpError); ok && opErr.Op == "dial" {
+		return true
+	}
+	switch u := err.(type) {
+	case interface{ Unwrap() error }:
+		if inner := u.Unwrap(); inner != nil {
+			return isDialError(inner)
+		}
+	case interface{ Unwrap() []error }:
+		for _, inner := range u.Unwrap() {
+			if isDialError(inner) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // doRequestOnce performs a single HTTP attempt. bodyBytes may be nil.
@@ -391,7 +470,7 @@ type CreateSiteRequest struct {
 
 // CreateSite creates a new site in the organization.
 func (c *Client) CreateSite(ctx context.Context, req *CreateSiteRequest) (*Site, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/site", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +741,7 @@ type CreateResourceRequest struct {
 
 // CreateResource creates a new HTTP resource.
 func (c *Client) CreateResource(ctx context.Context, req *CreateResourceRequest) (*Resource, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -919,7 +998,7 @@ type CreateTargetRequest struct {
 
 // CreateTarget creates a new target for a resource.
 func (c *Client) CreateTarget(ctx context.Context, resourceID int, req *CreateTargetRequest) (*Target, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/resource/%d/target", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1094,7 +1173,7 @@ type CreateSiteResourceRequest struct {
 
 // CreateSiteResource creates a new private site resource.
 func (c *Client) CreateSiteResource(ctx context.Context, req *CreateSiteResourceRequest) (*SiteResource, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/site-resource", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1600,7 +1679,7 @@ type CreateRoleRequest struct {
 
 // CreateRole creates a new role in the organization.
 func (c *Client) CreateRole(ctx context.Context, req *CreateRoleRequest) (*Role, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/role", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1711,7 +1790,7 @@ type CreateAPIKeyRequest struct {
 
 // CreateAPIKey creates a new API key for the organization.
 func (c *Client) CreateAPIKey(ctx context.Context, req *CreateAPIKeyRequest) (*APIKey, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/api-key", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -1861,7 +1940,7 @@ type UpdateOLMClientRequest struct {
 
 // CreateOLMClient creates a new OLM client device.
 func (c *Client) CreateOLMClient(ctx context.Context, req *CreateOLMClientRequest) (*OLMClient, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/client", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -2453,7 +2532,7 @@ type CreateOrgRequest struct {
 
 // CreateOrg creates a new organization.
 func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*Org, error) {
-	resp, err := c.doRequest(ctx, "PUT", "/org", req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", "/org", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2544,7 +2623,7 @@ type UpdateUserRequest struct {
 
 // CreateUser creates a new user in the organization.
 func (c *Client) CreateUser(ctx context.Context, req *CreateUserRequest) (*User, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/user", c.OrgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -2755,10 +2834,10 @@ type ApplyBlueprintRequest struct {
 //
 // Empty / malformed JSON payloads return HTTP 400 with descriptive
 // validation error messages - surfaced as a plain error by
-// [Client.doRequest].
+// [Client.doRequestNoRetry]. The create is never replayed on a 5xx.
 func (c *Client) ApplyBlueprint(ctx context.Context, base64JSON string) error {
 	body := ApplyBlueprintRequest{Blueprint: base64JSON}
-	_, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/blueprint", c.OrgID), body)
+	_, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/blueprint", c.OrgID), body)
 	return err
 }
 
@@ -2871,7 +2950,7 @@ type CreateIDPResponse struct {
 
 // CreateIDP creates a new OIDC IDP.
 func (c *Client) CreateIDP(ctx context.Context, req *CreateIDPRequest) (*CreateIDPResponse, error) {
-	resp, err := c.doRequest(ctx, "PUT", "/idp/oidc", req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", "/idp/oidc", req)
 	if err != nil {
 		return nil, err
 	}
@@ -2939,7 +3018,9 @@ type SetIDPOrgPolicyRequest struct {
 	OrgMapping  string `json:"orgMapping,omitempty"`
 }
 
-// CreateIDPOrgPolicy creates an IDP policy for an org.
+// CreateIDPOrgPolicy creates an IDP policy for an org. The path names the
+// single (idp, org) row, so a replay cannot duplicate it and the call
+// keeps doRequest's retries.
 func (c *Client) CreateIDPOrgPolicy(ctx context.Context, idpID int, orgID string, req *SetIDPOrgPolicyRequest) error {
 	_, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/idp/%d/org/%s", idpID, orgID), req)
 	return err
@@ -3014,7 +3095,7 @@ type OrgIDPBindRow struct {
 // difference is the path. Response mirrors [CreateIDPResponse]
 // (`{idpId, redirectUrl}`).
 func (c *Client) CreateOrgIDP(ctx context.Context, orgID string, req *CreateIDPRequest) (*CreateIDPResponse, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/org/%s/idp/oidc", orgID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/idp/oidc", orgID), req)
 	if err != nil {
 		return nil, err
 	}
@@ -3335,7 +3416,7 @@ type SetResourceRuleRequest struct {
 
 // CreateResourceRule creates a new rule for a resource.
 func (c *Client) CreateResourceRule(ctx context.Context, resourceID int, req *SetResourceRuleRequest) (*ResourceRule, error) {
-	resp, err := c.doRequest(ctx, "PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/resource/%d/rule", resourceID), req)
 	if err != nil {
 		return nil, err
 	}
