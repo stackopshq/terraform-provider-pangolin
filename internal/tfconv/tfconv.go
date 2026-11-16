@@ -60,3 +60,14 @@ func Float64FromPtr(p *float64) types.Float64 {
 	}
 	return types.Float64Value(*p)
 }
+
+// PtrFromKnownString returns nil when v is null or unknown, otherwise a
+// pointer to its value (which may be ""). Use for optional request fields
+// where "" is meaningful and must be sent rather than omitted.
+func PtrFromKnownString(v types.String) *string {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	s := v.ValueString()
+	return &s
+}

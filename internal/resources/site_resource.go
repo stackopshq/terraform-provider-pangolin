@@ -292,8 +292,8 @@ func (r *SitePrivateResource) Create(ctx context.Context, req resource.CreateReq
 		Mode:            plan.Mode.ValueString(),
 		Destination:     plan.Destination.ValueString(),
 		Alias:           plan.Alias.ValueString(),
-		TCPPortRange:    plan.TCPPortRange.ValueString(),
-		UDPPortRange:    plan.UDPPortRange.ValueString(),
+		TCPPortRange:    tfconv.PtrFromKnownString(plan.TCPPortRange),
+		UDPPortRange:    tfconv.PtrFromKnownString(plan.UDPPortRange),
 		DisableICMP:     plan.DisableICMP.ValueBool(),
 		AuthDaemonMode:  plan.AuthDaemonMode.ValueString(),
 		PamMode:         plan.PamMode.ValueString(),
@@ -345,13 +345,21 @@ func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
+	// The update endpoint replaces role/user/client grants wholesale; send
+	// the current ones back so an attribute change doesn't revoke access.
+	access, err := r.client.GetSiteResourceAccess(ctx, int(plan.ID.ValueInt64()))
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to read site resource access before update", err.Error())
+		return
+	}
+
 	siteRes, err := r.client.UpdateSiteResource(ctx, int(plan.ID.ValueInt64()), &client.UpdateSiteResourceRequest{
 		Name:            plan.Name.ValueString(),
 		SiteID:          int(plan.SiteID.ValueInt64()),
 		Destination:     plan.Destination.ValueString(),
 		Alias:           plan.Alias.ValueString(),
-		TCPPortRange:    plan.TCPPortRange.ValueString(),
-		UDPPortRange:    plan.UDPPortRange.ValueString(),
+		TCPPortRange:    tfconv.PtrFromKnownString(plan.TCPPortRange),
+		UDPPortRange:    tfconv.PtrFromKnownString(plan.UDPPortRange),
 		DisableICMP:     plan.DisableICMP.ValueBool(),
 		AuthDaemonMode:  plan.AuthDaemonMode.ValueString(),
 		PamMode:         plan.PamMode.ValueString(),
@@ -359,9 +367,9 @@ func (r *SitePrivateResource) Update(ctx context.Context, req resource.UpdateReq
 		Subdomain:       plan.Subdomain.ValueString(),
 		Scheme:          plan.Scheme.ValueString(),
 		DestinationPort: int(plan.DestinationPort.ValueInt64()),
-		RoleIDs:         []int{},
-		UserIDs:         []string{},
-		ClientIDs:       []int{},
+		RoleIDs:         access.RoleIDs,
+		UserIDs:         access.UserIDs,
+		ClientIDs:       access.ClientIDs,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update site resource", err.Error())
