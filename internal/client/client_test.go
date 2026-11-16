@@ -4395,6 +4395,73 @@ func TestResource_DecodesPost119WireShape(t *testing.T) {
 	}
 }
 
+// TestResource_DecodesRequestHeaders covers the GET shape on newer
+// servers: `headers` is null and the values are in `requestHeaders`.
+func TestResource_DecodesRequestHeaders(t *testing.T) {
+	raw := `{
+		"resourceId": 19,
+		"name": "Homepage",
+		"sso": true,
+		"headers": null,
+		"requestHeaders": [{"name": "X-Homepage-View", "value": "public"}],
+		"responseHeaders": null
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(r.Headers) != 1 || r.Headers[0].Name != "X-Homepage-View" || r.Headers[0].Value != "public" {
+		t.Errorf("requestHeaders should fold into Headers, got %+v", r.Headers)
+	}
+	if !r.SSO {
+		t.Errorf("sso should still decode, got %v", r.SSO)
+	}
+}
+
+// TestResource_DecodesRequestHeadersAsString covers the update
+// response, where `requestHeaders` is a JSON-encoded string.
+func TestResource_DecodesRequestHeadersAsString(t *testing.T) {
+	raw := `{
+		"resourceId": 19,
+		"headers": null,
+		"requestHeaders": "[{\"name\":\"X-Homepage-View\",\"value\":\"public\"}]"
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(r.Headers) != 1 || r.Headers[0].Name != "X-Homepage-View" || r.Headers[0].Value != "public" {
+		t.Errorf("string-encoded requestHeaders should fold into Headers, got %+v", r.Headers)
+	}
+}
+
+func TestResource_RequestHeadersInvalid(t *testing.T) {
+	for _, raw := range []string{
+		`{"requestHeaders": 42}`,
+		`{"requestHeaders": "not json"}`,
+	} {
+		var r Resource
+		if err := json.Unmarshal([]byte(raw), &r); err == nil {
+			t.Errorf("expected error for %s, got %+v", raw, r.Headers)
+		}
+	}
+}
+
+func TestResource_HeadersWinOverRequestHeaders(t *testing.T) {
+	raw := `{
+		"resourceId": 19,
+		"headers": [{"name": "X-Legacy", "value": "1"}],
+		"requestHeaders": [{"name": "X-New", "value": "2"}]
+	}`
+	var r Resource
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(r.Headers) != 1 || r.Headers[0].Name != "X-Legacy" {
+		t.Errorf("headers should be kept when present, got %+v", r.Headers)
+	}
+}
+
 // extractParam grabs the value of a single URL query parameter from a raw
 // query string. Returns "" if absent. Does not unescape.
 func extractParam(rawQuery, key string) string {
