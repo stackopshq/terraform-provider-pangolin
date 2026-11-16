@@ -27,7 +27,7 @@ variables:
 
 test:
   stage: verify
-  image: docker.io/library/golang:1.25-trixie
+  image: docker.io/library/golang:1.27-trixie
   script:
     - |
       out=$(gofmt -l .)
