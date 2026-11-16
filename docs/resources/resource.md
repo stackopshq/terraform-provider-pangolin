@@ -29,7 +29,6 @@ resource "pangolin_resource" "web" {
   name      = "my-app"
   subdomain = "app"
   domain_id = data.pangolin_domains.all.domains[0].domain_id
-  protocol  = "tcp"
   sso       = false # public access, no Pangolin authentication
 }
 
@@ -123,7 +122,7 @@ resource "pangolin_resource" "under_maintenance" {
 > **Note:** SSH / RDP / VNC bastion modes are configured by starting from `mode = "tcp"` and layering `pam_mode` / `auth_daemon_mode` / `auth_daemon_port`. The Pangolin server does **not** accept `"ssh"` / `"rdp"` / `"vnc"` as literal mode values yet (spec-ahead-of-server pattern in 1.19).
 - `pam_mode` (String) PAM (Pluggable Authentication Module) mode for SSH resources. One of `passthrough` or `push`. Only meaningful for `mode = "ssh"`.
 - `post_auth_path` (String) Landing path after a successful login (e.g. `/dashboard`).
-- `protocol` (String) The L4 protocol (tcp or udp). Only meaningful for the `ssh` / `rdp` / `vnc` / `tcp` / `udp` L4 modes; ignored for `http`. Defaults to `tcp`.
+- `protocol` (String, Deprecated) **Deprecated:** use `mode` instead. Legacy L4 protocol (tcp or udp) from the pre-1.19 API. For `mode = "tcp"` / `"udp"` the server follows `mode` and ignores this attribute; for `mode = "http"` it must stay `tcp`. Defaults to `tcp`. Will be removed in the next major version.
 - `proxy_port` (Number) The proxy port that the Pangolin edge listens on for this L4 resource. Required for `ssh` / `rdp` / `vnc` / `tcp` / `udp` modes; ignored for `http`. Changing this attribute forces replacement.
 - `set_host_header` (String) Override the upstream `Host` header. Only meaningful for `mode = "http"`. Set to null to keep the incoming host.
 - `skip_to_idp_id` (Number) Bypass the Pangolin login page and jump straight to the given IdP.

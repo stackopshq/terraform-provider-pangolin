@@ -578,3 +578,24 @@ func TestSubdomainRegex(t *testing.T) {
 		}
 	}
 }
+
+func TestProtocolModeConflict(t *testing.T) {
+	for _, tc := range []struct {
+		mode, protocol string
+		conflict       bool
+	}{
+		{"", "tcp", false},
+		{"http", "tcp", false},
+		{"", "udp", true},
+		{"http", "udp", true},
+		{"tcp", "tcp", false},
+		{"udp", "udp", false},
+		{"tcp", "udp", true},
+		{"udp", "tcp", true},
+	} {
+		got := protocolModeConflict(tc.mode, tc.protocol)
+		if (got != "") != tc.conflict {
+			t.Errorf("protocolModeConflict(%q, %q) = %q, want conflict=%v", tc.mode, tc.protocol, got, tc.conflict)
+		}
+	}
+}
