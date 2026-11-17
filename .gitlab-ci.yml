@@ -3,6 +3,11 @@
 # (releases, registries) stays on GitHub Actions there: this pipeline only
 # checks, and never publishes.
 
+include:
+  - project: stackopsplatform/ci-components
+    ref: v1.2.0
+    file: diagnostic/pipeline-doctor.yml
+
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "web"
