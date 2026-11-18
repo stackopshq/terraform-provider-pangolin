@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -16,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
@@ -47,6 +50,9 @@ type RoleResourceModel struct {
 	// Read-only org context
 	IsAdmin types.Bool   `tfsdk:"is_admin"`
 	OrgName types.String `tfsdk:"org_name"`
+
+	// Delete-only, never sent to nor read from the API.
+	ReplacementRoleID types.Int64 `tfsdk:"replacement_role_id"`
 }
 
 // NewRoleResource returns a new resource factory.
@@ -142,6 +148,16 @@ func (r *RoleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Computed:    true,
 				PlanModifiers: []planmodifier.List{
 					listplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"replacement_role_id": schema.Int64Attribute{
+				Description: "ID of the role that receives the members of this role when it is deleted. " +
+					"It must be another non-admin role of the organization, or the destroy fails without deleting anything. " +
+					"Unset: the first non-admin role by name. Only used on destroy: changing it alone makes no API call. " +
+					"When it references another `pangolin_role` (`pangolin_role.other.id`), Terraform destroys this role first, so the replacement still exists.",
+				Optional: true,
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
 				},
 			},
 			// Read-only org context
@@ -244,6 +260,19 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	// replacement_role_id alone changed: no API call. A full update would
+	// resend allow_ssh from the state, which the server does not return,
+	// and could revoke an SSH access granted outside Terraform.
+	onlyReplacement := tfsdk.State{Schema: req.State.Schema, Raw: req.State.Raw.Copy()}
+	resp.Diagnostics.Append(onlyReplacement.SetAttribute(ctx, path.Root("replacement_role_id"), plan.ReplacementRoleID)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if onlyReplacement.Raw.Equal(req.Plan.Raw) {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
+
 	updateReq := &client.UpdateRoleRequest{
 		Name:        plan.Name.ValueString(),
 		Description: plan.Description.ValueString(),
@@ -281,8 +310,9 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	// The Pangolin API requires a replacement role for any users currently
-	// assigned this role. Pick the first available role that is not the
-	// one being deleted.
+	// assigned this role. Pick the first non-admin role that is not the
+	// one being deleted: the list is sorted by name, so "Admin" usually
+	// comes first and would silently promote every member.
 	roles, err := r.client.ListRoles(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list roles for deletion", err.Error())
@@ -290,17 +320,63 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	roleID := int(state.ID.ValueInt64())
-	replacementID := roleID
-	for _, role := range roles {
-		if role.RoleID != roleID {
-			replacementID = role.RoleID
-			break
+	wantID := int(state.ReplacementRoleID.ValueInt64()) // 0 when unset
+	found := false
+	var replacement *client.Role
+	for i, role := range roles {
+		if role.RoleID == roleID {
+			found = true
+			continue
+		}
+		// The server stores isAdmin only on the Admin role: null means non-admin.
+		if replacement == nil && (wantID == 0 || role.RoleID == wantID) && (role.IsAdmin == nil || !*role.IsAdmin) {
+			replacement = &roles[i]
 		}
 	}
-
-	if err := r.client.DeleteRole(ctx, roleID, replacementID); err != nil {
+	if !found {
+		// Gone, or a role of another org (imported with a root key).
+		var got *client.Role
+		got, err = r.client.GetRoleByID(ctx, roleID)
+		if errors.Is(err, client.ErrNotFound) {
+			return
+		}
+		if err == nil {
+			err = fmt.Errorf("role %d belongs to org %q, not to the org %q of the provider: delete it with a provider configured for its org",
+				roleID, got.OrgID, r.client.OrgID)
+		}
 		resp.Diagnostics.AddError("Failed to delete role", err.Error())
 		return
+	}
+	if replacement == nil && wantID != 0 {
+		resp.Diagnostics.AddError("Invalid replacement_role_id",
+			fmt.Sprintf("replacement_role_id %d must be another non-admin role of the organization %q, "+
+				"and role %d is not: nothing was deleted. Set a valid value and apply (put the resource back in the configuration first if it was removed), "+
+				"or delete the role from the Pangolin interface and remove it from the state with `terraform state rm`.", wantID, r.client.OrgID, wantID))
+		return
+	}
+	if replacement == nil {
+		resp.Diagnostics.AddError("No replacement role for deletion",
+			fmt.Sprintf("Pangolin moves the members of role %d to a replacement role when it is deleted, "+
+				"but the organization has no other non-admin role. Create one (for example \"Member\") and retry: "+
+				"the provider never moves members to an admin role.", roleID))
+		return
+	}
+
+	err = r.client.DeleteRole(ctx, roleID, replacement.RoleID)
+	if errors.Is(err, client.ErrNotFound) {
+		// The server answers 404 both when the role is gone and when the
+		// replacement vanished meanwhile: only the first is a success.
+		_, err = r.client.GetRoleByID(ctx, roleID)
+		if errors.Is(err, client.ErrNotFound) {
+			return
+		}
+		if err == nil {
+			err = fmt.Errorf("role %d still exists: the replacement role %d (%s) disappeared during the deletion, retry the destroy",
+				roleID, replacement.RoleID, replacement.Name)
+		}
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to delete role", err.Error())
 	}
 }
 
@@ -421,5 +497,6 @@ func roleToModel(ctx context.Context, role *client.Role, prior RoleResourceModel
 		SSHUnixGroups:         unixGroupsList,
 		IsAdmin:               isAdmin,
 		OrgName:               types.StringValue(role.OrgName),
+		ReplacementRoleID:     prior.ReplacementRoleID,
 	}, allDiags
 }

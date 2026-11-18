@@ -2,10 +2,20 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 )
 
@@ -330,4 +340,280 @@ func derefString(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// Role list fixtures in the server's shape: sorted by name, isAdmin true on
+// the Admin role and null on every other one (createOrg / createRole never
+// set it, and the column has no default).
+const (
+	roleAdmin  = `{"roleId":1,"orgId":"org","name":"Admin","isAdmin":true}`
+	roleDevs   = `{"roleId":5,"orgId":"org","name":"Devs","isAdmin":null}`
+	roleMember = `{"roleId":2,"orgId":"org","name":"Member","isAdmin":null}`
+)
+
+// roleDeleteTestServer lists roles (JSON array bodies: before, then after
+// the DELETE), answers DELETE /role/5 with deleteStatus and records the
+// replacement role ID sent with it. GET /role/5 answers getRole5, or 404
+// when empty (a re-read then goes through the list).
+func roleDeleteTestServer(t *testing.T, rolesJSON, rolesAfterDelete string, deleteStatus int, getRole5 string, deleted *string) *RoleResource {
+	t.Helper()
+	notFound := func(w http.ResponseWriter, msg string) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprintf(w, `{"data":null,"success":false,"error":true,"message":%q,"status":404}`, msg)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/org/org/roles":
+			list := rolesJSON
+			if *deleted != "" {
+				list = rolesAfterDelete
+			}
+			var items []json.RawMessage
+			if err := json.Unmarshal([]byte(list), &items); err != nil {
+				t.Errorf("roles fixture: %v", err)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"data":{"roles":%s,"pagination":{"total":%d,"page":1,"pageSize":1000}},"success":true,"error":false,"message":"Roles retrieved successfully","status":200}`, list, len(items))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/role/5":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			*deleted = body["roleId"]
+			if deleteStatus != http.StatusOK {
+				notFound(w, "Role with ID "+body["roleId"]+" not found")
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":null,"success":true,"error":false,"message":"Role deleted successfully","status":200}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/role/5":
+			if getRole5 == "" {
+				notFound(w, "Role with ID 5 not found")
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"data":%s,"success":true,"error":false,"message":"Role retrieved successfully","status":200}`, getRole5)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return &RoleResource{client: client.NewClient(srv.URL, "k", "org")}
+}
+
+func deleteRole5(t *testing.T, r *RoleResource) diag.Diagnostics {
+	t.Helper()
+	return deleteRole5With(t, r, 0)
+}
+
+// deleteRole5With destroys role 5 with replacement_role_id set in the
+// state, or unset when replacementID is 0.
+func deleteRole5With(t *testing.T, r *RoleResource, replacementID int64) diag.Diagnostics {
+	t.Helper()
+	ctx := context.Background()
+	var sresp resource.SchemaResponse
+	r.Schema(ctx, resource.SchemaRequest{}, &sresp)
+	state := tfsdk.State{Schema: sresp.Schema, Raw: tftypes.NewValue(sresp.Schema.Type().TerraformType(ctx), nil)}
+	if d := state.SetAttribute(ctx, path.Root("id"), int64(5)); d.HasError() {
+		t.Fatalf("set state: %v", d)
+	}
+	if replacementID != 0 {
+		if d := state.SetAttribute(ctx, path.Root("replacement_role_id"), replacementID); d.HasError() {
+			t.Fatalf("set state: %v", d)
+		}
+	}
+	resp := resource.DeleteResponse{State: state}
+	r.Delete(ctx, resource.DeleteRequest{State: state}, &resp)
+	return resp.Diagnostics
+}
+
+func TestRoleDelete_Replacement(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		roles   string
+		want    string // replacement role ID sent, "" for no DELETE
+		wantErr bool
+	}{
+		{"null isAdmin is non-admin, Admin first is skipped", `[` + roleAdmin + `,` + roleDevs + `,` + roleMember + `]`, "2", false},
+		{"explicit false is non-admin", `[` + roleAdmin + `,` + roleDevs + `,{"roleId":2,"orgId":"org","name":"Member","isAdmin":false}]`, "2", false},
+		{"only Admin left: no promotion", `[` + roleAdmin + `,` + roleDevs + `]`, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, tc.roles, "[]", http.StatusOK, "", &deleted)
+			if got := deleteRole5(t, r).HasError(); got != tc.wantErr {
+				t.Errorf("error = %v, want %v", got, tc.wantErr)
+			}
+			if deleted != tc.want {
+				t.Errorf("replacement role = %q, want %q", deleted, tc.want)
+			}
+		})
+	}
+}
+
+func TestRoleDelete_404(t *testing.T) {
+	before := `[` + roleAdmin + `,` + roleDevs + `,` + roleMember + `]`
+	for _, tc := range []struct {
+		name      string
+		after     string
+		wantError bool
+	}{
+		{"role already gone", `[` + roleAdmin + `,` + roleMember + `]`, false},
+		{"replacement gone, role still there", `[` + roleAdmin + `,` + roleDevs + `]`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, before, tc.after, http.StatusNotFound, "", &deleted)
+			if got := deleteRole5(t, r).HasError(); got != tc.wantError {
+				t.Errorf("error = %v, want %v", got, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestRoleDelete_NotInProviderOrg(t *testing.T) {
+	list := `[` + roleAdmin + `,` + roleMember + `]`
+	for _, tc := range []struct {
+		name      string
+		getRole5  string
+		wantError bool
+	}{
+		{"gone", "", false},
+		{"role of another org", `{"roleId":5,"orgId":"other","name":"Devs","isAdmin":null}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, list, list, http.StatusOK, tc.getRole5, &deleted)
+			if got := deleteRole5(t, r).HasError(); got != tc.wantError {
+				t.Errorf("error = %v, want %v", got, tc.wantError)
+			}
+			if deleted != "" {
+				t.Errorf("DELETE sent with replacement %q, want none", deleted)
+			}
+		})
+	}
+}
+
+func TestRoleDelete_ReplacementRoleID(t *testing.T) {
+	roleOps := `{"roleId":7,"orgId":"org","name":"Ops","isAdmin":null}`
+	list := `[` + roleAdmin + `,` + roleDevs + `,` + roleMember + `,` + roleOps + `]`
+	for _, tc := range []struct {
+		name    string
+		id      int64
+		want    string // replacement role ID sent, "" for no DELETE
+		wantErr bool
+	}{
+		{"valid, not the default choice", 7, "7", false},
+		{"unset keeps the first non-admin by name", 0, "2", false},
+		{"admin role", 1, "", true},
+		{"the deleted role itself", 5, "", true},
+		{"unknown role", 99, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted string
+			r := roleDeleteTestServer(t, list, "[]", http.StatusOK, "", &deleted)
+			if got := deleteRole5With(t, r, tc.id).HasError(); got != tc.wantErr {
+				t.Errorf("error = %v, want %v", got, tc.wantErr)
+			}
+			if deleted != tc.want {
+				t.Errorf("replacement role = %q, want %q", deleted, tc.want)
+			}
+		})
+	}
+}
+
+// replacement_role_id is not returned by the API: Read keeps the state value
+// (no diff), import starts from an empty model and leaves it null.
+func TestRoleToModel_ReplacementRoleIDFromPrior(t *testing.T) {
+	role := &client.Role{RoleID: 5, Name: "Devs"}
+	m, diags := roleToModel(context.Background(), role, RoleResourceModel{ReplacementRoleID: types.Int64Value(7)})
+	if diags.HasError() {
+		t.Fatalf("diags: %v", diags)
+	}
+	if !m.ReplacementRoleID.Equal(types.Int64Value(7)) {
+		t.Errorf("read: replacement_role_id = %v, want 7", m.ReplacementRoleID)
+	}
+	m, _ = roleToModel(context.Background(), role, RoleResourceModel{})
+	if !m.ReplacementRoleID.IsNull() {
+		t.Errorf("import: replacement_role_id = %v, want null", m.ReplacementRoleID)
+	}
+}
+
+// updateRole5 runs Update from a full state of role 5 to a plan built by
+// edit, against a server answering the update and the re-read. It returns
+// the requests the server received and the resulting state.
+func updateRole5(t *testing.T, edit func(*RoleResourceModel)) ([]string, RoleResourceModel) {
+	t.Helper()
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"roleId":5,"orgId":"org","name":"Devs","description":"new","isAdmin":null,"sshSudoMode":"none","sshSudoCommands":"[]","sshUnixGroups":"[]"},"success":true,"error":false,"message":"ok","status":200}`))
+	}))
+	t.Cleanup(srv.Close)
+	r := &RoleResource{client: client.NewClient(srv.URL, "k", "org")}
+
+	ctx := context.Background()
+	var sresp resource.SchemaResponse
+	r.Schema(ctx, resource.SchemaRequest{}, &sresp)
+	empty, _ := types.ListValueFrom(ctx, types.StringType, []string{})
+	prior := RoleResourceModel{
+		ID: types.Int64Value(5), Name: types.StringValue("Devs"), Description: types.StringValue("old"),
+		RequireDeviceApproval: types.BoolValue(false), AllowSSH: types.BoolValue(false),
+		SSHSudoMode: types.StringValue("none"), SSHSudoCommands: empty, SSHCreateHomeDir: types.BoolValue(false),
+		SSHUnixGroups: empty, IsAdmin: types.BoolValue(false), OrgName: types.StringValue("Org"),
+		ReplacementRoleID: types.Int64Null(),
+	}
+	planned := prior
+	edit(&planned)
+	state := tfsdk.State{Schema: sresp.Schema}
+	plan := tfsdk.Plan{Schema: sresp.Schema}
+	if d := state.Set(ctx, &prior); d.HasError() {
+		t.Fatalf("set state: %v", d)
+	}
+	if d := plan.Set(ctx, &planned); d.HasError() {
+		t.Fatalf("set plan: %v", d)
+	}
+	resp := resource.UpdateResponse{State: state}
+	r.Update(ctx, resource.UpdateRequest{State: state, Plan: plan}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("update: %v", resp.Diagnostics)
+	}
+	var got RoleResourceModel
+	resp.Diagnostics.Append(resp.State.Get(ctx, &got)...)
+	return calls, got
+}
+
+func TestRoleUpdate_OnlyReplacementRoleIDMakesNoCall(t *testing.T) {
+	calls, got := updateRole5(t, func(m *RoleResourceModel) { m.ReplacementRoleID = types.Int64Value(7) })
+	if len(calls) != 0 {
+		t.Errorf("requests = %v, want none (a full update resends allow_ssh)", calls)
+	}
+	if !got.ReplacementRoleID.Equal(types.Int64Value(7)) {
+		t.Errorf("replacement_role_id = %v, want 7", got.ReplacementRoleID)
+	}
+}
+
+func TestRoleUpdate_OtherFieldStillUpdates(t *testing.T) {
+	calls, got := updateRole5(t, func(m *RoleResourceModel) {
+		m.ReplacementRoleID = types.Int64Value(7)
+		m.Description = types.StringValue("new")
+	})
+	if len(calls) == 0 || calls[0] != "POST /v1/role/5" {
+		t.Errorf("requests = %v, want the role update first", calls)
+	}
+	if !got.ReplacementRoleID.Equal(types.Int64Value(7)) || got.Description.ValueString() != "new" {
+		t.Errorf("state = %v / %v, want 7 / new", got.ReplacementRoleID, got.Description)
+	}
+}
+
+func TestRoleSchema_ReplacementRoleIDAtLeastOne(t *testing.T) {
+	var sresp resource.SchemaResponse
+	(&RoleResource{}).Schema(context.Background(), resource.SchemaRequest{}, &sresp)
+	attr := sresp.Schema.Attributes["replacement_role_id"].(schema.Int64Attribute)
+	vresp := validator.Int64Response{}
+	for _, v := range attr.Validators {
+		v.ValidateInt64(context.Background(), validator.Int64Request{Path: path.Root("replacement_role_id"), ConfigValue: types.Int64Value(0)}, &vresp)
+	}
+	if !vresp.Diagnostics.HasError() {
+		t.Error("replacement_role_id = 0 must be refused")
+	}
 }

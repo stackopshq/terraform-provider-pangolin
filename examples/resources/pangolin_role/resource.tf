@@ -15,6 +15,10 @@ resource "pangolin_role" "developers" {
 
   # Require admin approval each time a new device tries to use this role.
   require_device_approval = true
+
+  # On destroy, move the members to the auditors role rather than to the
+  # first non-admin role by name. Never an admin role.
+  replacement_role_id = pangolin_role.auditors.id
 }
 
 # Tighter role: no SSH at all, view-only.
