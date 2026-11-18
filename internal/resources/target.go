@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -306,7 +307,7 @@ func (r *TargetResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Description: "Current health summary as reported by Pangolin (`unknown`, `healthy`, `unhealthy`).",
 				Computed:    true,
 				PlanModifiers: []planmodifier.String{
-					hcCompPlanModifierStr,
+					hcHealthPlanModifier{},
 				},
 			},
 			// Routing extras
@@ -605,5 +606,57 @@ func targetToModel(t *client.Target, prior TargetResourceModel) TargetResourceMo
 		RewritePath:          tfconv.StringFromPtr(t.RewritePath),
 		RewritePathType:      tfconv.StringFromPtr(t.RewritePathType),
 		Priority:             tfconv.Int64FromIntPtr(t.Priority),
+	}
+}
+
+// hcHealthPlanModifier plans hc_health on update.
+//
+// hc_health is server-owned: the probe moves it at any time, and
+// Pangolin's POST /target/{id} rewrites it as a side effect of the
+// update itself - "unknown" whenever hcEnabled is false (or the site
+// is not a newt), "unhealthy" when hcEnabled goes from false to true.
+// UseStateForUnknown therefore promised the prior value on exactly
+// the updates that change it, and Terraform rejected the apply with
+// "Provider produced inconsistent result after apply".
+//
+// The framework only leaves a computed attribute unknown when the
+// resource has a planned change, so a no-op plan still carries the
+// state value untouched. On a real update:
+//   - hc_enabled planned false: the server answers "unknown", plan it.
+//   - otherwise: leave it unknown ("known after apply"). Keeping the
+//     prior value would still race the probe between refresh and
+//     apply, and would be wrong when hc_enabled is being turned on.
+type hcHealthPlanModifier struct{}
+
+func (m hcHealthPlanModifier) Description(_ context.Context) string {
+	return "Plans \"unknown\" when hc_enabled is false, otherwise leaves hc_health unknown on update."
+}
+
+func (m hcHealthPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m hcHealthPlanModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	// Create (no prior state), destroy, or a value already known.
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() || !req.PlanValue.IsUnknown() {
+		return
+	}
+	hcEnabledPath := path.Root("hc_enabled")
+	var planned, configured, prior types.Bool
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, hcEnabledPath, &planned)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, hcEnabledPath, &configured)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, hcEnabledPath, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// Every attribute modifier sees the plan as it stood before any of
+	// them ran: hc_enabled left out of the configuration is still
+	// unknown here, and its own UseStateForUnknown will resolve it to
+	// the prior value, which is what Update then sends.
+	if planned.IsUnknown() && !configured.IsUnknown() {
+		planned = prior
+	}
+	if planned.Equal(types.BoolValue(false)) {
+		resp.PlanValue = types.StringValue("unknown")
 	}
 }
