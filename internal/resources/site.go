@@ -138,6 +138,8 @@ func (r *SiteResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	// Get site defaults (newtId, secret, address)
+	r.client.AddressMu.Lock()
+	defer r.client.AddressMu.Unlock()
 	defaults, err := r.client.GetSiteDefaults(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get site defaults", err.Error())
