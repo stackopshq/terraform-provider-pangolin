@@ -19,7 +19,7 @@ terraform {
   required_providers {
     pangolin = {
       source  = "stackopshq/pangolin"
-      version = "~> 1.5"
+      version = "~> 1.7"
     }
   }
 }
@@ -108,7 +108,6 @@ export PANGOLIN_ORG_ID="your-org-id"
 # Create a site (Newt tunnel connector)
 resource "pangolin_site" "homelab" {
   name = "homelab"
-  type = "newt"
 }
 
 # Expose an app publicly via HTTP reverse proxy
