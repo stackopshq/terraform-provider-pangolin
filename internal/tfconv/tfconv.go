@@ -71,3 +71,23 @@ func PtrFromKnownString(v types.String) *string {
 	s := v.ValueString()
 	return &s
 }
+
+// PtrFromKnownBool returns nil when v is null or unknown, otherwise a
+// pointer to its value.
+func PtrFromKnownBool(v types.Bool) *bool {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	b := v.ValueBool()
+	return &b
+}
+
+// PtrFromKnownInt64AsInt returns nil when v is null or unknown, otherwise a
+// pointer to its value converted to int.
+func PtrFromKnownInt64AsInt(v types.Int64) *int {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	i := int(v.ValueInt64())
+	return &i
+}
