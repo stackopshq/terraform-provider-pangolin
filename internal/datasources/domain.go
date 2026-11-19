@@ -2,18 +2,25 @@ package datasources
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/datasourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/client"
 	"github.com/stackopshq/terraform-provider-pangolin/internal/tfconv"
 )
 
-var _ datasource.DataSource = &DomainDataSource{}
+var (
+	_ datasource.DataSource                     = &DomainDataSource{}
+	_ datasource.DataSourceWithConfigValidators = &DomainDataSource{}
+)
 
-// DomainDataSource exposes a single Pangolin domain by ID - the
-// per-id endpoint that GetDomain hits directly, no list-and-filter.
+// DomainDataSource exposes a single Pangolin domain, looked up by ID (the
+// per-id endpoint) or by base_domain (list-and-match, then the per-id read).
 type DomainDataSource struct {
 	client *client.Client
 }
@@ -44,11 +51,11 @@ func (d *DomainDataSource) Metadata(_ context.Context, req datasource.MetadataRe
 
 func (d *DomainDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Looks up a single Pangolin domain by ID. Use this when you already have the `domain_id` and want " +
-			"a one-shot read; for browsing every domain in the org, use `pangolin_domains`.",
+		Description: "Looks up a single Pangolin domain by ID or by base domain name. Set exactly one of `id` or " +
+			"`base_domain`; for browsing every domain in the org, use `pangolin_domains`.",
 		Attributes: map[string]schema.Attribute{
-			"id":                   schema.StringAttribute{Description: "The domain ID to look up.", Required: true},
-			"base_domain":          schema.StringAttribute{Description: "The base domain name.", Computed: true},
+			"id":                   schema.StringAttribute{Description: "The domain ID. Set either id or base_domain.", Optional: true, Computed: true},
+			"base_domain":          schema.StringAttribute{Description: "The base domain name. Set either id or base_domain. Matched case-insensitively, ignoring a trailing dot.", Optional: true, Computed: true},
 			"verified":             schema.BoolAttribute{Description: "Whether the domain has been verified.", Computed: true},
 			"type":                 schema.StringAttribute{Description: "The domain type (`ns`, `cname`, `wildcard`).", Computed: true},
 			"failed":               schema.BoolAttribute{Description: "Whether the last verification attempt failed.", Computed: true},
@@ -59,6 +66,39 @@ func (d *DomainDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 			"prefer_wildcard_cert": schema.BoolAttribute{Description: "Whether to prefer issuing a wildcard certificate for this domain.", Computed: true},
 			"error_message":        schema.StringAttribute{Description: "Last error reported during verification, or `null` when no error.", Computed: true},
 		},
+	}
+}
+
+func (d *DomainDataSource) ConfigValidators(_ context.Context) []datasource.ConfigValidator {
+	return []datasource.ConfigValidator{
+		datasourcevalidator.ExactlyOneOf(
+			path.MatchRoot("id"),
+			path.MatchRoot("base_domain"),
+		),
+	}
+}
+
+func normalizeBaseDomain(s string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(s), "."))
+}
+
+// findDomainByBaseDomain returns the ID of the single domain whose
+// base_domain matches name (case-insensitive, trailing dot ignored).
+func findDomainByBaseDomain(domains []client.Domain, name string) (string, error) {
+	want := normalizeBaseDomain(name)
+	var ids []string
+	for _, dom := range domains {
+		if normalizeBaseDomain(dom.BaseDomain) == want {
+			ids = append(ids, dom.DomainID)
+		}
+	}
+	switch len(ids) {
+	case 0:
+		return "", fmt.Errorf("no domain with base_domain %q in org", name)
+	case 1:
+		return ids[0], nil
+	default:
+		return "", fmt.Errorf("multiple domains with base_domain %q in org: ids %s", name, strings.Join(ids, ", "))
 	}
 }
 
@@ -81,12 +121,27 @@ func (d *DomainDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	domain, err := d.client.GetDomain(ctx, d.client.OrgID, cfg.ID.ValueString())
+	id := cfg.ID.ValueString()
+	if cfg.ID.IsNull() || cfg.ID.IsUnknown() || id == "" {
+		domains, err := d.client.ListDomains(ctx)
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to list domains", err.Error())
+			return
+		}
+		id, err = findDomainByBaseDomain(domains, cfg.BaseDomain.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to find domain", err.Error())
+			return
+		}
+	}
+
+	domain, err := d.client.GetDomain(ctx, d.client.OrgID, id)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read domain", err.Error())
 		return
 	}
 
+	cfg.ID = types.StringValue(id)
 	cfg.BaseDomain = types.StringValue(domain.BaseDomain)
 	cfg.Verified = types.BoolValue(domain.Verified)
 	cfg.Type = types.StringValue(domain.Type)
