@@ -24,6 +24,10 @@ func TestCreates_NotReplayedOn5xx(t *testing.T) {
 			_, err := c.CreateSiteResource(ctx, &CreateSiteResourceRequest{})
 			return err
 		}},
+		{"CreateRedirect", func(c *Client) error {
+			_, err := c.CreateRedirect(ctx, &CreateRedirectRequest{})
+			return err
+		}},
 		{"CreateRole", func(c *Client) error { _, err := c.CreateRole(ctx, &CreateRoleRequest{}); return err }},
 		{"CreateAPIKey", func(c *Client) error { _, err := c.CreateAPIKey(ctx, &CreateAPIKeyRequest{}); return err }},
 		{"CreateOLMClient", func(c *Client) error { _, err := c.CreateOLMClient(ctx, &CreateOLMClientRequest{}); return err }},

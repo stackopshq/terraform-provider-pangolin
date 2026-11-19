@@ -4035,3 +4035,190 @@ func (c *Client) GetLogsAnalytics(ctx context.Context, orgID string, q LogsAnaly
 	}
 	return &out, nil
 }
+
+// --- Redirects ---
+
+// DefaultRedirectPriority is the server default priority.
+const DefaultRedirectPriority = 100
+
+// Redirect represents a Pangolin redirect.
+type Redirect struct {
+	RedirectID      int     `json:"redirectId"`
+	OrgID           string  `json:"orgId"`
+	NiceID          string  `json:"niceId"`
+	Name            string  `json:"name"`
+	ResourceID      *int    `json:"resourceId"`
+	DomainID        *string `json:"domainId"`
+	Subdomain       *string `json:"subdomain"`
+	DestinationHost string  `json:"destinationHost"`
+	PathMatchType   string  `json:"pathMatchType"`
+	MatchPath       *string `json:"matchPath"`
+	RewritePath     *string `json:"rewritePath"`
+	RewritePathType *string `json:"rewritePathType"`
+	Priority        *int    `json:"priority"`
+	Permanent       bool    `json:"permanent"`
+	SSL             bool    `json:"ssl"`
+	Enabled         bool    `json:"enabled"`
+
+	// Joined fields, only in get and list responses.
+	ResourceName       *string `json:"resourceName"`
+	ResourceNiceID     *string `json:"resourceNiceId"`
+	ResourceDomainID   *string `json:"resourceDomainId"`
+	ResourceFullDomain *string `json:"resourceFullDomain"`
+	ResourceSSL        *bool   `json:"resourceSsl"`
+	ResourceWildcard   *bool   `json:"resourceWildcard"`
+	BaseDomain         *string `json:"baseDomain"`
+}
+
+// PriorityOr returns the priority, or def when unset.
+func (r *Redirect) PriorityOr(def int) int {
+	if r.Priority == nil {
+		return def
+	}
+	return *r.Priority
+}
+
+// CreateRedirectRequest is the body of a redirect creation.
+type CreateRedirectRequest struct {
+	Name            string  `json:"name"`
+	ResourceID      *int    `json:"resourceId,omitempty"`
+	DomainID        *string `json:"domainId,omitempty"`
+	Subdomain       *string `json:"subdomain,omitempty"`
+	DestinationHost string  `json:"destinationHost"`
+	PathMatchType   *string `json:"pathMatchType,omitempty"`
+	MatchPath       *string `json:"matchPath,omitempty"`
+	RewritePath     *string `json:"rewritePath,omitempty"`
+	RewritePathType *string `json:"rewritePathType,omitempty"`
+	Priority        *int    `json:"priority,omitempty"`
+	Permanent       *bool   `json:"permanent,omitempty"`
+	SSL             *bool   `json:"ssl,omitempty"`
+	Enabled         *bool   `json:"enabled,omitempty"`
+}
+
+// UpdateRedirectRequest is the body of a redirect update. Nullable fields have
+// no omitempty: nil is sent as null and clears the field.
+type UpdateRedirectRequest struct {
+	Name            *string `json:"name,omitempty"`
+	NiceID          *string `json:"niceId,omitempty"`
+	ResourceID      *int    `json:"resourceId"`
+	DomainID        *string `json:"domainId"`
+	Subdomain       *string `json:"subdomain"`
+	DestinationHost *string `json:"destinationHost,omitempty"`
+	PathMatchType   *string `json:"pathMatchType,omitempty"`
+	MatchPath       *string `json:"matchPath"`
+	RewritePath     *string `json:"rewritePath"`
+	RewritePathType *string `json:"rewritePathType"`
+	Priority        *int    `json:"priority,omitempty"`
+	Permanent       *bool   `json:"permanent,omitempty"`
+	SSL             *bool   `json:"ssl,omitempty"`
+	Enabled         *bool   `json:"enabled,omitempty"`
+}
+
+// redirectEnvelope wraps single-redirect responses.
+type redirectEnvelope struct {
+	Redirect *Redirect `json:"redirect"`
+}
+
+// RedirectsListResponse wraps the redirects list response.
+type RedirectsListResponse struct {
+	Redirects []Redirect `json:"redirects"`
+}
+
+// CreateRedirectBare creates a redirect without re-reading it, so the joined
+// fields are nil.
+func (c *Client) CreateRedirectBare(ctx context.Context, req *CreateRedirectRequest) (*Redirect, error) {
+	resp, err := c.doRequestNoRetry(ctx, "PUT", fmt.Sprintf("/org/%s/redirect", c.OrgID), req)
+	if err != nil {
+		return nil, err
+	}
+	var env redirectEnvelope
+	if err = json.Unmarshal(resp.Data, &env); err != nil {
+		return nil, fmt.Errorf("failed to parse redirect: %w", err)
+	}
+	if env.Redirect == nil || env.Redirect.RedirectID == 0 {
+		return nil, fmt.Errorf("redirect create response had no redirectId; the redirect may exist on the server")
+	}
+	return env.Redirect, nil
+}
+
+// CreateRedirect creates a redirect and re-reads it to fill the joined fields.
+// If the re-read fails, the bare response is returned.
+func (c *Client) CreateRedirect(ctx context.Context, req *CreateRedirectRequest) (*Redirect, error) {
+	bare, err := c.CreateRedirectBare(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	full, err := c.GetRedirect(ctx, bare.RedirectID)
+	if err != nil {
+		tflog.Warn(ctx, "pangolin: re-reading created redirect failed, using bare create response", map[string]any{
+			"redirect_id": bare.RedirectID,
+			"error":       err.Error(),
+		})
+		return bare, nil
+	}
+	return full, nil
+}
+
+// GetRedirect retrieves a redirect by ID.
+func (c *Client) GetRedirect(ctx context.Context, redirectID int) (*Redirect, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/org/%s/redirects/%d", c.OrgID, redirectID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var env redirectEnvelope
+	if err := json.Unmarshal(resp.Data, &env); err != nil {
+		return nil, fmt.Errorf("failed to parse redirect: %w", err)
+	}
+	if env.Redirect == nil || env.Redirect.RedirectID == 0 {
+		return nil, fmt.Errorf("redirect %d response had no redirect object or redirectId", redirectID)
+	}
+	return env.Redirect, nil
+}
+
+// UpdateRedirect updates a redirect and re-reads it to fill the joined fields.
+// If the re-read fails, the bare response is returned.
+func (c *Client) UpdateRedirect(ctx context.Context, redirectID int, req *UpdateRedirectRequest) (*Redirect, error) {
+	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/org/%s/redirects/%d", c.OrgID, redirectID), req)
+	if err != nil {
+		return nil, err
+	}
+	var env redirectEnvelope
+	if err = json.Unmarshal(resp.Data, &env); err != nil {
+		return nil, fmt.Errorf("failed to parse redirect: %w", err)
+	}
+	full, err := c.GetRedirect(ctx, redirectID)
+	if err != nil {
+		tflog.Warn(ctx, "pangolin: re-reading updated redirect failed, using bare update response", map[string]any{
+			"redirect_id": redirectID,
+			"error":       err.Error(),
+		})
+		if env.Redirect == nil || env.Redirect.RedirectID == 0 {
+			return nil, fmt.Errorf("redirect update response had no redirectId and re-reading failed: %w", err)
+		}
+		return env.Redirect, nil
+	}
+	return full, nil
+}
+
+// DeleteRedirect deletes a redirect by ID.
+func (c *Client) DeleteRedirect(ctx context.Context, redirectID int) error {
+	_, err := c.doRequest(ctx, "DELETE", fmt.Sprintf("/org/%s/redirects/%d", c.OrgID, redirectID), nil)
+	return err
+}
+
+// ListRedirects retrieves all redirects for the organization.
+func (c *Client) ListRedirects(ctx context.Context) ([]Redirect, error) {
+	var all []Redirect
+	err := c.listAllPages(ctx, fmt.Sprintf("/org/%s/redirects", c.OrgID), func(data json.RawMessage) (int, error) {
+		var page RedirectsListResponse
+		if err := json.Unmarshal(data, &page); err != nil {
+			return 0, fmt.Errorf("failed to parse redirects: %w", err)
+		}
+		all = append(all, page.Redirects...)
+		return len(page.Redirects), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
+}

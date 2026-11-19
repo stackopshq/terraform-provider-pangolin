@@ -48,6 +48,7 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_resource` | HTTP resource (public reverse proxy endpoint) |
 | `pangolin_target` | Backend target for an HTTP resource |
 | `pangolin_site_resource` | Private site resource (TCP/UDP/SSH via VPN) |
+| `pangolin_redirect` | HTTP redirect attached to a domain or an HTTP resource |
 | `pangolin_role` | Role |
 | `pangolin_user` | User |
 | `pangolin_domain` | Custom domain |
@@ -85,6 +86,7 @@ export PANGOLIN_ORG_ID="your-org-id"
 | `pangolin_resource_targets` | List backend targets of a resource (with health-check + routing detail) |
 | `pangolin_resource_roles` | List roles granted access to a resource |
 | `pangolin_site_resources` | List all private site resources |
+| `pangolin_redirects` | List redirects, optionally filtered by `resource_id`, `domain_id` or `enabled` |
 | `pangolin_roles` | List all roles |
 | `pangolin_users` | List all users |
 | `pangolin_user` | Single user lookup by username + idp_id |

@@ -4659,3 +4659,275 @@ func TestGetSiteResourceAccess_EmptyListsAreNonNil(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateRedirect_SendsPutAndRefetches(t *testing.T) {
+	var gotBody map[string]any
+	var gets int32
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			if r.URL.Path != "/v1/org/test-org/redirect" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			writeEnvelope(t, w, http.StatusCreated, map[string]any{"redirect": map[string]any{"redirectId": 7, "niceId": "n"}})
+		case http.MethodGet:
+			atomic.AddInt32(&gets, 1)
+			if r.URL.Path != "/v1/org/test-org/redirects/7" {
+				t.Errorf("get path = %s", r.URL.Path)
+			}
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"redirect": map[string]any{"redirectId": 7, "niceId": "n", "baseDomain": "example.com"}})
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	})
+	domain := "d1"
+	got, err := c.CreateRedirect(context.Background(), &CreateRedirectRequest{Name: "r", DomainID: &domain, DestinationHost: "https://x.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RedirectID != 7 || got.BaseDomain == nil || *got.BaseDomain != "example.com" {
+		t.Errorf("unexpected redirect: %+v", got)
+	}
+	if atomic.LoadInt32(&gets) != 1 {
+		t.Errorf("gets = %d, want 1", gets)
+	}
+	if gotBody["name"] != "r" || gotBody["domainId"] != "d1" || gotBody["destinationHost"] != "https://x.test" {
+		t.Errorf("body = %v", gotBody)
+	}
+	for _, k := range []string{"resourceId", "priority", "permanent", "ssl", "enabled", "matchPath"} {
+		if _, ok := gotBody[k]; ok {
+			t.Errorf("body should omit %s: %v", k, gotBody)
+		}
+	}
+}
+
+func TestCreateRedirect_FallsBackToCreateResponse(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			writeEnvelope(t, w, http.StatusCreated, map[string]any{"redirect": map[string]any{"redirectId": 9}})
+			return
+		}
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	got, err := c.CreateRedirect(context.Background(), &CreateRedirectRequest{})
+	if err != nil || got.RedirectID != 9 {
+		t.Fatalf("got %+v, err %v", got, err)
+	}
+}
+
+func TestCreateRedirect_MissingIDIsError(t *testing.T) {
+	var gets int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			writeEnvelope(t, w, http.StatusCreated, map[string]any{"redirect": map[string]any{"name": "r"}})
+			return
+		}
+		gets++
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	got, err := c.CreateRedirect(context.Background(), &CreateRedirectRequest{})
+	if err == nil || got != nil || !strings.Contains(err.Error(), "no redirectId") {
+		t.Fatalf("want missing-id error, got %+v, err %v", got, err)
+	}
+	if gets != 0 {
+		t.Errorf("GetRedirect must not be called, got %d GETs", gets)
+	}
+}
+
+func TestCreateRedirectBare_NoRefetch(t *testing.T) {
+	var puts, gets int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts++
+			writeEnvelope(t, w, http.StatusCreated, map[string]any{"redirect": map[string]any{"redirectId": 5, "niceId": "n"}})
+			return
+		}
+		gets++
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"redirect": map[string]any{"redirectId": 5}})
+	})
+	got, err := c.CreateRedirectBare(context.Background(), &CreateRedirectRequest{})
+	if err != nil || got.RedirectID != 5 || got.NiceID != "n" {
+		t.Fatalf("got %+v, err %v", got, err)
+	}
+	if puts != 1 || gets != 0 {
+		t.Errorf("puts=%d gets=%d, want 1 and 0", puts, gets)
+	}
+}
+
+func TestCreateRedirectBare_MissingIDIsError(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusCreated, map[string]any{"redirect": map[string]any{"name": "r"}})
+	})
+	got, err := c.CreateRedirectBare(context.Background(), &CreateRedirectRequest{})
+	if err == nil || got != nil || !strings.Contains(err.Error(), "no redirectId") {
+		t.Fatalf("want missing-id error, got %+v, err %v", got, err)
+	}
+}
+
+func TestGetRedirect(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/org/test-org/redirects/3" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{"redirect": map[string]any{
+			"redirectId": 3, "orgId": "test-org", "niceId": "nice", "name": "n",
+			"resourceId": 5, "domainId": nil, "destinationHost": "https://x.test",
+			"pathMatchType": "prefix", "priority": 100, "permanent": true, "ssl": true, "enabled": true,
+			"rewritePathType": nil,
+		}})
+	})
+	got, err := c.GetRedirect(context.Background(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RedirectID != 3 || got.NiceID != "nice" || got.ResourceID == nil || *got.ResourceID != 5 ||
+		got.DomainID != nil || got.Priority == nil || *got.Priority != 100 || !got.Permanent || got.PathMatchType != "prefix" {
+		t.Errorf("unexpected redirect: %+v", got)
+	}
+}
+
+func TestGetRedirect_NotFound(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	_, err := c.GetRedirect(context.Background(), 1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUpdateRedirect_SendsExplicitNulls(t *testing.T) {
+	var gotBody map[string]json.RawMessage
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			if r.URL.Path != "/v1/org/test-org/redirects/4" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"redirect": map[string]any{"redirectId": 4}})
+		default:
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"redirect": map[string]any{"redirectId": 4, "name": "after"}})
+		}
+	})
+	name := "after"
+	domain := "d1"
+	got, err := c.UpdateRedirect(context.Background(), 4, &UpdateRedirectRequest{Name: &name, DomainID: &domain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "after" {
+		t.Errorf("name = %q", got.Name)
+	}
+	for _, k := range []string{"resourceId", "subdomain", "matchPath", "rewritePath", "rewritePathType"} {
+		if v, ok := gotBody[k]; !ok || string(v) != "null" {
+			t.Errorf("%s = %s (present=%v), want explicit null", k, v, ok)
+		}
+	}
+	if string(gotBody["domainId"]) != `"d1"` || string(gotBody["name"]) != `"after"` {
+		t.Errorf("body = %v", gotBody)
+	}
+	for _, k := range []string{"niceId", "destinationHost", "pathMatchType", "priority", "permanent", "ssl", "enabled"} {
+		if _, ok := gotBody[k]; ok {
+			t.Errorf("body should omit %s", k)
+		}
+	}
+}
+
+func TestDeleteRedirect(t *testing.T) {
+	var called bool
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodDelete || r.URL.Path != "/v1/org/test-org/redirects/6" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		writeEnvelope(t, w, http.StatusOK, nil)
+	})
+	if err := c.DeleteRedirect(context.Background(), 6); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Error("server not called")
+	}
+}
+
+func TestListRedirects_Paginates(t *testing.T) {
+	total := listPageSize + 1
+	var pages []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/org/test-org/redirects" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		var items []map[string]any
+		if page == "1" {
+			for i := 1; i <= listPageSize; i++ {
+				items = append(items, map[string]any{"redirectId": i})
+			}
+		} else {
+			items = append(items, map[string]any{"redirectId": total})
+		}
+		writeEnvelope(t, w, http.StatusOK, map[string]any{
+			"redirects":  items,
+			"pagination": map[string]any{"total": total, "page": page, "pageSize": listPageSize},
+		})
+	})
+	got, err := c.ListRedirects(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != total || got[total-1].RedirectID != total {
+		t.Errorf("got %d redirects", len(got))
+	}
+	if strings.Join(pages, ",") != "1,2" {
+		t.Errorf("pages requested = %v", pages)
+	}
+}
+
+func TestGetRedirect_MissingObjectIsError(t *testing.T) {
+	for name, data := range map[string]any{
+		"empty data":    map[string]any{},
+		"null redirect": map[string]any{"redirect": nil},
+		"zero id":       map[string]any{"redirect": map[string]any{"name": "x"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				writeEnvelope(t, w, http.StatusOK, data)
+			})
+			got, err := c.GetRedirect(context.Background(), 1)
+			if err == nil || got != nil || errors.Is(err, ErrNotFound) {
+				t.Fatalf("want non-NotFound error, got %+v, err %v", got, err)
+			}
+		})
+	}
+}
+
+func TestUpdateRedirect_FallbackWithoutIDIsError(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			writeEnvelope(t, w, http.StatusOK, map[string]any{"redirect": map[string]any{"name": "x"}})
+			return
+		}
+		writeEnvelope(t, w, http.StatusNotFound, nil)
+	})
+	got, err := c.UpdateRedirect(context.Background(), 4, &UpdateRedirectRequest{})
+	if err == nil || got != nil {
+		t.Fatalf("want error, got %+v, err %v", got, err)
+	}
+}
+
+func TestRedirectPriorityOr(t *testing.T) {
+	p := 7
+	if got := (&Redirect{Priority: &p}).PriorityOr(DefaultRedirectPriority); got != 7 {
+		t.Errorf("got %d, want 7", got)
+	}
+	if got := (&Redirect{}).PriorityOr(DefaultRedirectPriority); got != DefaultRedirectPriority {
+		t.Errorf("got %d, want default", got)
+	}
+}
