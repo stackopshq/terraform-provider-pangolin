@@ -15,3 +15,12 @@ output "verification_error" {
     : null
   )
 }
+
+# Single-domain lookup by name (exactly one of id or base_domain).
+data "pangolin_domain" "by_name" {
+  base_domain = "example.com"
+}
+
+output "by_name_domain_id" {
+  value = data.pangolin_domain.by_name.id
+}
